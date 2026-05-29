@@ -29,7 +29,7 @@ export default function App() {
       <Route path="/incidents"  element={<ProtectedRoute><ComingSoon name="Incident Reports" /></ProtectedRoute>} />
       <Route path="/map"        element={<ProtectedRoute><ComingSoon name="Live Map" /></ProtectedRoute>} />
       <Route path="/patrol"     element={<ProtectedRoute><ComingSoon name="Patrol Logs" /></ProtectedRoute>} />
-      <Route path="/clockin"    element={<ProtectedRoute><ComingSoon name="Clock In / Out" /></ProtectedRoute>} />
+      <Route path="/clockin" element={<ProtectedRoute><ClockIn /></ProtectedRoute>} />
       <Route path="/hr"         element={<ProtectedRoute><ComingSoon name="HR & Documents" /></ProtectedRoute>} />
       <Route path="/invoices"   element={<ProtectedRoute><ComingSoon name="Invoices" /></ProtectedRoute>} />
       <Route path="/uniforms"   element={<ProtectedRoute><ComingSoon name="Uniforms" /></ProtectedRoute>} />
