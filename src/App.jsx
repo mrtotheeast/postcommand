@@ -3,6 +3,7 @@ import { useAuth } from './context/AuthContext'
 import AppLayout from './components/layout/AppLayout'
 import Login from './pages/auth/Login'
 import Dashboard from './pages/dashboard/Dashboard'
+import Personnel from './pages/personnel/Personnel'
 
 function ComingSoon({ name }) {
   return <div style={{padding:'40px 24px',fontFamily:'var(--font-display)',fontSize:'24px',letterSpacing:'2px',color:'var(--accent)'}}>{name.toUpperCase()} — COMING SOON</div>
@@ -22,7 +23,7 @@ export default function App() {
     <Routes>
       <Route path="/login" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Login />} />
       <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-      <Route path="/personnel" element={<ProtectedRoute><ComingSoon name="Personnel" /></ProtectedRoute>} />
+      <Route path="/personnel" element={<ProtectedRoute><Personnel /></ProtectedRoute>} />
       <Route path="/scheduling" element={<ProtectedRoute><ComingSoon name="Scheduling" /></ProtectedRoute>} />
       <Route path="/timesheets" element={<ProtectedRoute><ComingSoon name="Timesheets" /></ProtectedRoute>} />
       <Route path="/incidents" element={<ProtectedRoute><ComingSoon name="Incident Reports" /></ProtectedRoute>} />
