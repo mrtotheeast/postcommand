@@ -5,6 +5,7 @@ import Login from './pages/auth/Login'
 import Dashboard from './pages/dashboard/Dashboard'
 import Personnel from './pages/personnel/Personnel'
 import Scheduling from './pages/scheduling/Scheduling'
+import ClockIn from './pages/clockin/ClockIn'
 
 function ComingSoon({ name }) {
   return <div style={{padding:'40px 24px',fontFamily:'var(--font-display)',fontSize:'24px',letterSpacing:'2px',color:'var(--accent)'}}>{name.toUpperCase()} — COMING SOON</div>
