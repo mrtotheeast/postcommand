@@ -115,8 +115,7 @@ export default function Incidents() {
       {selected && <ReportDetail report={selected} canReview={canReview} canApprove={canApprove} canVoid={canVoid} profile={profile} onClose={()=>setSelected(null)} onUpdated={()=>{setSelected(null);loadReports()}}/>}
     </div>
   )
-}
-function ReportRow({report,isLast,onClick}) {
+}function ReportRow({report,isLast,onClick}) {
   const ss=STATUS_STYLES[report.status]||STATUS_STYLES.draft
   const [hover,setHover]=useState(false)
   return (
@@ -319,8 +318,7 @@ function IncidentForm({profile,onClose,onSaved}) {
       </div>
     </>
   )
-}
-function ReportDetail({report,canReview,canApprove,canVoid,onClose,onUpdated,profile}) {
+}function ReportDetail({report,canReview,canApprove,canVoid,onClose,onUpdated,profile}) {
   const ss=STATUS_STYLES[report.status]||STATUS_STYLES.draft
   const [notes,setNotes]=useState('')
   const [voidReason,setVoidReason]=useState('')
