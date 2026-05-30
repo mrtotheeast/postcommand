@@ -5,7 +5,7 @@ import Login from './pages/auth/Login'
 import Dashboard from './pages/dashboard/Dashboard'
 import Personnel from './pages/personnel/Personnel'
 import Scheduling from './pages/scheduling/Scheduling'
-import clockIn from './pages/clockin/clockin'
+import ClockIn from './pages/clockin/clockin'
 import Incidents from './pages/incidents/Incidents'
 
 
