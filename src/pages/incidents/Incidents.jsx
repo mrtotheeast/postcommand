@@ -1,69 +1,425 @@
-create table public.incident_report (
-  id uuid primary key default gen_random_uuid(),
-  created_at timestamp with time zone default now(),
-  updated_at timestamp with time zone default now(),
-  company_id uuid not null references company(id) on delete cascade,
-  site_id uuid references site(id),
-  employee_id uuid references employee(id),
-  shift_id uuid references shift(id),
+import { useState, useEffect, useMemo } from 'react'
+import { useAuth } from '../../context/AuthContext'
+import { supabase } from '../../lib/supabase'
+import { atLeast } from '../../config/roles'
+import Icon from '../../components/ui/Icon'
 
-  cad_number text unique,
-  report_month text,
+const INCIDENT_TYPES = [
+  'Trespass','Theft','Vandalism','Assault','Disturbance','Suspicious Person',
+  'Suspicious Vehicle','Medical Emergency','Fire / Smoke','Accident',
+  'Arrest / Detainment','Drug / Alcohol Related','Weapon Observed',
+  'Property Damage','Unauthorized Access','Noise Complaint','Traffic Incident',
+  'Lost / Found Property','Welfare Check','Other',
+]
 
-  incident_type text not null,
-  occurred_at timestamp with time zone not null,
-  location_detail text,
-  subject_name text,
-  subject_description text,
-  narrative text not null,
-  injuries boolean default false,
-  injury_detail text,
-  property_damage boolean default false,
-  damage_detail text,
-  weapons_involved boolean default false,
-  weapons_detail text,
-  police_notified boolean default false,
-  police_report_number text,
-  witnesses text,
-  evidence text,
+const STATUS_STYLES = {
+  draft:     { bg:'rgba(130,130,130,0.15)', color:'#8899aa', label:'Draft' },
+  submitted: { bg:'rgba(91,159,224,0.15)',  color:'#5b9fe0', label:'Submitted' },
+  reviewed:  { bg:'rgba(232,148,58,0.15)',  color:'#e8943a', label:'Reviewed' },
+  approved:  { bg:'rgba(58,170,106,0.15)',  color:'#3aaa6a', label:'Approved' },
+  void:      { bg:'rgba(224,85,85,0.15)',   color:'#e05555', label:'Void' },
+}
 
-  status text not null default 'draft'
-    check (status in ('draft','submitted','reviewed','approved','void')),
-  submitted_at timestamp with time zone,
-  submitted_by uuid references employee(id),
-  reviewed_by uuid references employee(id),
-  reviewed_at timestamp with time zone,
-  reviewer_notes text,
-  approved_by uuid references employee(id),
-  approved_at timestamp with time zone,
-  voided_by uuid references employee(id),
-  voided_at timestamp with time zone,
-  void_reason text,
-  retain_until date
-);
+const selStyle = { padding:'0 10px', background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-md)', color:'var(--text-primary)', fontSize:'12px', height:'44px', cursor:'pointer', minWidth:'130px' }
+const inp = { width:'100%', padding:'10px 12px', background:'var(--bg-input)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-md)', color:'var(--text-primary)', fontSize:'13px', outline:'none', boxSizing:'border-box', height:'44px' }
+const lbl = { fontSize:'11px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', display:'block', marginBottom:'6px' }
+const ta  = { ...inp, height:'auto', resize:'vertical', lineHeight:1.5, padding:'10px 12px' }
 
-create table public.cad_sequence (
-  id uuid primary key default gen_random_uuid(),
-  company_id uuid not null references company(id) on delete cascade,
-  report_month text not null,
-  last_number integer not null default 0,
-  unique(company_id, report_month)
-);
+export default function Incidents() {
+  const { profile } = useAuth()
+  const [reports, setReports]   = useState([])
+  const [loading, setLoading]   = useState(true)
+  const [showForm, setShowForm] = useState(false)
+  const [selected, setSelected] = useState(null)
+  const [filterStatus, setFilterStatus] = useState('all')
+  const [filterType, setFilterType]     = useState('all')
+  const [search, setSearch]             = useState('')
+  const canReview  = atLeast(profile?.role, 'sergeant')
+  const canApprove = atLeast(profile?.role, 'lieutenant')
+  const canVoid    = atLeast(profile?.role, 'chief')
 
-alter table incident_report enable row level security;
-alter table cad_sequence enable row level security;
+  useEffect(() => { loadReports() }, [profile])
 
-grant select, insert, update on incident_report to authenticated;
-grant select, insert, update on cad_sequence to authenticated;
+  async function loadReports() {
+    if (!profile?.company_id) return
+    setLoading(true)
+    const { data } = await supabase.from('incident_report').select('*').eq('company_id', profile.company_id).order('created_at', { ascending: false })
+    setReports(data || [])
+    setLoading(false)
+  }
 
-create policy "ir_read_company" on incident_report for select
-using (company_id = (select company_id from user_profile where id = auth.uid()));
+  const filtered = useMemo(() => reports.filter(r => {
+    const matchStatus = filterStatus === 'all' || r.status === filterStatus
+    const matchType   = filterType === 'all' || r.incident_type === filterType
+    const matchSearch = !search || r.cad_number?.toLowerCase().includes(search.toLowerCase()) || r.incident_type?.toLowerCase().includes(search.toLowerCase()) || r.narrative?.toLowerCase().includes(search.toLowerCase())
+    return matchStatus && matchType && matchSearch
+  }), [reports, filterStatus, filterType, search])
 
-create policy "ir_insert_company" on incident_report for insert
-with check (company_id = (select company_id from user_profile where id = auth.uid()));
+  const stats = useMemo(() => ({
+    total:     reports.length,
+    submitted: reports.filter(r => r.status === 'submitted').length,
+    approved:  reports.filter(r => r.status === 'approved').length,
+    thisMonth: reports.filter(r => { const d=new Date(r.created_at),n=new Date(); return d.getMonth()===n.getMonth()&&d.getFullYear()===n.getFullYear() }).length,
+  }), [reports])
 
-create policy "ir_update_company" on incident_report for update
-using (company_id = (select company_id from user_profile where id = auth.uid()));
+  return (
+    <div style={{padding:'24px',animation:'fadeIn 200ms ease'}}>
+      <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}`}</style>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'24px',flexWrap:'wrap',gap:'12px'}}>
+        <div>
+          <h2 style={{fontFamily:'var(--font-display)',fontSize:'28px',letterSpacing:'2px',color:'var(--text-primary)',lineHeight:1}}>INCIDENT REPORTS</h2>
+          <p style={{fontSize:'12px',color:'var(--text-muted)',marginTop:'4px'}}>{reports.length} total · 3-year retention</p>
+        </div>
+        <button onClick={()=>setShowForm(true)} style={{display:'flex',alignItems:'center',gap:'8px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-md)',padding:'0 20px',height:'44px',fontFamily:'var(--font-condensed)',fontSize:'14px',fontWeight:700,letterSpacing:'1px',cursor:'pointer'}}>
+          <Icon name="plus" size={16}/>NEW REPORT
+        </button>
+      </div>
 
-create policy "cad_all" on cad_sequence for all
-using (company_id = (select company_id from user_profile where id = auth.uid()));
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(130px,1fr))',gap:'10px',marginBottom:'20px'}}>
+        {[{label:'Total',value:stats.total,color:'var(--text-primary)'},{label:'This Month',value:stats.thisMonth,color:'var(--color-info)'},{label:'Pending Review',value:stats.submitted,color:'var(--color-warning)'},{label:'Approved',value:stats.approved,color:'var(--color-success)'}].map(s=>(
+          <div key={s.label} style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'14px 16px'}}>
+            <div style={{fontSize:'10px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',marginBottom:'4px'}}>{s.label}</div>
+            <div style={{fontFamily:'var(--font-display)',fontSize:'26px',letterSpacing:'1px',color:s.color,lineHeight:1}}>{s.value}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{display:'flex',gap:'10px',marginBottom:'16px',flexWrap:'wrap',alignItems:'center'}}>
+        <div style={{position:'relative',flex:1,minWidth:'200px'}}>
+          <Icon name="search" size={15} color="var(--text-muted)" style={{position:'absolute',left:'12px',top:'50%',transform:'translateY(-50%)',pointerEvents:'none'}}/>
+          <input type="search" placeholder="Search CAD #, type, narrative..." value={search} onChange={e=>setSearch(e.target.value)}
+            style={{width:'100%',padding:'10px 12px 10px 36px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:'var(--text-primary)',fontSize:'13px',outline:'none',boxSizing:'border-box',height:'44px'}}
+            onFocus={e=>e.target.style.borderColor='var(--border-focus)'} onBlur={e=>e.target.style.borderColor='var(--border-subtle)'}/>
+        </div>
+        <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value)} style={selStyle}>
+          <option value="all">All Status</option>
+          {Object.entries(STATUS_STYLES).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
+        </select>
+        <select value={filterType} onChange={e=>setFilterType(e.target.value)} style={selStyle}>
+          <option value="all">All Types</option>
+          {INCIDENT_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
+        </select>
+      </div>
+
+      {loading ? (
+        <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>{[...Array(4)].map((_,i)=><div key={i} style={{height:'80px',borderRadius:'10px'}} className="skeleton"/>)}</div>
+      ) : filtered.length===0 ? (
+        <div style={{textAlign:'center',padding:'60px 24px',color:'var(--text-muted)'}}><Icon name="file-check" size={40} color="var(--border-subtle)"/><div style={{marginTop:'16px',fontSize:'15px'}}>No reports found</div></div>
+      ) : (
+        <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',overflow:'hidden'}}>
+          {filtered.map((report,i)=><ReportRow key={report.id} report={report} isLast={i===filtered.length-1} onClick={()=>setSelected(report)}/>)}
+        </div>
+      )}
+
+      {showForm && <IncidentForm profile={profile} onClose={()=>setShowForm(false)} onSaved={()=>{setShowForm(false);loadReports()}}/>}
+      {selected && <ReportDetail report={selected} canReview={canReview} canApprove={canApprove} canVoid={canVoid} profile={profile} onClose={()=>setSelected(null)} onUpdated={()=>{setSelected(null);loadReports()}}/>}
+    </div>
+  )
+}
+function ReportRow({report,isLast,onClick}) {
+  const ss=STATUS_STYLES[report.status]||STATUS_STYLES.draft
+  const [hover,setHover]=useState(false)
+  return (
+    <button onClick={onClick} onMouseEnter={()=>setHover(true)} onMouseLeave={()=>setHover(false)}
+      style={{display:'grid',gridTemplateColumns:'130px 1fr 160px 100px 36px',padding:'14px 16px',borderBottom:isLast?'none':'1px solid var(--border)',background:hover?'var(--bg-card-hover)':'transparent',border:'none',width:'100%',cursor:'pointer',textAlign:'left',alignItems:'center',gap:'12px'}}>
+      <div>
+        <div style={{fontSize:'13px',fontWeight:700,color:'var(--accent)',fontFamily:'var(--font-condensed)',letterSpacing:'0.5px'}}>{report.cad_number||'—'}</div>
+        <div style={{fontSize:'11px',color:'var(--text-muted)',marginTop:'2px'}}>{new Date(report.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>
+      </div>
+      <div>
+        <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-primary)',marginBottom:'2px'}}>{report.incident_type}</div>
+        <div style={{fontSize:'12px',color:'var(--text-secondary)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:'400px'}}>{report.narrative?.slice(0,100)}{report.narrative?.length>100?'...':''}</div>
+      </div>
+      <div style={{fontSize:'12px',color:'var(--text-secondary)'}}>{report.occurred_at?new Date(report.occurred_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'—'}</div>
+      <span style={{fontSize:'11px',fontWeight:700,padding:'3px 10px',borderRadius:'10px',background:ss.bg,color:ss.color,display:'inline-block',whiteSpace:'nowrap'}}>{ss.label}</span>
+      <Icon name="chevron-right" size={14} color="var(--text-muted)"/>
+    </button>
+  )
+}
+
+function IncidentForm({profile,onClose,onSaved}) {
+  const [mode,setMode]   = useState('guided')
+  const [step,setStep]   = useState(0)
+  const [aiLoading,setAiLoading] = useState(false)
+  const [saving,setSaving] = useState(false)
+  const [error,setError]   = useState(null)
+  const [sites,setSites]   = useState([])
+  const [form,setForm] = useState({incident_type:'',occurred_at:'',site_id:'',location_detail:'',subject_name:'',subject_description:'',narrative:'',injuries:false,injury_detail:'',property_damage:false,damage_detail:'',weapons_involved:false,weapons_detail:'',police_notified:false,police_report_number:'',witnesses:'',evidence:'',q_what:'',q_who:'',q_where:'',q_when:'',q_how:'',q_result:''})
+  const set=(k,v)=>setForm(f=>({...f,[k]:v}))
+
+  useEffect(()=>{ supabase.from('site').select('id,name').eq('company_id',profile.company_id).then(({data})=>setSites(data||[])) },[])
+
+  async function generateNarrative() {
+    if(!form.q_what||!form.q_where||!form.q_when){setError('Please answer What, Where, and When first.');return}
+    setAiLoading(true);setError(null)
+    try {
+      const prompt=`You are a professional security report writer. Write a formal, factual incident report narrative in third person, past tense, using clear law enforcement style language. Write only the narrative paragraphs, no headers or labels.\n\nIncident details:\n- What happened: ${form.q_what}\n- Who was involved: ${form.q_who||'Not specified'}\n- Where: ${form.q_where}\n- When: ${form.q_when}\n- How it unfolded: ${form.q_how||'Not specified'}\n- Outcome: ${form.q_result||'Not specified'}\n- Incident type: ${form.incident_type||'General incident'}\n\nWrite a professional 2-4 paragraph narrative.`
+      const response=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,messages:[{role:'user',content:prompt}]})})
+      const data=await response.json()
+      set('narrative',data.content?.[0]?.text||'')
+      setStep(2)
+    } catch(e){setError('AI generation failed. Please write manually.')}
+    setAiLoading(false)
+  }
+
+  async function polishNarrative() {
+    if(!form.narrative.trim()){setError('Write a narrative first.');return}
+    setAiLoading(true);setError(null)
+    try {
+      const prompt=`You are a professional security report editor. Rewrite the following incident report narrative to be formal, factual, and professional using law enforcement style language in third person, past tense. Return only the improved narrative.\n\nOriginal:\n${form.narrative}`
+      const response=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,messages:[{role:'user',content:prompt}]})})
+      const data=await response.json()
+      set('narrative',data.content?.[0]?.text||form.narrative)
+    } catch(e){setError('AI polish failed.')}
+    setAiLoading(false)
+  }
+
+  async function submit(asDraft=false) {
+    if(!form.incident_type){setError('Incident type required.');return}
+    if(!form.occurred_at){setError('Date and time required.');return}
+    if(!form.narrative.trim()){setError('Narrative required.');return}
+    setSaving(true);setError(null)
+    try {
+      const now=new Date()
+      const yy=String(now.getFullYear()).slice(2)
+      const mm=String(now.getMonth()+1).padStart(2,'0')
+      const month=`${yy}${mm}`
+      const {data:seqData}=await supabase.from('cad_sequence').select('last_number').eq('company_id',profile.company_id).eq('report_month',month).maybeSingle()
+      const nextNum=(seqData?.last_number||0)+1
+      await supabase.from('cad_sequence').upsert({company_id:profile.company_id,report_month:month,last_number:nextNum},{onConflict:'company_id,report_month'})
+      const cadNumber=`${month}-${String(nextNum).padStart(5,'0')}`
+      const retainUntil=new Date(now); retainUntil.setFullYear(retainUntil.getFullYear()+3)
+      const {data:empData}=await supabase.from('employee').select('id').eq('user_id',profile.id).eq('company_id',profile.company_id).maybeSingle()
+      const {error:insErr}=await supabase.from('incident_report').insert({company_id:profile.company_id,site_id:form.site_id||null,employee_id:empData?.id||null,cad_number:cadNumber,report_month:month,incident_type:form.incident_type,occurred_at:form.occurred_at,location_detail:form.location_detail||null,subject_name:form.subject_name||null,subject_description:form.subject_description||null,narrative:form.narrative,injuries:form.injuries,injury_detail:form.injury_detail||null,property_damage:form.property_damage,damage_detail:form.damage_detail||null,weapons_involved:form.weapons_involved,weapons_detail:form.weapons_detail||null,police_notified:form.police_notified,police_report_number:form.police_report_number||null,witnesses:form.witnesses||null,evidence:form.evidence||null,status:asDraft?'draft':'submitted',submitted_at:asDraft?null:now.toISOString(),submitted_by:asDraft?null:(empData?.id||null),retain_until:retainUntil.toISOString().split('T')[0]})
+      if(insErr){setError(insErr.message);setSaving(false);return}
+      onSaved()
+    } catch(e){setError(e.message)}
+    setSaving(false)
+  }
+
+  const STEPS=[{title:'Basic Info',sub:'Incident type and time'},{title:'Guided Questions',sub:'Answer questions — AI writes your report'},{title:'Narrative',sub:'Review and edit your narrative'},{title:'Additional Details',sub:'Injuries, damage, weapons, police'}]
+
+  return (
+    <>
+      <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:200,backdropFilter:'blur(2px)'}}/>
+      <div style={{position:'fixed',top:0,right:0,bottom:0,width:'min(600px,100vw)',background:'var(--bg-surface)',borderLeft:'1px solid var(--border)',zIndex:201,display:'flex',flexDirection:'column'}}>
+        <div style={{padding:'18px 24px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
+          <div><div style={{fontFamily:'var(--font-display)',fontSize:'18px',letterSpacing:'2px',color:'var(--text-primary)'}}>NEW INCIDENT REPORT</div><div style={{fontSize:'11px',color:'var(--text-muted)',marginTop:'2px'}}>CAD number assigned on submission</div></div>
+          <button onClick={onClose} style={{background:'transparent',border:'none',color:'var(--text-muted)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',minHeight:'44px',minWidth:'44px'}}><Icon name="x" size={18}/></button>
+        </div>
+        <div style={{padding:'12px 24px',borderBottom:'1px solid var(--border)',display:'flex',gap:'8px',flexShrink:0,alignItems:'center'}}>
+          <div style={{display:'flex',gap:'2px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-sm)',padding:'3px'}}>
+            {[['guided','AI Guided'],['freeform','Write Directly']].map(([v,l])=>(
+              <button key={v} onClick={()=>setMode(v)} style={{padding:'0 14px',height:'32px',minHeight:'36px',border:'none',borderRadius:'4px',background:mode===v?'var(--accent-bg)':'transparent',color:mode===v?'var(--accent)':'var(--text-muted)',cursor:'pointer',fontSize:'12px',fontFamily:'var(--font-condensed)',fontWeight:600}}>{l}</button>
+            ))}
+          </div>
+          {mode==='guided'&&<div style={{fontSize:'12px',color:'var(--text-muted)',display:'flex',alignItems:'center',gap:'6px'}}><Icon name="star" size={13} color="var(--accent)"/>AI writes your narrative</div>}
+        </div>
+        {mode==='guided'&&<div style={{padding:'10px 24px',borderBottom:'1px solid var(--border)',display:'flex',gap:'4px',flexShrink:0}}>{STEPS.map((_,i)=><div key={i} style={{flex:1,height:'3px',borderRadius:'2px',background:i<=step?'var(--accent)':'var(--border)'}}/>)}</div>}
+
+        <div style={{flex:1,overflowY:'auto',padding:'20px 24px',display:'flex',flexDirection:'column',gap:'16px'}}>
+          {error&&<div style={{background:'var(--color-danger-bg)',border:'1px solid rgba(224,85,85,0.3)',borderRadius:'var(--radius-md)',padding:'10px 14px',fontSize:'13px',color:'var(--color-danger)'}}>{error}</div>}
+
+          {mode==='guided'&&<>
+            <div><div style={{fontSize:'14px',fontWeight:700,color:'var(--text-primary)',marginBottom:'2px'}}>{STEPS[step]?.title}</div><div style={{fontSize:'12px',color:'var(--text-muted)'}}>{STEPS[step]?.sub}</div></div>
+
+            {step===0&&<>
+              <div><label style={lbl}>Incident Type *</label><select value={form.incident_type} onChange={e=>set('incident_type',e.target.value)} style={inp}><option value="">Select...</option>{INCIDENT_TYPES.map(t=><option key={t} value={t}>{t}</option>)}</select></div>
+              <div><label style={lbl}>Date & Time *</label><input type="datetime-local" value={form.occurred_at} onChange={e=>set('occurred_at',e.target.value)} style={inp}/></div>
+              <div><label style={lbl}>Site</label><select value={form.site_id} onChange={e=>set('site_id',e.target.value)} style={inp}><option value="">Select site...</option>{sites.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+              <div><label style={lbl}>Specific Location</label><input type="text" value={form.location_detail} onChange={e=>set('location_detail',e.target.value)} placeholder="e.g. North parking lot..." style={inp}/></div>
+            </>}
+
+            {step===1&&<>
+              <GQ label="What happened? *" hint="Describe in your own words" value={form.q_what} onChange={v=>set('q_what',v)}/>
+              <GQ label="Who was involved?" hint="Names, descriptions, roles" value={form.q_who} onChange={v=>set('q_who',v)}/>
+              <GQ label="Where exactly? *" hint="Specific location details" value={form.q_where} onChange={v=>set('q_where',v)}/>
+              <GQ label="When did it happen? *" hint="Time and sequence" value={form.q_when} onChange={v=>set('q_when',v)}/>
+              <GQ label="How did it unfold?" hint="Sequence of actions" value={form.q_how} onChange={v=>set('q_how',v)}/>
+              <GQ label="What was the outcome?" hint="Resolution, arrests, medical" value={form.q_result} onChange={v=>set('q_result',v)}/>
+            </>}
+
+            {step===2&&<>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'4px'}}>
+                <label style={{...lbl,margin:0}}>Narrative *</label>
+                <div style={{display:'flex',gap:'8px'}}>
+                  <button onClick={generateNarrative} disabled={aiLoading} style={{display:'flex',alignItems:'center',gap:'6px',background:'var(--accent-bg)',border:'1px solid var(--accent-border)',borderRadius:'var(--radius-sm)',color:'var(--accent)',fontSize:'11px',fontFamily:'var(--font-condensed)',fontWeight:700,cursor:'pointer',padding:'0 10px',height:'32px'}}><Icon name="star" size={13}/>{aiLoading?'GENERATING...':'GENERATE'}</button>
+                  {form.narrative&&<button onClick={polishNarrative} disabled={aiLoading} style={{display:'flex',alignItems:'center',gap:'6px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-sm)',color:'var(--text-secondary)',fontSize:'11px',fontFamily:'var(--font-condensed)',fontWeight:700,cursor:'pointer',padding:'0 10px',height:'32px'}}><Icon name="edit" size={13}/>{aiLoading?'...':'POLISH'}</button>}
+                </div>
+              </div>
+              {aiLoading&&<div style={{background:'var(--accent-bg)',border:'1px solid var(--accent-border)',borderRadius:'var(--radius-md)',padding:'12px 16px',fontSize:'13px',color:'var(--accent)',display:'flex',alignItems:'center',gap:'10px'}}><Icon name="star" size={15}/>AI is writing your report...</div>}
+              <textarea value={form.narrative} onChange={e=>set('narrative',e.target.value)} rows={10} placeholder="Narrative will appear here after generation..." style={{...ta,minHeight:'200px'}}/>
+              <div style={{fontSize:'11px',color:'var(--text-muted)',padding:'8px 12px',background:'var(--bg-card)',borderRadius:'var(--radius-sm)',border:'1px solid var(--border)'}}>Review carefully. You are responsible for accuracy.</div>
+            </>}
+
+            {step===3&&<>
+              <BF label="Were there injuries?" checked={form.injuries} onChange={v=>set('injuries',v)}/>
+              {form.injuries&&<div><label style={lbl}>Injury Details</label><textarea value={form.injury_detail} onChange={e=>set('injury_detail',e.target.value)} rows={2} style={ta}/></div>}
+              <BF label="Was there property damage?" checked={form.property_damage} onChange={v=>set('property_damage',v)}/>
+              {form.property_damage&&<div><label style={lbl}>Damage Details</label><textarea value={form.damage_detail} onChange={e=>set('damage_detail',e.target.value)} rows={2} style={ta}/></div>}
+              <BF label="Were weapons involved?" checked={form.weapons_involved} onChange={v=>set('weapons_involved',v)}/>
+              {form.weapons_involved&&<div><label style={lbl}>Weapons Details</label><textarea value={form.weapons_detail} onChange={e=>set('weapons_detail',e.target.value)} rows={2} style={ta}/></div>}
+              <BF label="Was law enforcement notified?" checked={form.police_notified} onChange={v=>set('police_notified',v)}/>
+              {form.police_notified&&<div><label style={lbl}>Police Report #</label><input type="text" value={form.police_report_number} onChange={e=>set('police_report_number',e.target.value)} style={inp}/></div>}
+              <div><label style={lbl}>Witnesses</label><textarea value={form.witnesses} onChange={e=>set('witnesses',e.target.value)} rows={2} style={ta}/></div>
+              <div><label style={lbl}>Evidence</label><textarea value={form.evidence} onChange={e=>set('evidence',e.target.value)} rows={2} style={ta}/></div>
+              <div><label style={lbl}>Subject Name</label><input type="text" value={form.subject_name} onChange={e=>set('subject_name',e.target.value)} style={inp}/></div>
+              <div><label style={lbl}>Subject Description</label><textarea value={form.subject_description} onChange={e=>set('subject_description',e.target.value)} rows={2} style={ta}/></div>
+            </>}
+          </>}
+
+          {mode==='freeform'&&<>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'14px'}}>
+              <div><label style={lbl}>Incident Type *</label><select value={form.incident_type} onChange={e=>set('incident_type',e.target.value)} style={inp}><option value="">Select...</option>{INCIDENT_TYPES.map(t=><option key={t} value={t}>{t}</option>)}</select></div>
+              <div><label style={lbl}>Date & Time *</label><input type="datetime-local" value={form.occurred_at} onChange={e=>set('occurred_at',e.target.value)} style={inp}/></div>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'14px'}}>
+              <div><label style={lbl}>Site</label><select value={form.site_id} onChange={e=>set('site_id',e.target.value)} style={inp}><option value="">Select...</option>{sites.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+              <div><label style={lbl}>Location Detail</label><input type="text" value={form.location_detail} onChange={e=>set('location_detail',e.target.value)} style={inp}/></div>
+            </div>
+            <div>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'6px'}}>
+                <label style={{...lbl,margin:0}}>Narrative *</label>
+                <button onClick={polishNarrative} disabled={aiLoading||!form.narrative.trim()} style={{display:'flex',alignItems:'center',gap:'6px',background:'var(--accent-bg)',border:'1px solid var(--accent-border)',borderRadius:'var(--radius-sm)',color:'var(--accent)',fontSize:'11px',fontFamily:'var(--font-condensed)',fontWeight:700,cursor:'pointer',padding:'0 10px',height:'32px',opacity:!form.narrative.trim()?0.5:1}}><Icon name="star" size={13}/>{aiLoading?'POLISHING...':'AI POLISH'}</button>
+              </div>
+              <textarea value={form.narrative} onChange={e=>set('narrative',e.target.value)} rows={8} placeholder="Write your incident narrative here..." style={{...ta,minHeight:'180px'}}/>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'14px'}}>
+              <div><label style={lbl}>Subject Name</label><input type="text" value={form.subject_name} onChange={e=>set('subject_name',e.target.value)} style={inp}/></div>
+              <div><label style={lbl}>Police Report #</label><input type="text" value={form.police_report_number} onChange={e=>set('police_report_number',e.target.value)} style={inp}/></div>
+            </div>
+            <BF label="Injuries" checked={form.injuries} onChange={v=>set('injuries',v)}/>
+            <BF label="Property Damage" checked={form.property_damage} onChange={v=>set('property_damage',v)}/>
+            <BF label="Weapons Involved" checked={form.weapons_involved} onChange={v=>set('weapons_involved',v)}/>
+            <BF label="Law Enforcement Notified" checked={form.police_notified} onChange={v=>set('police_notified',v)}/>
+            <div><label style={lbl}>Witnesses</label><textarea value={form.witnesses} onChange={e=>set('witnesses',e.target.value)} rows={2} style={ta}/></div>
+            <div><label style={lbl}>Evidence</label><textarea value={form.evidence} onChange={e=>set('evidence',e.target.value)} rows={2} style={ta}/></div>
+          </>}
+        </div>
+
+        <div style={{padding:'16px 24px',borderTop:'1px solid var(--border)',flexShrink:0}}>
+          {mode==='guided'?(
+            <div style={{display:'flex',gap:'10px'}}>
+              {step>0&&<button onClick={()=>setStep(s=>s-1)} style={{flex:1,height:'44px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:'var(--text-secondary)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,cursor:'pointer'}}>BACK</button>}
+              {step<3?<button onClick={()=>{setError(null);setStep(s=>s+1)}} style={{flex:2,height:'44px',background:'var(--accent)',border:'none',borderRadius:'var(--radius-md)',color:'var(--text-inverse)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer'}}>NEXT</button>:(
+                <div style={{flex:2,display:'flex',gap:'8px'}}>
+                  <button onClick={()=>submit(true)} disabled={saving} style={{flex:1,height:'44px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:'var(--text-secondary)',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,cursor:'pointer'}}>DRAFT</button>
+                  <button onClick={()=>submit(false)} disabled={saving} style={{flex:2,height:'44px',background:'var(--accent)',border:'none',borderRadius:'var(--radius-md)',color:'var(--text-inverse)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer'}}>{saving?'SUBMITTING...':'SUBMIT'}</button>
+                </div>
+              )}
+            </div>
+          ):(
+            <div style={{display:'flex',gap:'10px'}}>
+              <button onClick={onClose} style={{flex:1,height:'44px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:'var(--text-secondary)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,cursor:'pointer'}}>CANCEL</button>
+              <button onClick={()=>submit(true)} disabled={saving} style={{flex:1,height:'44px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:'var(--text-secondary)',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,cursor:'pointer'}}>DRAFT</button>
+              <button onClick={()=>submit(false)} disabled={saving} style={{flex:2,height:'44px',background:'var(--accent)',border:'none',borderRadius:'var(--radius-md)',color:'var(--text-inverse)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer'}}>{saving?'SUBMITTING...':'SUBMIT'}</button>
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  )
+}
+function ReportDetail({report,canReview,canApprove,canVoid,onClose,onUpdated,profile}) {
+  const ss=STATUS_STYLES[report.status]||STATUS_STYLES.draft
+  const [notes,setNotes]=useState('')
+  const [voidReason,setVoidReason]=useState('')
+  const [saving,setSaving]=useState(false)
+  const [showVoid,setShowVoid]=useState(false)
+
+  async function updateStatus(status) {
+    setSaving(true)
+    const {data:empData}=await supabase.from('employee').select('id').eq('user_id',profile.id).eq('company_id',profile.company_id).maybeSingle()
+    const now=new Date().toISOString()
+    const update={status}
+    if(status==='reviewed'){update.reviewed_by=empData?.id;update.reviewed_at=now;update.reviewer_notes=notes}
+    if(status==='approved'){update.approved_by=empData?.id;update.approved_at=now}
+    if(status==='void'){update.voided_by=empData?.id;update.voided_at=now;update.void_reason=voidReason}
+    await supabase.from('incident_report').update(update).eq('id',report.id)
+    setSaving(false);onUpdated()
+  }
+
+  return (
+    <>
+      <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:100,backdropFilter:'blur(2px)'}}/>
+      <div style={{position:'fixed',top:0,right:0,bottom:0,width:'min(520px,100vw)',background:'var(--bg-surface)',borderLeft:'1px solid var(--border)',zIndex:101,display:'flex',flexDirection:'column'}}>
+        <div style={{padding:'18px 20px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexShrink:0}}>
+          <div>
+            <div style={{fontFamily:'var(--font-display)',fontSize:'20px',letterSpacing:'2px',color:'var(--accent)'}}>{report.cad_number}</div>
+            <div style={{fontSize:'12px',color:'var(--text-muted)',marginTop:'2px'}}>{report.incident_type} · {new Date(report.created_at).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</div>
+          </div>
+          <button onClick={onClose} style={{background:'transparent',border:'none',color:'var(--text-muted)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',minHeight:'44px',minWidth:'44px'}}><Icon name="x" size={18}/></button>
+        </div>
+        <div style={{flex:1,overflowY:'auto',padding:'20px'}}>
+          <div style={{display:'flex',gap:'8px',marginBottom:'20px',flexWrap:'wrap'}}>
+            <span style={{fontSize:'12px',fontWeight:700,padding:'4px 12px',borderRadius:'10px',background:ss.bg,color:ss.color}}>{ss.label.toUpperCase()}</span>
+            {report.injuries&&<span style={{fontSize:'12px',fontWeight:700,padding:'4px 12px',borderRadius:'10px',background:'var(--color-danger-bg)',color:'var(--color-danger)'}}>INJURIES</span>}
+            {report.weapons_involved&&<span style={{fontSize:'12px',fontWeight:700,padding:'4px 12px',borderRadius:'10px',background:'rgba(201,162,39,0.12)',color:'var(--accent)'}}>WEAPONS</span>}
+            {report.police_notified&&<span style={{fontSize:'12px',fontWeight:700,padding:'4px 12px',borderRadius:'10px',background:'var(--color-info-bg)',color:'var(--color-info)'}}>POLICE</span>}
+          </div>
+          <DSec title="Incident Details">
+            <DR l="CAD Number" v={report.cad_number}/>
+            <DR l="Type" v={report.incident_type}/>
+            <DR l="Occurred" v={report.occurred_at?new Date(report.occurred_at).toLocaleString():null}/>
+            <DR l="Location" v={report.location_detail}/>
+            <DR l="Subject" v={report.subject_name}/>
+          </DSec>
+          <DSec title="Narrative">
+            <p style={{fontSize:'13px',color:'var(--text-primary)',lineHeight:1.7,margin:0,whiteSpace:'pre-wrap'}}>{report.narrative}</p>
+          </DSec>
+          {(report.injuries||report.property_damage||report.weapons_involved||report.police_notified)&&(
+            <DSec title="Additional Details">
+              {report.injuries&&<DR l="Injuries" v={report.injury_detail||'Yes'}/>}
+              {report.property_damage&&<DR l="Property Damage" v={report.damage_detail||'Yes'}/>}
+              {report.weapons_involved&&<DR l="Weapons" v={report.weapons_detail||'Yes'}/>}
+              {report.police_notified&&<DR l="Police Report #" v={report.police_report_number||'Notified'}/>}
+              {report.witnesses&&<DR l="Witnesses" v={report.witnesses}/>}
+              {report.evidence&&<DR l="Evidence" v={report.evidence}/>}
+            </DSec>
+          )}
+          <DSec title="Timeline">
+            <DR l="Submitted" v={report.submitted_at?new Date(report.submitted_at).toLocaleString():null}/>
+            <DR l="Reviewed" v={report.reviewed_at?new Date(report.reviewed_at).toLocaleString():null}/>
+            <DR l="Approved" v={report.approved_at?new Date(report.approved_at).toLocaleString():null}/>
+            <DR l="Retain Until" v={report.retain_until}/>
+          </DSec>
+          {report.reviewer_notes&&<DSec title="Reviewer Notes"><p style={{fontSize:'13px',color:'var(--text-secondary)',lineHeight:1.5,margin:0}}>{report.reviewer_notes}</p></DSec>}
+          {report.status==='submitted'&&canReview&&(
+            <DSec title="Review Notes">
+              <textarea value={notes} onChange={e=>setNotes(e.target.value)} rows={3} placeholder="Optional notes for the officer..." style={{width:'100%',padding:'10px 12px',background:'var(--bg-input)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:'var(--text-primary)',fontSize:'13px',resize:'vertical',lineHeight:1.5,boxSizing:'border-box',outline:'none'}}/>
+            </DSec>
+          )}
+          {showVoid&&<DSec title="Void Reason">
+            <textarea value={voidReason} onChange={e=>setVoidReason(e.target.value)} rows={2} placeholder="Reason for voiding..." style={{width:'100%',padding:'10px 12px',background:'var(--bg-input)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:'var(--text-primary)',fontSize:'13px',resize:'vertical',lineHeight:1.5,boxSizing:'border-box',outline:'none'}}/>
+            <div style={{display:'flex',gap:'8px',marginTop:'8px'}}>
+              <button onClick={()=>setShowVoid(false)} style={{flex:1,height:'40px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:'var(--text-secondary)',cursor:'pointer',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700}}>CANCEL</button>
+              <button onClick={()=>updateStatus('void')} disabled={saving||!voidReason.trim()} style={{flex:1,height:'40px',background:'var(--color-danger-bg)',border:'1px solid rgba(224,85,85,0.3)',borderRadius:'var(--radius-md)',color:'var(--color-danger)',cursor:'pointer',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700}}>CONFIRM VOID</button>
+            </div>
+          </DSec>}
+        </div>
+        <div style={{padding:'16px 20px',borderTop:'1px solid var(--border)',display:'flex',flexDirection:'column',gap:'8px',flexShrink:0}}>
+          {report.status==='submitted'&&canReview&&<button onClick={()=>updateStatus('reviewed')} disabled={saving} style={{height:'44px',background:'var(--color-warning-bg)',border:'1px solid rgba(232,148,58,0.3)',borderRadius:'var(--radius-md)',color:'var(--color-warning)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}><Icon name="eye" size={15}/>MARK REVIEWED</button>}
+          {report.status==='reviewed'&&canApprove&&<button onClick={()=>updateStatus('approved')} disabled={saving} style={{height:'44px',background:'var(--color-success-bg)',border:'1px solid rgba(58,170,106,0.3)',borderRadius:'var(--radius-md)',color:'var(--color-success)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}><Icon name="check" size={15}/>APPROVE REPORT</button>}
+          {canVoid&&report.status!=='void'&&!showVoid&&<button onClick={()=>setShowVoid(true)} style={{height:'44px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:'var(--text-muted)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}><Icon name="x" size={15}/>VOID REPORT</button>}
+        </div>
+      </div>
+    </>
+  )
+}
+
+function GQ({label,hint,value,onChange,rows=2}) {
+  return <div><label style={{fontSize:'11px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',display:'block',marginBottom:'3px'}}>{label}</label>{hint&&<div style={{fontSize:'11px',color:'var(--text-muted)',marginBottom:'6px',fontStyle:'italic'}}>{hint}</div>}<textarea value={value} onChange={e=>onChange(e.target.value)} rows={rows} style={{width:'100%',padding:'10px 12px',background:'var(--bg-input)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:'var(--text-primary)',fontSize:'13px',resize:'vertical',lineHeight:1.5,boxSizing:'border-box',outline:'none'}}/></div>
+}
+
+function BF({label,checked,onChange}) {
+  return <div style={{display:'flex',alignItems:'center',gap:'12px',padding:'10px 12px',background:'var(--bg-card)',borderRadius:'var(--radius-md)',border:'1px solid var(--border-subtle)'}}><input type="checkbox" checked={checked} onChange={e=>onChange(e.target.checked)} style={{width:'18px',height:'18px',accentColor:'var(--accent)',cursor:'pointer'}}/><span style={{fontSize:'13px',color:'var(--text-primary)'}}>{label}</span></div>
+}
+
+function DSec({title,children}) {
+  return <div style={{marginBottom:'20px'}}><div style={{fontSize:'10px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1.5px',fontFamily:'var(--font-condensed)',marginBottom:'10px',paddingBottom:'6px',borderBottom:'1px solid var(--border)'}}>{title}</div><div style={{display:'flex',flexDirection:'column',gap:'8px'}}>{children}</div></div>
+}
+
+function DR({l,v}) {
+  if(!v) return null
+  return <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',fontSize:'13px',gap:'12px'}}><span style={{color:'var(--text-muted)',flexShrink:0}}>{l}</span><span style={{color:'var(--text-primary)',fontWeight:500,textAlign:'right',maxWidth:'70%',wordBreak:'break-word'}}>{v}</span></div>
+}
