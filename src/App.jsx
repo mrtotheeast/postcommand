@@ -8,6 +8,7 @@ import Scheduling from './pages/scheduling/Scheduling'
 import Timesheets from './pages/timesheets/Timesheets'
 import ClockIn from './pages/clockin/clockin'
 import Incidents from './pages/incidents/Incidents'
+import Messaging from './pages/messaging/Messaging'
 
 
 function ComingSoon({ name }) {
@@ -36,7 +37,7 @@ export default function App() {
       <Route path="/hr"         element={<ProtectedRoute><ComingSoon name="HR & Documents" /></ProtectedRoute>} />
       <Route path="/invoices"   element={<ProtectedRoute><ComingSoon name="Invoices" /></ProtectedRoute>} />
       <Route path="/uniforms"   element={<ProtectedRoute><ComingSoon name="Uniforms" /></ProtectedRoute>} />
-      <Route path="/messaging"  element={<ProtectedRoute><ComingSoon name="Messaging" /></ProtectedRoute>} />
+      <Route path="/messaging" element={<ProtectedRoute><Messaging /></ProtectedRoute>} />
       <Route path="/settings"   element={<ProtectedRoute><ComingSoon name="Settings" /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
