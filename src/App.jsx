@@ -8,6 +8,7 @@ import Scheduling from './pages/scheduling/Scheduling'
 import ClockIn from './pages/clockin/ClockIn'
 import Incidents from './pages/incidents/Incidents'
 
+
 function ComingSoon({ name }) {
   return <div style={{padding:'40px 24px',fontFamily:'var(--font-display)',fontSize:'24px',letterSpacing:'2px',color:'var(--accent)'}}>{name.toUpperCase()} — COMING SOON</div>
 }
@@ -27,7 +28,7 @@ export default function App() {
       <Route path="/personnel"  element={<ProtectedRoute><Personnel /></ProtectedRoute>} />
       <Route path="/scheduling" element={<ProtectedRoute><Scheduling /></ProtectedRoute>} />
       <Route path="/timesheets" element={<ProtectedRoute><ComingSoon name="Timesheets" /></ProtectedRoute>} />
-      <Route path="/incidents" element={<ProtectedRoute><ComingSoon name="Incident Reports" /></ProtectedRoute>} />
+      <Route path="/incidents" element={<ProtectedRoute><Incidents /></ProtectedRoute>} />
       <Route path="/map"        element={<ProtectedRoute><ComingSoon name="Live Map" /></ProtectedRoute>} />
       <Route path="/patrol"     element={<ProtectedRoute><ComingSoon name="Patrol Logs" /></ProtectedRoute>} />
       <Route path="/clockin" element={<ProtectedRoute><ClockIn /></ProtectedRoute>} />
