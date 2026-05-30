@@ -5,6 +5,7 @@ import Login from './pages/auth/Login'
 import Dashboard from './pages/dashboard/Dashboard'
 import Personnel from './pages/personnel/Personnel'
 import Scheduling from './pages/scheduling/Scheduling'
+import Timesheets from './pages/timesheets/Timesheets'
 import ClockIn from './pages/clockin/clockin'
 import Incidents from './pages/incidents/Incidents'
 
@@ -27,7 +28,7 @@ export default function App() {
       <Route path="/dashboard"  element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/personnel"  element={<ProtectedRoute><Personnel /></ProtectedRoute>} />
       <Route path="/scheduling" element={<ProtectedRoute><Scheduling /></ProtectedRoute>} />
-      <Route path="/timesheets" element={<ProtectedRoute><ComingSoon name="Timesheets" /></ProtectedRoute>} />
+      <Route path="/timesheets" element={<ProtectedRoute><Timesheets /></ProtectedRoute>} />
       <Route path="/incidents" element={<ProtectedRoute><Incidents /></ProtectedRoute>} />
       <Route path="/map"        element={<ProtectedRoute><ComingSoon name="Live Map" /></ProtectedRoute>} />
       <Route path="/patrol"     element={<ProtectedRoute><ComingSoon name="Patrol Logs" /></ProtectedRoute>} />
