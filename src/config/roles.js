@@ -6,6 +6,7 @@ export function atLeast(role, minRole) { return (ROLE_LEVELS[role]??0) >= (ROLE_
 export const NAV_ITEMS = [
   { section:'Operations', items:[
     { id:'dashboard', label:'Dashboard', path:'/dashboard', icon:'grid', roles:['super_admin','chief','lieutenant','sergeant','corporal','officer','hr','accounting','office_staff','client'] },
+    { id:'training', label:'Training', path:'/training', icon:'book-open', badge:true, roles:['super_admin','chief','lieutenant','sergeant','corporal','officer','hr','office_staff'] },
     { id:'personnel', label:'Personnel', path:'/personnel', icon:'users', roles:['super_admin','chief','lieutenant','sergeant','hr','office_staff'] },
     { id:'scheduling', label:'Scheduling', path:'/scheduling', icon:'calendar', roles:['super_admin','chief','lieutenant','sergeant','corporal','officer','office_staff'] },
     { id:'timesheets', label:'Timesheets', path:'/timesheets', icon:'clock', badge:true, roles:['super_admin','chief','lieutenant','sergeant','corporal','officer','hr','accounting'] },
@@ -15,12 +16,16 @@ export const NAV_ITEMS = [
     { id:'map', label:'Live Map', path:'/map', icon:'map-pin', roles:['super_admin','chief','lieutenant'] },
     { id:'patrol', label:'Patrol Logs', path:'/patrol', icon:'activity', roles:['super_admin','chief','lieutenant','sergeant','corporal','officer'] },
     { id:'clockin', label:'Clock In / Out', path:'/clockin', icon:'log-in', roles:['sergeant','corporal','officer','office_staff'] },
+    { id:'sos', label:'SOS', path:'/sos', icon:'alert-triangle', badge:true, roles:['super_admin','chief','lieutenant','sergeant','corporal','officer','office_staff'] },
   ]},
   { section:'Admin', items:[
+    { id:'sites', label:'Site Management', path:'/sites', icon:'map', roles:['super_admin','chief','lieutenant','office_staff'] },
     { id:'hr', label:'HR & Documents', path:'/hr', icon:'star', roles:['super_admin','chief','lieutenant','hr','office_staff'] },
     { id:'invoices', label:'Invoices', path:'/invoices', icon:'credit-card', roles:['super_admin','chief','accounting'] },
     { id:'uniforms', label:'Uniforms', path:'/uniforms', icon:'shield', roles:['super_admin','chief','lieutenant','sergeant','corporal','officer','office_staff'] },
+    { id:'reports',  label:'Reports',  path:'/reports',  icon:'bar-chart-2', roles:['super_admin','chief','lieutenant','hr','accounting'] },
     { id:'messaging', label:'Messaging', path:'/messaging', icon:'message-circle', badge:true, roles:['super_admin','chief','lieutenant','sergeant','corporal','officer','hr','accounting','office_staff'] },
+    { id:'billing',  label:'Billing',  path:'/billing',  icon:'credit-card', roles:['super_admin'] },
     { id:'settings', label:'Settings', path:'/settings', icon:'settings', roles:['super_admin','chief'] },
   ]},
 ]

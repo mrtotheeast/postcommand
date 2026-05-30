@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
 import { ROLE_LABELS, atLeast } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
+import { emailSchedulePublished } from '../../lib/email'
 
 const DAYS_SHORT = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
@@ -37,6 +38,7 @@ export default function Scheduling() {
   const [filterTitle,setFilterTitle] = useState('all')
   const [mobileEmpIdx,setMobileEmpIdx] = useState(0)
   const [isMobile,setIsMobile] = useState(window.innerWidth<768)
+  const [mainTab,setMainTab] = useState('schedule')
   const canCreate  = atLeast(profile?.role,'sergeant')
   const canApprove = atLeast(profile?.role,'lieutenant')
   const canPublish = atLeast(profile?.role,'lieutenant')
@@ -101,13 +103,20 @@ export default function Scheduling() {
           </div>
           <div style={{display:'flex',alignItems:'center',gap:'6px',flexWrap:'wrap'}}>
             <div style={{display:'flex',gap:'2px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-sm)',padding:'3px'}}>
+              {[['schedule','Schedule'],['swaps','Swaps'],['availability','Availability']].map(([v,l])=>(
+                <button key={v} onClick={()=>setMainTab(v)} style={{padding:'0 10px',minHeight:'36px',border:'none',borderRadius:'4px',background:mainTab===v?'var(--accent-bg)':'transparent',color:mainTab===v?'var(--accent)':'var(--text-muted)',cursor:'pointer',fontSize:'10px',fontFamily:'var(--font-condensed)',letterSpacing:'1px',fontWeight:mainTab===v?700:400}}>
+                  {l.toUpperCase()}
+                </button>
+              ))}
+            </div>
+            {mainTab==='schedule'&&(<div style={{display:'flex',gap:'2px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-sm)',padding:'3px'}}>
               {['week','biweek','month','year'].map(v=>(
                 <button key={v} onClick={()=>setViewMode(v)} style={{padding:'0 10px',minHeight:'36px',border:'none',borderRadius:'4px',background:viewMode===v?'var(--accent-bg)':'transparent',color:viewMode===v?'var(--accent)':'var(--text-muted)',cursor:'pointer',fontSize:'10px',fontFamily:'var(--font-condensed)',letterSpacing:'1px'}}>
                   {v==='biweek'?'2 WK':v.toUpperCase()}
                 </button>
               ))}
-            </div>
-            {canCreate&&<button onClick={()=>setShowCreate(true)} style={{display:'flex',alignItems:'center',gap:'6px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-sm)',padding:'0 14px',minHeight:'36px',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,letterSpacing:'1px',cursor:'pointer'}}><Icon name="plus" size={14}/>ADD SHIFT</button>}
+            </div>)}
+            {canCreate&&mainTab==='schedule'&&<button onClick={()=>setShowCreate(true)} style={{display:'flex',alignItems:'center',gap:'6px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-sm)',padding:'0 14px',minHeight:'36px',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,letterSpacing:'1px',cursor:'pointer'}}><Icon name="plus" size={14}/>ADD SHIFT</button>}
           </div>
         </div>
         <div style={{display:'flex',gap:'8px',flexWrap:'wrap',alignItems:'center'}}>
@@ -128,20 +137,33 @@ export default function Scheduling() {
         </div>
       </div>
 
-      {loading ? (
+      {mainTab==='swaps' && <SwapsPanel companyId={profile.company_id} profile={profile} employees={employees} shifts={shifts} canApprove={canApprove}/>}
+      {mainTab==='availability' && <AvailabilityPanel companyId={profile.company_id} profile={profile} employees={employees} canEdit={canCreate}/>}
+
+      {mainTab==='schedule' && loading ? (
         <div style={{padding:'16px 20px',display:'grid',gridTemplateColumns:viewMode==='year'?'repeat(auto-fill,minmax(200px,1fr))':'repeat(7,1fr)',gap:'8px'}}>
           {[...Array(viewMode==='year'?12:7)].map((_,i)=><div key={i} style={{height:'180px',borderRadius:'8px'}} className="skeleton"/>)}
         </div>
-      ) : viewMode==='year' ? (
+      ) : mainTab==='schedule' && viewMode==='year' ? (
         <YearView baseDate={baseDate} shifts={filteredShifts} today={today} onMonthClick={(m)=>{ const d=new Date(baseDate); d.setMonth(m); setBaseDate(d); setViewMode('month') }}/>
-      ) : viewMode==='month' ? (
+      ) : mainTab==='schedule' && viewMode==='month' ? (
         <MonthView baseDate={baseDate} today={today} shifts={filteredShifts} empName={empName} siteName={siteName} onSelect={setSelected} isMobile={isMobile} mobileEmpId={mobileEmp?.id}/>
-      ) : (
+      ) : mainTab==='schedule' ? (
         <MultiWeekView weeks={viewMode==='biweek'?2:1} baseDate={baseDate} today={today} shifts={filteredShifts} empName={empName} siteName={siteName} onSelect={setSelected} isMobile={isMobile} mobileEmpId={mobileEmp?.id}/>
-      )}
+      ) : null}
 
       {selected&&<ShiftDetail shift={selected} empName={empName} siteName={siteName} canApprove={canApprove} canPublish={canPublish} canCreate={canCreate} onClose={()=>setSelected(null)}
-        onStatusChange={async(id,status)=>{ await supabase.from('shift').update({status,...(status==='published'?{published_at:new Date().toISOString()}:{})}).eq('id',id); setSelected(null); loadAll() }}
+        onStatusChange={async(id,status)=>{
+          await supabase.from('shift').update({status,...(status==='published'?{published_at:new Date().toISOString()}:{})}).eq('id',id)
+          if(status==='published') {
+            const shift=shifts.find(s=>s.id===id)
+            if(shift) {
+              const {data:emp}=await supabase.from('employee').select('first_name,email').eq('id',shift.employee_id).single()
+              if(emp?.email) emailSchedulePublished({ to:emp.email, firstName:emp.first_name, shiftCount:1, period:new Date(shift.start_time).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'}) })
+            }
+          }
+          setSelected(null); loadAll()
+        }}
         onDelete={async(id)=>{ await supabase.from('shift').delete().eq('id',id); setSelected(null); loadAll() }}/>}
       {showCreate&&<CreateShiftModal employees={sortedEmployees} sites={sites} companyId={profile.company_id} createdBy={profile.id} onClose={()=>setShowCreate(false)} onSaved={()=>{setShowCreate(false);loadAll()}}/>}
     </div>
@@ -288,7 +310,38 @@ function CreateShiftModal({employees,sites,companyId,createdBy,onClose,onSaved})
   const [form,setForm]=useState({employee_id:'',site_id:'',date:today,sh:'08',sm:'00',eh:'16',em:'00',role:'officer',is_armed:false,notes:''})
   const [saving,setSaving]=useState(false)
   const [error,setError]=useState(null)
+  const [conflict,setConflict]=useState(null)  // null | { shiftId, startTime, endTime, siteName }
+  const [checkingConflict,setCheckingConflict]=useState(false)
   const set=(k,v)=>setForm(f=>({...f,[k]:v}))
+
+  // Check for conflicts whenever employee or time changes
+  useEffect(()=>{
+    if(!form.employee_id||!form.date) { setConflict(null); return }
+    const start=new Date(form.date+'T'+form.sh+':'+form.sm+':00')
+    const end=new Date(form.date+'T'+form.eh+':'+form.em+':00')
+    if(end<=start) { setConflict(null); return }
+    setCheckingConflict(true)
+    // Look for overlapping shifts for this employee on this date
+    supabase.from('shift')
+      .select('id,start_time,end_time,site_id')
+      .eq('company_id',companyId)
+      .eq('employee_id',form.employee_id)
+      .neq('status','cancelled')
+      .gte('start_time', new Date(form.date+'T00:00:00').toISOString())
+      .lte('start_time', new Date(form.date+'T23:59:59').toISOString())
+      .then(({data})=>{
+        const overlapping=(data||[]).find(s=>{
+          const sStart=new Date(s.start_time), sEnd=new Date(s.end_time)
+          return start < sEnd && end > sStart
+        })
+        if(overlapping){
+          const site=sites.find(s=>s.id===overlapping.site_id)
+          setConflict({ siteName:site?.name||'another site', startTime:new Date(overlapping.start_time).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'}), endTime:new Date(overlapping.end_time).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'}) })
+        } else { setConflict(null) }
+        setCheckingConflict(false)
+      })
+  },[form.employee_id,form.date,form.sh,form.sm,form.eh,form.em])
+
   async function save(){
     if(!form.employee_id||!form.site_id||!form.date){setError('Employee, site, and date are required.');return}
     setSaving(true);setError(null)
@@ -312,6 +365,10 @@ function CreateShiftModal({employees,sites,companyId,createdBy,onClose,onSaved})
       </div>
       <div style={{flex:1,overflowY:'auto',padding:'20px 24px',display:'flex',flexDirection:'column',gap:'14px'}}>
         {error&&<div style={{background:'var(--color-danger-bg)',border:'1px solid rgba(224,85,85,0.3)',borderRadius:'var(--radius-md)',padding:'10px 14px',fontSize:'13px',color:'var(--color-danger)'}}>{error}</div>}
+        {conflict&&<div style={{background:'var(--color-warning-bg)',border:'1px solid rgba(232,148,58,0.3)',borderRadius:'var(--radius-md)',padding:'10px 14px',fontSize:'13px',color:'var(--color-warning)',display:'flex',alignItems:'flex-start',gap:'8px'}}>
+          <Icon name="alert-triangle" size={15} color="var(--color-warning)"/>
+          <div><strong>Scheduling conflict:</strong> This officer already has a shift at {conflict.siteName} from {conflict.startTime} – {conflict.endTime} on this date. You can still create this shift.</div>
+        </div>}
         <div><label style={lbl}>Employee *</label><select value={form.employee_id} onChange={e=>set('employee_id',e.target.value)} style={inp}><option value="">Select employee...</option>{employees.map(e=><option key={e.id} value={e.id}>{e.last_name}, {e.first_name}{e.position_title?' — '+e.position_title:''}</option>)}</select></div>
         <div><label style={lbl}>Site *</label><select value={form.site_id} onChange={e=>set('site_id',e.target.value)} style={inp}><option value="">Select site...</option>{sites.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
         <div><label style={lbl}>Date *</label><input type="date" value={form.date} onChange={e=>set('date',e.target.value)} style={inp}/></div>
@@ -335,4 +392,222 @@ function CreateShiftModal({employees,sites,companyId,createdBy,onClose,onSaved})
 }
 
 function SD({title,children}){return <div style={{marginBottom:'20px'}}><div style={{fontSize:'10px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1.5px',fontFamily:'var(--font-condensed)',marginBottom:'10px',paddingBottom:'6px',borderBottom:'1px solid var(--border)'}}>{title}</div><div style={{display:'flex',flexDirection:'column',gap:'8px'}}>{children}</div></div>}
+
+// ── Swaps Panel ───────────────────────────────────────────────────────────────
+
+const SWAP_STATUS = { pending:{bg:'var(--color-warning-bg)',color:'var(--color-warning)',label:'Pending'}, approved:{bg:'var(--color-success-bg)',color:'var(--color-success)',label:'Approved'}, denied:{bg:'var(--color-danger-bg)',color:'var(--color-danger)',label:'Denied'} }
+
+function SwapsPanel({ companyId, profile, employees, shifts, canApprove }) {
+  const [swaps, setSwaps]   = useState([])
+  const [loading, setLoading] = useState(true)
+  const [showNew, setShowNew] = useState(false)
+  const [employee, setEmployee] = useState(null)
+  const [filter, setFilter] = useState('pending')
+
+  useEffect(() => { load() }, [companyId])
+  async function load() {
+    setLoading(true)
+    const [{ data: myEmp }, { data: swapData }] = await Promise.all([
+      supabase.from('employee').select('id').eq('user_id', profile.id).single(),
+      supabase.from('shift_swap_request').select('*').eq('company_id', companyId).order('created_at',{ascending:false}),
+    ])
+    setEmployee(myEmp); setSwaps(swapData||[]); setLoading(false)
+  }
+  async function updateStatus(id, status) {
+    await supabase.from('shift_swap_request').update({ status, reviewed_at:new Date().toISOString() }).eq('id', id); load()
+  }
+
+  const empMap  = Object.fromEntries(employees.map(e=>[e.id,`${e.first_name} ${e.last_name}`]))
+  const shiftMap = Object.fromEntries(shifts.map(s=>[s.id,s]))
+  const visible = swaps.filter(s => filter==='all' || s.status===filter)
+
+  const pill = (st) => { const m=SWAP_STATUS[st]||SWAP_STATUS.pending; return { display:'inline-flex',padding:'2px 8px',borderRadius:'10px',fontSize:'11px',fontWeight:700,fontFamily:'var(--font-condensed)',letterSpacing:'0.5px',...m } }
+  const btnS = (v='accent') => ({ display:'inline-flex',alignItems:'center',gap:'6px',background:v==='accent'?'var(--accent)':v==='ok'?'var(--color-success-bg)':'var(--color-danger-bg)',color:v==='accent'?'var(--text-inverse)':v==='ok'?'var(--color-success)':'var(--color-danger)',border:v==='accent'?'none':v==='ok'?'1px solid rgba(58,170,106,0.3)':'1px solid rgba(192,57,43,0.3)',borderRadius:'var(--radius-sm)',padding:'0 12px',height:'34px',fontFamily:'var(--font-condensed)',fontSize:'11px',fontWeight:700,cursor:'pointer' })
+
+  return (
+    <div style={{flex:1,overflowY:'auto',padding:'20px'}}>
+      <div style={{display:'flex',gap:'10px',marginBottom:'16px',flexWrap:'wrap',alignItems:'center'}}>
+        <div style={{display:'flex',gap:'2px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-sm)',padding:'3px'}}>
+          {[['pending','Pending'],['all','All']].map(([v,l])=>(<button key={v} onClick={()=>setFilter(v)} style={{padding:'0 12px',height:'32px',border:'none',borderRadius:'4px',background:filter===v?'var(--accent-bg)':'transparent',color:filter===v?'var(--accent)':'var(--text-muted)',cursor:'pointer',fontSize:'11px',fontFamily:'var(--font-condensed)',fontWeight:600}}>{l}</button>))}
+        </div>
+        <button style={{...btnS(),height:'40px',padding:'0 16px',fontSize:'12px'}} onClick={()=>setShowNew(true)}>+ REQUEST SWAP</button>
+      </div>
+      {loading ? <div style={{color:'var(--text-muted)',fontSize:'12px',fontFamily:'var(--font-condensed)',letterSpacing:'1px'}}>LOADING...</div> : visible.length===0 ? (
+        <div style={{textAlign:'center',padding:'40px',color:'var(--text-muted)',fontSize:'13px'}}>No swap requests found.</div>
+      ) : (
+        <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',overflow:'hidden'}}>
+          {visible.map((sw,i)=>{
+            const sh = shiftMap[sw.requester_shift_id]
+            const shT = shiftMap[sw.target_shift_id]
+            const st = SWAP_STATUS[sw.status]||SWAP_STATUS.pending
+            return (
+              <div key={sw.id} style={{display:'flex',alignItems:'center',gap:'14px',padding:'14px 18px',borderBottom:i<visible.length-1?'1px solid var(--border)':'none'}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-primary)',marginBottom:'2px'}}>
+                    {empMap[sw.requester_employee_id]||'—'} → {empMap[sw.target_employee_id]||'Any'}
+                  </div>
+                  <div style={{fontSize:'11px',color:'var(--text-muted)'}}>
+                    {sh ? `${new Date(sh.start_time).toLocaleDateString('en-US',{month:'short',day:'numeric'})} ${new Date(sh.start_time).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}` : 'My shift'}
+                    {shT ? ` ↔ ${new Date(shT.start_time).toLocaleDateString('en-US',{month:'short',day:'numeric'})}` : ''}
+                    {sw.notes ? ` · "${sw.notes}"` : ''}
+                  </div>
+                </div>
+                <span style={pill(sw.status)}>{st.label}</span>
+                {canApprove && sw.status==='pending' && (
+                  <div style={{display:'flex',gap:'6px'}}>
+                    <button style={btnS('ok')}   onClick={()=>updateStatus(sw.id,'approved')}><Icon name="check" size={11}/>APPROVE</button>
+                    <button style={btnS('deny')} onClick={()=>updateStatus(sw.id,'denied')}><Icon name="x" size={11}/>DENY</button>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+      {showNew && <SwapRequestModal companyId={companyId} employee={employee} shifts={shifts.filter(s=>s.employee_id===employee?.id)} employees={employees} allShifts={shifts} onClose={()=>setShowNew(false)} onSaved={()=>{setShowNew(false);load()}}/>}
+    </div>
+  )
+}
+
+function SwapRequestModal({ companyId, employee, shifts, employees, allShifts, onClose, onSaved }) {
+  const [form, setForm] = useState({ requester_shift_id:'', target_employee_id:'', target_shift_id:'', notes:'' })
+  const [saving, setSaving] = useState(false)
+  const inpS = { background:'var(--bg-input)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',padding:'10px 12px',fontSize:'13px',color:'var(--text-primary)',outline:'none',width:'100%',fontFamily:'var(--font-body)',cursor:'pointer' }
+  const lbl  = { fontSize:'11px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',marginBottom:'5px' }
+  const targetShifts = form.target_employee_id ? allShifts.filter(s=>s.employee_id===form.target_employee_id) : []
+  async function save() {
+    if (!form.requester_shift_id || !employee?.id) return
+    setSaving(true)
+    await supabase.from('shift_swap_request').insert({ company_id:companyId, requester_employee_id:employee.id, requester_shift_id:form.requester_shift_id, target_employee_id:form.target_employee_id||null, target_shift_id:form.target_shift_id||null, notes:form.notes||null, status:'pending' })
+    setSaving(false); onSaved()
+  }
+  const ov  = { position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:400,display:'flex',alignItems:'center',justifyContent:'center',padding:'20px' }
+  const mod = { background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-lg)',padding:'28px',width:'100%',maxWidth:'440px',boxShadow:'var(--shadow-modal)' }
+  const btn = { display:'inline-flex',alignItems:'center',gap:'8px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-sm)',padding:'0 22px',height:'44px',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer' }
+  const gho = { display:'inline-flex',alignItems:'center',gap:'8px',background:'transparent',color:'var(--text-secondary)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',padding:'0 18px',height:'44px',fontFamily:'var(--font-condensed)',fontSize:'13px',letterSpacing:'1px',cursor:'pointer' }
+  return (
+    <div style={ov} onClick={e=>{if(e.target===e.currentTarget)onClose()}}>
+      <div style={mod}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'20px'}}>
+          <div style={{fontFamily:'var(--font-display)',fontSize:'20px',letterSpacing:'1.5px',color:'var(--text-primary)'}}>REQUEST SWAP</div>
+          <button style={{background:'transparent',border:'none',color:'var(--text-muted)',cursor:'pointer',padding:'4px',display:'flex'}} onClick={onClose}><Icon name="x" size={18}/></button>
+        </div>
+        <div style={{marginBottom:'12px'}}><div style={lbl}>My Shift *</div>
+          <select style={inpS} value={form.requester_shift_id} onChange={e=>setForm(p=>({...p,requester_shift_id:e.target.value}))}>
+            <option value="">Select a shift...</option>
+            {shifts.map(s=><option key={s.id} value={s.id}>{new Date(s.start_time).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})} {new Date(s.start_time).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</option>)}
+          </select>
+        </div>
+        <div style={{marginBottom:'12px'}}><div style={lbl}>Swap With (optional)</div>
+          <select style={inpS} value={form.target_employee_id} onChange={e=>setForm(p=>({...p,target_employee_id:e.target.value,target_shift_id:''}))}>
+            <option value="">Any available officer</option>
+            {employees.filter(e=>e.id!==employee?.id).map(e=><option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>)}
+          </select>
+        </div>
+        {targetShifts.length>0&&<div style={{marginBottom:'12px'}}><div style={lbl}>Their Shift</div>
+          <select style={inpS} value={form.target_shift_id} onChange={e=>setForm(p=>({...p,target_shift_id:e.target.value}))}>
+            <option value="">Select...</option>
+            {targetShifts.map(s=><option key={s.id} value={s.id}>{new Date(s.start_time).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})} {new Date(s.start_time).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</option>)}
+          </select>
+        </div>}
+        <div style={{marginBottom:'20px'}}><div style={lbl}>Notes</div>
+          <input style={{...inpS,cursor:'text'}} value={form.notes} onChange={e=>setForm(p=>({...p,notes:e.target.value}))} placeholder="Reason for swap..." onFocus={e=>e.target.style.borderColor='var(--border-focus)'} onBlur={e=>e.target.style.borderColor='var(--border)'}/>
+        </div>
+        <div style={{display:'flex',gap:'10px'}}>
+          <button style={{...btn,opacity:(!form.requester_shift_id||saving)?0.6:1}} onClick={save} disabled={!form.requester_shift_id||saving}>{saving?'SUBMITTING...':'SUBMIT REQUEST'}</button>
+          <button style={gho} onClick={onClose}>CANCEL</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Availability Panel ────────────────────────────────────────────────────────
+
+const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
+
+function AvailabilityPanel({ companyId, profile, employees, canEdit }) {
+  const [avail, setAvail]     = useState([])
+  const [employee, setEmployee] = useState(null)
+  const [viewEmpId, setViewEmpId] = useState(null)
+  const [saving, setSaving]   = useState(false)
+  const [localAvail, setLocalAvail] = useState({})
+
+  useEffect(() => { load() }, [companyId])
+  async function load() {
+    const [{ data: myEmp }, { data: availData }] = await Promise.all([
+      supabase.from('employee').select('id').eq('user_id', profile.id).single(),
+      supabase.from('employee_availability').select('*').eq('company_id', companyId),
+    ])
+    setEmployee(myEmp)
+    if (!viewEmpId && myEmp) setViewEmpId(myEmp.id)
+    setAvail(availData||[])
+  }
+
+  useEffect(() => {
+    if (!viewEmpId) return
+    const empAvail = avail.filter(a=>a.employee_id===viewEmpId)
+    const m = {}
+    for (const a of empAvail) { m[a.day_of_week] = { is_available:a.is_available, start_time:a.start_time||'06:00', end_time:a.end_time||'22:00' } }
+    const full = {}
+    for (let d=0;d<7;d++) { full[d] = m[d] ?? { is_available:true, start_time:'06:00', end_time:'22:00' } }
+    setLocalAvail(full)
+  }, [viewEmpId, avail])
+
+  async function saveAvail() {
+    if (!viewEmpId) return
+    setSaving(true)
+    await supabase.from('employee_availability').delete().eq('company_id', companyId).eq('employee_id', viewEmpId)
+    await supabase.from('employee_availability').insert(
+      Object.entries(localAvail).map(([day,val]) => ({ company_id:companyId, employee_id:viewEmpId, day_of_week:parseInt(day), is_available:val.is_available, start_time:val.start_time, end_time:val.end_time }))
+    )
+    setSaving(false); load()
+  }
+
+  function toggle(day) { setLocalAvail(p=>({...p,[day]:{...p[day],is_available:!p[day]?.is_available}})) }
+  function setTime(day,field,val) { setLocalAvail(p=>({...p,[day]:{...p[day],[field]:val}})) }
+
+  const canEditThis = canEdit || (employee && viewEmpId===employee.id)
+  const empMap = Object.fromEntries(employees.map(e=>[e.id,`${e.first_name} ${e.last_name}`]))
+
+  return (
+    <div style={{flex:1,overflowY:'auto',padding:'20px'}}>
+      {canEdit && (
+        <div style={{marginBottom:'16px'}}>
+          <select style={{background:'var(--bg-input)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',padding:'10px 12px',fontSize:'13px',color:'var(--text-primary)',outline:'none',fontFamily:'var(--font-body)',cursor:'pointer'}} value={viewEmpId||''} onChange={e=>setViewEmpId(e.target.value)}>
+            {employees.map(e=><option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>)}
+          </select>
+        </div>
+      )}
+      <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',overflow:'hidden',marginBottom:'14px'}}>
+        {DAYS.map((day,i)=>{
+          const a = localAvail[i] || { is_available:true, start_time:'06:00', end_time:'22:00' }
+          return (
+            <div key={i} style={{display:'flex',alignItems:'center',gap:'14px',padding:'13px 18px',borderBottom:i<6?'1px solid var(--border)':'none',opacity:a.is_available?1:0.5}}>
+              <div style={{width:'100px',fontSize:'13px',color:'var(--text-primary)',fontFamily:'var(--font-condensed)',letterSpacing:'0.5px'}}>{day}</div>
+              <div style={{position:'relative',width:'44px',height:'24px',cursor:canEditThis?'pointer':'default',flexShrink:0}} onClick={()=>canEditThis&&toggle(i)} role="switch" aria-checked={a.is_available}>
+                <div style={{position:'absolute',inset:0,borderRadius:'12px',background:a.is_available?'var(--accent)':'var(--border)',transition:'background 200ms'}}/>
+                <div style={{position:'absolute',top:'2px',left:a.is_available?'22px':'2px',width:'20px',height:'20px',borderRadius:'50%',background:'#fff',boxShadow:'0 1px 4px rgba(0,0,0,0.3)',transition:'left 200ms'}}/>
+              </div>
+              {a.is_available ? (
+                <>
+                  <input type="time" value={a.start_time} onChange={e=>canEditThis&&setTime(i,'start_time',e.target.value)} disabled={!canEditThis} style={{background:'var(--bg-input)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',padding:'6px 10px',fontSize:'12px',color:'var(--text-primary)',outline:'none',width:'110px',fontFamily:'var(--font-body)'}}/>
+                  <span style={{fontSize:'12px',color:'var(--text-muted)'}}>to</span>
+                  <input type="time" value={a.end_time} onChange={e=>canEditThis&&setTime(i,'end_time',e.target.value)} disabled={!canEditThis} style={{background:'var(--bg-input)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',padding:'6px 10px',fontSize:'12px',color:'var(--text-primary)',outline:'none',width:'110px',fontFamily:'var(--font-body)'}}/>
+                </>
+              ) : (
+                <span style={{fontSize:'12px',color:'var(--text-muted)'}}>Unavailable</span>
+              )}
+            </div>
+          )
+        })}
+      </div>
+      {canEditThis && (
+        <button style={{display:'inline-flex',alignItems:'center',gap:'8px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-sm)',padding:'0 22px',height:'44px',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',opacity:saving?0.6:1}} onClick={saveAvail} disabled={saving}>
+          <Icon name="save" size={14}/>{saving?'SAVING...':'SAVE AVAILABILITY'}
+        </button>
+      )}
+    </div>
+  )
+}
 function SR({l,v}){if(!v)return null;return <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:'13px'}}><span style={{color:'var(--text-muted)'}}>{l}</span><span style={{color:'var(--text-primary)',fontWeight:500,textAlign:'right',maxWidth:'65%'}}>{v}</span></div>}

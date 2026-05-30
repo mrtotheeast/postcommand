@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
 import { ROLE_LABELS, atLeast } from '../../config/roles'
@@ -27,6 +27,7 @@ export default function Personnel() {
   const [filterStatus, setFilterStatus] = useState('all')
   const [selected, setSelected] = useState(null)
   const [view, setView] = useState('grid')
+  const [showImport, setShowImport] = useState(false)
   const canViewSensitive = atLeast(profile?.role, 'lieutenant')
   const canEdit = atLeast(profile?.role, 'chief')
 
@@ -69,7 +70,12 @@ export default function Personnel() {
           <h2 style={{fontFamily:'var(--font-display)',fontSize:'28px',letterSpacing:'2px',color:'var(--text-primary)',lineHeight:1}}>PERSONNEL</h2>
           <p style={{fontSize:'12px',color:'var(--text-muted)',marginTop:'4px'}}>{employees.length} total employees</p>
         </div>
-        {canEdit && <button style={{display:'flex',alignItems:'center',gap:'8px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-md)',padding:'0 20px',height:'44px',fontFamily:'var(--font-condensed)',fontSize:'14px',fontWeight:700,letterSpacing:'1px',cursor:'pointer'}}><Icon name="plus" size={16}/>ADD EMPLOYEE</button>}
+        {canEdit && (
+          <div style={{display:'flex',gap:'8px'}}>
+            <button style={{display:'flex',alignItems:'center',gap:'8px',background:'var(--bg-card)',color:'var(--text-secondary)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'0 16px',height:'44px',fontFamily:'var(--font-condensed)',fontSize:'13px',letterSpacing:'1px',cursor:'pointer'}} onClick={() => setShowImport(true)}><Icon name="upload" size={15}/>IMPORT CSV</button>
+            <button style={{display:'flex',alignItems:'center',gap:'8px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-md)',padding:'0 20px',height:'44px',fontFamily:'var(--font-condensed)',fontSize:'14px',fontWeight:700,letterSpacing:'1px',cursor:'pointer'}}><Icon name="plus" size={16}/>ADD EMPLOYEE</button>
+          </div>
+        )}
       </div>
 
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(130px,1fr))',gap:'10px',marginBottom:'20px'}}>
@@ -132,7 +138,144 @@ export default function Personnel() {
         </div>
       )}
 
-      {selected && <EmpDetail emp={selected} canViewSensitive={canViewSensitive} canEdit={canEdit} onClose={()=>setSelected(null)}/>}
+      {selected && <EmpDetail emp={selected} canViewSensitive={canViewSensitive} canEdit={canEdit} onClose={()=>setSelected(null)} onRefresh={loadEmployees}/>}
+      {showImport && <CSVImportModal companyId={profile.company_id} onClose={() => setShowImport(false)} onImported={() => { setShowImport(false); loadEmployees() }} />}
+    </div>
+  )
+}
+
+// ── CSV Import Modal ──────────────────────────────────────────────────────────
+
+const CSV_FIELDS = ['first_name','last_name','email','phone_number','role','position_title','status','employment_type']
+const VALID_ROLES = ['officer','corporal','sergeant','lieutenant','chief','hr','accounting','office_staff','client']
+
+function parseCSV(text) {
+  const lines = text.trim().split('\n').map(l => l.trim()).filter(Boolean)
+  if (lines.length < 2) return { error:'File must have a header row and at least one data row.' }
+  const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/\s+/g,'_').replace(/[^a-z_]/g,''))
+  const rows = []
+  for (let i = 1; i < lines.length; i++) {
+    const vals = lines[i].split(',').map(v => v.trim().replace(/^"|"$/g,''))
+    const row = {}
+    headers.forEach((h,j) => { row[h] = vals[j] || '' })
+    rows.push(row)
+  }
+  return { headers, rows }
+}
+
+function CSVImportModal({ companyId, onClose, onImported }) {
+  const fileRef   = useRef(null)
+  const [preview, setPreview] = useState(null)
+  const [error, setError]     = useState(null)
+  const [importing, setImporting] = useState(false)
+  const [result, setResult]   = useState(null)
+
+  function handleFile(e) {
+    const file = e.target.files[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = ev => {
+      const parsed = parseCSV(ev.target.result)
+      if (parsed.error) { setError(parsed.error); setPreview(null); return }
+      setError(null)
+      setPreview(parsed)
+    }
+    reader.readAsText(file)
+  }
+
+  async function doImport() {
+    if (!preview?.rows?.length) return
+    setImporting(true)
+    let success = 0, failed = 0
+    for (const row of preview.rows) {
+      if (!row.first_name || !row.last_name) { failed++; continue }
+      const role = VALID_ROLES.includes(row.role) ? row.role : 'officer'
+      const { error } = await supabase.from('employee').insert({
+        company_id: companyId,
+        first_name: row.first_name,
+        last_name:  row.last_name,
+        email:      row.email || null,
+        phone_number: row.phone_number || null,
+        role,
+        position_title: row.position_title || null,
+        status:     ['active','inactive','terminated','probation'].includes(row.status) ? row.status : 'active',
+        employment_type: ['full_time','part_time','contract'].includes(row.employment_type) ? row.employment_type : 'full_time',
+        has_app_access: false,
+        invitation_status: 'not_invited',
+      })
+      if (error) failed++; else success++
+    }
+    setImporting(false)
+    setResult({ success, failed })
+  }
+
+  const ov  = { position:'fixed', inset:0, background:'rgba(0,0,0,0.65)', zIndex:400, display:'flex', alignItems:'flex-start', justifyContent:'center', padding:'32px 16px', overflowY:'auto' }
+  const mod = { background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-lg)', padding:'28px', width:'100%', maxWidth:'700px', boxShadow:'var(--shadow-modal)', flexShrink:0 }
+  const inp = { background:'var(--bg-input)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', padding:'10px 12px', fontSize:'13px', color:'var(--text-primary)', outline:'none', width:'100%', fontFamily:'var(--font-body)' }
+  const btn = { display:'inline-flex', alignItems:'center', gap:'8px', background:'var(--accent)', color:'var(--text-inverse)', border:'none', borderRadius:'var(--radius-sm)', padding:'0 22px', height:'44px', fontFamily:'var(--font-condensed)', fontSize:'13px', fontWeight:700, letterSpacing:'1px', cursor:'pointer', transition:'opacity 150ms ease' }
+  const gho = { display:'inline-flex', alignItems:'center', gap:'8px', background:'transparent', color:'var(--text-secondary)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', padding:'0 18px', height:'44px', fontFamily:'var(--font-condensed)', fontSize:'13px', letterSpacing:'1px', cursor:'pointer' }
+
+  return (
+    <div style={ov} onClick={e => { if (e.target===e.currentTarget) onClose() }}>
+      <div style={mod}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'20px' }}>
+          <div style={{ fontFamily:'var(--font-display)', fontSize:'22px', letterSpacing:'1.5px', color:'var(--text-primary)' }}>IMPORT EMPLOYEES</div>
+          <button style={{ background:'transparent', border:'none', color:'var(--text-muted)', cursor:'pointer', padding:'4px', display:'flex' }} onClick={onClose}><Icon name="x" size={18}/></button>
+        </div>
+
+        {result ? (
+          <div style={{ textAlign:'center', padding:'20px 0' }}>
+            <Icon name="check-circle" size={40} color="var(--color-success)" />
+            <div style={{ fontFamily:'var(--font-display)', fontSize:'24px', letterSpacing:'2px', color:'var(--text-primary)', margin:'12px 0 6px' }}>IMPORT COMPLETE</div>
+            <div style={{ fontSize:'14px', color:'var(--text-secondary)' }}>{result.success} employees imported{result.failed > 0 ? `, ${result.failed} skipped (missing name)` : ''}.</div>
+            <button style={{ ...btn, marginTop:'24px' }} onClick={onImported}>DONE</button>
+          </div>
+        ) : (
+          <>
+            <div style={{ background:'var(--bg-surface)', borderRadius:'var(--radius-sm)', padding:'14px 16px', marginBottom:'18px', fontSize:'12px', color:'var(--text-muted)', lineHeight:1.6 }}>
+              CSV must have a header row. Recognized columns: <strong style={{ color:'var(--text-secondary)' }}>{CSV_FIELDS.join(', ')}</strong>. First/last name required. Role must be one of: {VALID_ROLES.join(', ')}.
+            </div>
+
+            <div style={{ marginBottom:'16px' }}>
+              <input ref={fileRef} type="file" accept=".csv,text/csv" onChange={handleFile} style={{ display:'none' }} />
+              <button style={{ ...gho, width:'100%', justifyContent:'center', borderStyle:'dashed' }} onClick={() => fileRef.current?.click()}>
+                <Icon name="upload" size={15} />CHOOSE CSV FILE
+              </button>
+            </div>
+
+            {error && <div style={{ fontSize:'13px', color:'var(--color-danger)', marginBottom:'14px', padding:'10px 12px', background:'var(--color-danger-bg)', borderRadius:'var(--radius-sm)' }}>{error}</div>}
+
+            {preview && (
+              <>
+                <div style={{ fontSize:'12px', color:'var(--color-success)', marginBottom:'12px' }}>
+                  {preview.rows.length} rows parsed · Columns: {preview.headers.join(', ')}
+                </div>
+                <div style={{ border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', overflow:'auto', maxHeight:'260px', marginBottom:'18px' }}>
+                  <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'12px' }}>
+                    <thead>
+                      <tr>{preview.headers.slice(0,7).map(h => <th key={h} style={{ padding:'7px 10px', textAlign:'left', fontSize:'10px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.5px', fontFamily:'var(--font-condensed)', borderBottom:'1px solid var(--border)', background:'var(--bg-surface)' }}>{h}</th>)}</tr>
+                    </thead>
+                    <tbody>
+                      {preview.rows.slice(0,10).map((row,i) => (
+                        <tr key={i} style={{ borderBottom:'1px solid var(--border)' }}>
+                          {preview.headers.slice(0,7).map(h => <td key={h} style={{ padding:'7px 10px', color: (h==='first_name'||h==='last_name')&&!row[h] ? 'var(--color-danger)' : 'var(--text-secondary)' }}>{row[h]||<span style={{color:'var(--text-muted)'}}>—</span>}</td>)}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {preview.rows.length > 10 && <div style={{ padding:'8px 12px', fontSize:'11px', color:'var(--text-muted)', borderTop:'1px solid var(--border)' }}>+{preview.rows.length-10} more rows</div>}
+                </div>
+                <div style={{ display:'flex', gap:'10px' }}>
+                  <button style={{ ...btn, opacity:importing?0.6:1 }} onClick={doImport} disabled={importing}>
+                    <Icon name="upload" size={14} />{importing ? `IMPORTING...` : `IMPORT ${preview.rows.length} EMPLOYEES`}
+                  </button>
+                  <button style={gho} onClick={onClose}>CANCEL</button>
+                </div>
+              </>
+            )}
+          </>
+        )}
+      </div>
     </div>
   )
 }
@@ -189,11 +332,38 @@ function EmpRow({emp,ini,isLast,onClick}) {
   )
 }
 
-function EmpDetail({emp,canViewSensitive,canEdit,onClose}) {
+function EmpDetail({emp,canViewSensitive,canEdit,onClose,onRefresh}) {
+  const [editing,setEditing]  = useState(false)
+  const [inviting,setInviting] = useState(false)
+  const [inviteMsg,setInviteMsg] = useState(null)
   const rc=ROLE_COLORS[emp.role]||ROLE_COLORS.officer
   const sc=STATUS_COLORS[emp.status]||STATUS_COLORS.inactive
   const ini=`${emp.first_name?.[0]??''}${emp.last_name?.[0]??''}`.toUpperCase()
   const fmt=d=>d?new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—'
+  const canInvite = canEdit && emp.email && !emp.has_app_access
+
+  async function sendInvite() {
+    if (!emp.email) return
+    setInviting(true); setInviteMsg(null)
+    try {
+      const tempPass = Math.random().toString(36).slice(2,10)+'Aa1!'
+      const { data, error } = await supabase.auth.signUp({ email:emp.email, password:tempPass, options:{ data:{ first_name:emp.first_name, last_name:emp.last_name } } })
+      if (error) throw error
+      const userId = data?.user?.id
+      if (userId) {
+        await supabase.from('user_profile').upsert({ id:userId, first_name:emp.first_name, last_name:emp.last_name, email:emp.email, phone:emp.phone_number, role:emp.role, company_id:emp.company_id, company_slug:emp.company_slug||'' })
+        await supabase.from('employee').update({ user_id:userId, has_app_access:true, invitation_status:'invited' }).eq('id',emp.id)
+      }
+      setInviteMsg({ ok:true, text:`Invite sent to ${emp.email}. They'll receive an email to confirm and set their password.` })
+      onRefresh?.()
+    } catch(e) {
+      setInviteMsg({ ok:false, text: e.message.includes('already registered') ? 'This email already has an account.' : e.message })
+    }
+    setInviting(false)
+  }
+
+  if (editing) return <EmpEditModal emp={emp} onClose={()=>setEditing(false)} onSaved={()=>{setEditing(false);onRefresh?.();onClose()}} />
+
   return (
     <>
       <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:100,backdropFilter:'blur(2px)'}}/>
@@ -217,6 +387,11 @@ function EmpDetail({emp,canViewSensitive,canEdit,onClose}) {
           </div>
         </div>
         <div style={{padding:'20px',flex:1}}>
+          {inviteMsg && (
+            <div style={{padding:'10px 14px',borderRadius:'var(--radius-sm)',marginBottom:'16px',fontSize:'12px',lineHeight:1.5,background:inviteMsg.ok?'var(--color-success-bg)':'var(--color-danger-bg)',color:inviteMsg.ok?'var(--color-success)':'var(--color-danger)',border:`1px solid ${inviteMsg.ok?'rgba(58,170,106,0.3)':'rgba(192,57,43,0.3)'}`}}>
+              {inviteMsg.text}
+            </div>
+          )}
           <Sec title="Contact">
             {canViewSensitive&&emp.email&&<R label="Email" value={emp.email}/>}
             {canViewSensitive&&emp.phone_number&&<R label="Phone" value={emp.phone_number}/>}
@@ -229,8 +404,8 @@ function EmpDetail({emp,canViewSensitive,canEdit,onClose}) {
             {emp.terminated_date&&<R label="Terminated" value={fmt(emp.terminated_date)} color="var(--color-danger)"/>}
           </Sec>
           <Sec title="Access">
-            <R label="App Access" value={emp.has_app_access?'Yes':'No'} color={emp.has_app_access?'var(--color-success)':'var(--text-muted)'}/>
-            {emp.invitation_status&&<R label="Invitation" value={emp.invitation_status}/>}
+            <R label="App Access" value={emp.has_app_access?'Active':'No access'} color={emp.has_app_access?'var(--color-success)':'var(--text-muted)'}/>
+            {emp.invitation_status&&<R label="Invitation" value={emp.invitation_status.replace('_',' ')}/>}
             <R label="Armed Officer" value={emp.is_armed?'Yes':'No'} color={emp.is_armed?'var(--accent)':'var(--text-muted)'}/>
           </Sec>
           {canViewSensitive&&emp.emergency_contact_name&&(
@@ -240,13 +415,118 @@ function EmpDetail({emp,canViewSensitive,canEdit,onClose}) {
               {emp.emergency_contact_relation&&<R label="Relation" value={emp.emergency_contact_relation}/>}
             </Sec>
           )}
+          {emp.notes&&<Sec title="Notes"><div style={{fontSize:'13px',color:'var(--text-secondary)',lineHeight:1.6}}>{emp.notes}</div></Sec>}
         </div>
         {canEdit&&(
-          <div style={{padding:'16px 20px',borderTop:'1px solid var(--border)',display:'flex',gap:'10px',flexShrink:0}}>
-            <button style={{flex:1,height:'44px',background:'var(--accent-bg)',border:'1px solid var(--accent-border)',borderRadius:'var(--radius-md)',color:'var(--accent)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}><Icon name="edit" size={15}/>EDIT</button>
-            <button style={{flex:1,height:'44px',background:'var(--color-danger-bg)',border:'1px solid rgba(224,85,85,0.3)',borderRadius:'var(--radius-md)',color:'var(--color-danger)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}><Icon name="flag" size={15}/>ISSUE</button>
+          <div style={{padding:'16px 20px',borderTop:'1px solid var(--border)',display:'flex',gap:'8px',flexWrap:'wrap',flexShrink:0}}>
+            <button onClick={()=>setEditing(true)} style={{flex:1,height:'44px',background:'var(--accent-bg)',border:'1px solid var(--accent-border)',borderRadius:'var(--radius-md)',color:'var(--accent)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}><Icon name="edit-2" size={15}/>EDIT</button>
+            {canInvite&&<button onClick={sendInvite} disabled={inviting} style={{flex:1,height:'44px',background:'var(--color-success-bg)',border:'1px solid rgba(58,170,106,0.3)',borderRadius:'var(--radius-md)',color:'var(--color-success)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px',opacity:inviting?0.6:1}}><Icon name="mail" size={15}/>{inviting?'SENDING...':'INVITE'}</button>}
           </div>
         )}
+      </div>
+    </>
+  )
+}
+
+function EmpEditModal({ emp, onClose, onSaved }) {
+  const ROLES_LIST = ['officer','corporal','sergeant','lieutenant','chief','hr','accounting','office_staff']
+  const STATUS_LIST = ['active','inactive','probation','suspended','terminated']
+  const EMP_TYPES  = ['full_time','part_time','contract','1099']
+  const [form, setForm] = useState({
+    first_name: emp.first_name||'', last_name: emp.last_name||'', middle_name: emp.middle_name||'',
+    email: emp.email||'', phone_number: emp.phone_number||'', position_title: emp.position_title||'',
+    role: emp.role||'officer', status: emp.status||'active', employment_type: emp.employment_type||'full_time',
+    is_armed: emp.is_armed||false, has_app_access: emp.has_app_access||false,
+    hire_date: emp.hire_date||'', profile_photo_url: emp.profile_photo_url||'',
+    notes: emp.notes||'', employee_id_number: emp.employee_id_number||'',
+  })
+  const [saving, setSaving]         = useState(false)
+  const [uploading, setUploading]   = useState(false)
+  const photoInputRef = useRef(null)
+  function setF(k,v) { setForm(p=>({...p,[k]:v})) }
+  const inp  = { background:'var(--bg-input)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', padding:'9px 12px', fontSize:'13px', color:'var(--text-primary)', outline:'none', width:'100%', fontFamily:'var(--font-body)', transition:'border-color 150ms ease' }
+  const lbl  = { fontSize:'11px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', marginBottom:'4px' }
+  const inpF = e => { e.target.style.borderColor='var(--border-focus)' }
+  const inpB = e => { e.target.style.borderColor='var(--border)' }
+
+  async function uploadPhoto(file) {
+    if (!file) return
+    setUploading(true)
+    const ext  = file.name.split('.').pop()
+    const path = `${emp.company_id}/${emp.id}-${Date.now()}.${ext}`
+    const { data, error } = await supabase.storage.from('employee-photos').upload(path, file, { upsert:true, contentType:file.type })
+    if (!error && data) {
+      const { data:{ publicUrl } } = supabase.storage.from('employee-photos').getPublicUrl(data.path)
+      setF('profile_photo_url', publicUrl)
+    }
+    setUploading(false)
+  }
+
+  async function save() {
+    setSaving(true)
+    await supabase.from('employee').update({
+      first_name:form.first_name.trim(), last_name:form.last_name.trim(),
+      middle_name:form.middle_name.trim()||null, email:form.email.trim()||null,
+      phone_number:form.phone_number.trim()||null, position_title:form.position_title.trim()||null,
+      role:form.role, status:form.status, employment_type:form.employment_type,
+      is_armed:form.is_armed, has_app_access:form.has_app_access,
+      hire_date:form.hire_date||null, profile_photo_url:form.profile_photo_url.trim()||null,
+      notes:form.notes.trim()||null, employee_id_number:form.employee_id_number.trim()||null,
+    }).eq('id', emp.id)
+    setSaving(false); onSaved()
+  }
+
+  return (
+    <>
+      <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:200}}/>
+      <div style={{position:'fixed',top:0,right:0,bottom:0,width:'min(480px,100vw)',background:'var(--bg-surface)',borderLeft:'1px solid var(--border)',zIndex:201,display:'flex',flexDirection:'column',overflowY:'auto'}}>
+        <div style={{padding:'20px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
+          <div style={{fontFamily:'var(--font-display)',fontSize:'16px',letterSpacing:'2px',color:'var(--text-primary)'}}>EDIT EMPLOYEE</div>
+          <button onClick={onClose} style={{background:'transparent',border:'none',color:'var(--text-muted)',cursor:'pointer',display:'flex',minHeight:'44px',minWidth:'44px',alignItems:'center',justifyContent:'center'}}><Icon name="x" size={18}/></button>
+        </div>
+        <div style={{padding:'20px',flex:1,display:'flex',flexDirection:'column',gap:'12px'}}>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px'}}>
+            <div><div style={lbl}>First Name</div><input style={inp} value={form.first_name} onChange={e=>setF('first_name',e.target.value)} onFocus={inpF} onBlur={inpB}/></div>
+            <div><div style={lbl}>Last Name</div><input style={inp} value={form.last_name} onChange={e=>setF('last_name',e.target.value)} onFocus={inpF} onBlur={inpB}/></div>
+            <div><div style={lbl}>Email</div><input style={inp} type="email" value={form.email} onChange={e=>setF('email',e.target.value)} onFocus={inpF} onBlur={inpB}/></div>
+            <div><div style={lbl}>Phone</div><input style={inp} value={form.phone_number} onChange={e=>setF('phone_number',e.target.value)} onFocus={inpF} onBlur={inpB}/></div>
+            <div><div style={lbl}>Position Title</div><input style={inp} value={form.position_title} onChange={e=>setF('position_title',e.target.value)} onFocus={inpF} onBlur={inpB}/></div>
+            <div><div style={lbl}>Employee ID</div><input style={inp} value={form.employee_id_number} onChange={e=>setF('employee_id_number',e.target.value)} onFocus={inpF} onBlur={inpB}/></div>
+            <div><div style={lbl}>Role</div><select style={{...inp,cursor:'pointer'}} value={form.role} onChange={e=>setF('role',e.target.value)}>{ROLES_LIST.map(r=><option key={r} value={r}>{ROLE_LABELS[r]||r}</option>)}</select></div>
+            <div><div style={lbl}>Status</div><select style={{...inp,cursor:'pointer'}} value={form.status} onChange={e=>setF('status',e.target.value)}>{STATUS_LIST.map(s=><option key={s} value={s}>{s}</option>)}</select></div>
+            <div><div style={lbl}>Employment Type</div><select style={{...inp,cursor:'pointer'}} value={form.employment_type} onChange={e=>setF('employment_type',e.target.value)}>{EMP_TYPES.map(t=><option key={t} value={t}>{t.replace('_',' ')}</option>)}</select></div>
+            <div><div style={lbl}>Hire Date</div><input style={inp} type="date" value={form.hire_date} onChange={e=>setF('hire_date',e.target.value)} onFocus={inpF} onBlur={inpB}/></div>
+          </div>
+          <div>
+            <div style={lbl}>Profile Photo</div>
+            <div style={{ display:'flex', alignItems:'center', gap:'12px' }}>
+              <div style={{ width:'60px', height:'60px', borderRadius:'50%', background:'var(--accent-bg)', border:'1px solid var(--accent-border)', overflow:'hidden', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                {form.profile_photo_url ? <img src={form.profile_photo_url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} onError={e=>e.target.style.display='none'}/> : <Icon name="user" size={22} color="var(--accent)"/>}
+              </div>
+              <div style={{ flex:1 }}>
+                <input ref={photoInputRef} type="file" accept="image/*" style={{ display:'none' }} onChange={e => uploadPhoto(e.target.files[0])}/>
+                <button style={{ display:'inline-flex', alignItems:'center', gap:'6px', background:'var(--bg-surface)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', padding:'0 14px', height:'36px', fontFamily:'var(--font-condensed)', fontSize:'12px', color:'var(--text-secondary)', cursor:'pointer', letterSpacing:'1px', opacity:uploading?0.6:1 }} onClick={()=>photoInputRef.current?.click()} disabled={uploading}>
+                  <Icon name="upload" size={13}/>{uploading ? 'UPLOADING...' : 'UPLOAD PHOTO'}
+                </button>
+                {form.profile_photo_url && <div style={{ fontSize:'11px', color:'var(--color-success)', marginTop:'4px' }}>Photo set ✓</div>}
+                <div style={{ fontSize:'10px', color:'var(--text-muted)', marginTop:'2px' }}>JPG, PNG, WebP · Max 5MB · Bucket: employee-photos</div>
+              </div>
+            </div>
+          </div>
+          <div><div style={lbl}>Notes</div><textarea style={{...inp,minHeight:'60px',resize:'vertical',lineHeight:1.5}} value={form.notes} onChange={e=>setF('notes',e.target.value)} onFocus={inpF} onBlur={inpB}/></div>
+          <div style={{display:'flex',gap:'20px'}}>
+            <label style={{display:'flex',alignItems:'center',gap:'8px',fontSize:'13px',color:'var(--text-primary)',cursor:'pointer'}}>
+              <input type="checkbox" checked={form.is_armed} onChange={e=>setF('is_armed',e.target.checked)} style={{accentColor:'var(--accent)',width:'16px',height:'16px',cursor:'pointer'}}/>Armed Officer
+            </label>
+            <label style={{display:'flex',alignItems:'center',gap:'8px',fontSize:'13px',color:'var(--text-primary)',cursor:'pointer'}}>
+              <input type="checkbox" checked={form.has_app_access} onChange={e=>setF('has_app_access',e.target.checked)} style={{accentColor:'var(--accent)',width:'16px',height:'16px',cursor:'pointer'}}/>App Access
+            </label>
+          </div>
+        </div>
+        <div style={{padding:'16px 20px',borderTop:'1px solid var(--border)',display:'flex',gap:'10px',flexShrink:0}}>
+          <button onClick={save} disabled={saving} style={{flex:1,height:'44px',background:'var(--accent)',border:'none',borderRadius:'var(--radius-md)',color:'var(--text-inverse)',fontFamily:'var(--font-condensed)',fontSize:'14px',fontWeight:700,cursor:'pointer',opacity:saving?0.6:1}}>{saving?'SAVING...':'SAVE CHANGES'}</button>
+          <button onClick={onClose} style={{height:'44px',background:'transparent',border:'1px solid var(--border)',borderRadius:'var(--radius-md)',color:'var(--text-secondary)',fontFamily:'var(--font-condensed)',fontSize:'13px',cursor:'pointer',padding:'0 20px'}}>CANCEL</button>
+        </div>
       </div>
     </>
   )

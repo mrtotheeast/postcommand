@@ -54,6 +54,7 @@ export default function AppLayout({ children }) {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768)
+  const [isOnline, setIsOnline] = useState(navigator.onLine)
   const location = useLocation()
   const navigate = useNavigate()
   const role = profile?.role
@@ -62,6 +63,14 @@ export default function AppLayout({ children }) {
     const handler = () => setIsMobile(window.innerWidth <= 768)
     window.addEventListener('resize', handler)
     return () => window.removeEventListener('resize', handler)
+  }, [])
+
+  useEffect(() => {
+    const onOnline  = () => setIsOnline(true)
+    const onOffline = () => setIsOnline(false)
+    window.addEventListener('online', onOnline)
+    window.addEventListener('offline', onOffline)
+    return () => { window.removeEventListener('online', onOnline); window.removeEventListener('offline', onOffline) }
   }, [])
 
   useEffect(() => { setDrawerOpen(false) }, [location.pathname])
@@ -80,7 +89,7 @@ export default function AppLayout({ children }) {
 
   function getBadgeCount(item) {
     if (!item.badge) return 0
-    const map = { timesheets:'pending_timesheets', incidents:'open_incidents', messaging:'unread_messages' }
+    const map = { timesheets:'pending_timesheets', incidents:'open_incidents', messaging:'unread_messages', sos:'active_sos', training:'pending_training' }
     return badges[map[item.id]] || 0
   }
 
@@ -176,6 +185,11 @@ export default function AppLayout({ children }) {
             </div>
           </div>
         </header>
+        {!isOnline && (
+          <div style={{ background:'var(--color-warning)', color:'#fff', textAlign:'center', padding:'6px', fontSize:'12px', fontFamily:'var(--font-condensed)', letterSpacing:'1px', fontWeight:700, flexShrink:0 }}>
+            OFFLINE — Changes will sync when connection is restored
+          </div>
+        )}
         <main style={s.content} id="main-content">{children}</main>
       </div>
     </div>

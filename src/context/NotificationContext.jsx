@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './AuthContext'
 const NotificationContext = createContext(null)
-const DEFAULT_BADGES = { open_incidents:0, pending_timesheets:0, unread_messages:0, pending_schedules:0, pending_invoices:0, pending_uniforms:0 }
+const DEFAULT_BADGES = { open_incidents:0, pending_timesheets:0, unread_messages:0, pending_schedules:0, pending_invoices:0, pending_uniforms:0, active_sos:0, pending_training:0 }
 export function NotificationProvider({ children }) {
   const { user, profile } = useAuth()
   const [badges, setBadges] = useState(DEFAULT_BADGES)

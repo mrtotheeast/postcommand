@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { subscribeToPush, requestNotificationPermission } from '../lib/pushNotifications'
 
 const AuthContext = createContext(null)
 
@@ -52,6 +53,27 @@ export function AuthProvider({ children }) {
     if (error) throw error
     setUser(data.user)
     await loadProfile(data.user.id)
+    // Request push permission and store subscription
+    setTimeout(async () => {
+      try {
+        const perm = await requestNotificationPermission()
+        if (perm === 'granted') {
+          const sub = await subscribeToPush()
+          if (sub) {
+            const empRes = await supabase.from('employee').select('id,company_id').eq('user_id', data.user.id).single()
+            if (empRes.data) {
+              await supabase.from('push_subscription').upsert({
+                employee_id: empRes.data.id,
+                company_id: empRes.data.company_id,
+                subscription_json: sub,
+                active: true,
+                updated_at: new Date().toISOString(),
+              }, { onConflict: 'employee_id' })
+            }
+          }
+        }
+      } catch {}
+    }, 2000)
     return data
   }
 

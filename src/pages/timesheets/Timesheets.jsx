@@ -3,6 +3,8 @@ import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
 import { atLeast } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
+import { exportTimesheetPDF } from '../../lib/pdfExport'
+import { emailTimesheetApproved, emailTimesheetRejected, emailPTOApproved, emailPTODenied } from '../../lib/email'
 
 const STATUS_STYLES = {
   pending:  { bg:'rgba(232,148,58,0.15)',  color:'#e8943a', label:'Pending' },
@@ -94,12 +96,45 @@ export default function Timesheets() {
       ['Date','Employee','Site','Clock In','Clock Out','Hours','Status','Notes'],
       ...filtered.map(t => [t.date, empName(t.employee_id), siteName(t.site_id), fmt12(t.clock_in), fmt12(t.clock_out), fmtHours(t.total_hours), t.status, t.notes || ''])
     ]
+    downloadCSV(rows, `timesheets-${new Date().toISOString().split('T')[0]}.csv`)
+  }
+
+  function exportADP() {
+    // ADP Workforce Now format: Company Code, Batch ID, File #, Temp Dept, Temp Hours Regular, Temp Hours OT, Temp Hours Holiday
+    const empIds = [...new Set(filtered.filter(t=>t.status==='approved').map(t=>t.employee_id))]
+    const rows = [['Co Code','Batch ID','File #','Temp Dept','Temp Hours Regular','Temp Hours OT']]
+    for (const eid of empIds) {
+      const empTs = filtered.filter(t=>t.employee_id===eid && t.status==='approved')
+      const totalH = empTs.reduce((a,t)=>a+(Number(t.total_hours)||0),0)
+      const regH = Math.min(totalH, 40)  // first 40 hours regular
+      const otH  = Math.max(0, totalH - 40)
+      const name = empName(eid).split(' ')
+      rows.push(['NPS', new Date().toISOString().slice(0,7).replace('-',''), name[1]||name[0], '', regH.toFixed(2), otH.toFixed(2)])
+    }
+    downloadCSV(rows, `adp-payroll-${new Date().toISOString().slice(0,7)}.csv`)
+  }
+
+  function exportPaychex() {
+    // Paychex format: Employee ID, Last Name, First Name, Regular Hours, Overtime Hours, Rate
+    const empIds = [...new Set(filtered.filter(t=>t.status==='approved').map(t=>t.employee_id))]
+    const rows = [['Employee ID','Last Name','First Name','Regular Hours','Overtime Hours','Pay Type']]
+    for (const eid of empIds) {
+      const empTs = filtered.filter(t=>t.employee_id===eid && t.status==='approved')
+      const totalH = empTs.reduce((a,t)=>a+(Number(t.total_hours)||0),0)
+      const regH = Math.min(totalH, 40)
+      const otH  = Math.max(0, totalH - 40)
+      const emp = employees.find(e=>e.id===eid)
+      rows.push([eid.slice(0,8), emp?.last_name||'', emp?.first_name||'', regH.toFixed(2), otH.toFixed(2), 'Hourly'])
+    }
+    downloadCSV(rows, `paychex-payroll-${new Date().toISOString().slice(0,7)}.csv`)
+  }
+
+  function downloadCSV(rows, filename) {
     const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n')
-    const blob = new Blob([csv], { type: 'text/csv' })
+    const blob = new Blob([csv], { type:'text/csv' })
     const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url; a.download = `timesheets-${new Date().toISOString().split('T')[0]}.csv`
-    a.click(); URL.revokeObjectURL(url)
+    const a = document.createElement('a'); a.href=url; a.download=filename; a.click()
+    URL.revokeObjectURL(url)
   }
 
   const selStyle = { padding:'0 10px', background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-md)', color:'var(--text-primary)', fontSize:'12px', height:'40px', cursor:'pointer' }
@@ -115,11 +150,14 @@ export default function Timesheets() {
         </div>
         <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
           <div style={{display:'flex',gap:'2px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-sm)',padding:'3px'}}>
-            {[['list','List'],['summary','Summary']].map(([v,l])=>(
+            {[['list','List'],['summary','Summary'],['pto','PTO']].map(([v,l])=>(
               <button key={v} onClick={()=>setView(v)} style={{padding:'0 12px',height:'32px',border:'none',borderRadius:'4px',background:view===v?'var(--accent-bg)':'transparent',color:view===v?'var(--accent)':'var(--text-muted)',cursor:'pointer',fontSize:'11px',fontFamily:'var(--font-condensed)',fontWeight:600}}>{l}</button>
             ))}
           </div>
-          {canExport&&<button onClick={exportCSV} style={{display:'flex',alignItems:'center',gap:'6px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'0 14px',height:'40px',color:'var(--text-secondary)',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,cursor:'pointer'}}><Icon name="download" size={14}/>EXPORT CSV</button>}
+          {canExport&&<button onClick={exportCSV} style={{display:'flex',alignItems:'center',gap:'6px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'0 14px',height:'40px',color:'var(--text-secondary)',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,cursor:'pointer'}}><Icon name="download" size={14}/>CSV</button>}
+          {canExport&&<button onClick={exportADP} style={{display:'flex',alignItems:'center',gap:'6px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'0 14px',height:'40px',color:'var(--text-secondary)',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,cursor:'pointer'}} title="ADP Workforce Now format"><Icon name="briefcase" size={14}/>ADP</button>}
+          {canExport&&<button onClick={exportPaychex} style={{display:'flex',alignItems:'center',gap:'6px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'0 14px',height:'40px',color:'var(--text-secondary)',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,cursor:'pointer'}} title="Paychex format"><Icon name="briefcase" size={14}/>Paychex</button>}
+          {canExport&&<button onClick={()=>exportTimesheetPDF(filtered,employees,sites,'All timesheets')} style={{display:'flex',alignItems:'center',gap:'6px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'0 14px',height:'40px',color:'var(--text-secondary)',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,cursor:'pointer'}}><Icon name="file-text" size={14}/>PDF</button>}
         </div>
       </div>
 
@@ -152,6 +190,8 @@ export default function Timesheets() {
 
       {loading ? (
         <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>{[...Array(5)].map((_,i)=><div key={i} style={{height:'64px',borderRadius:'10px'}} className="skeleton"/>)}</div>
+      ) : view==='pto' ? (
+        <PTOPanel companyId={profile.company_id} profile={profile} employees={employees} canReview={canReview} />
       ) : view==='summary' ? (
         <SummaryView summary={summary} empName={empName}/>
       ) : filtered.length===0 ? (
@@ -224,6 +264,9 @@ function TimesheetDetail({ts,empName,siteName,canReview,onClose,onUpdated,profil
     setSaving(true)
     const {data:empData}=await supabase.from('employee').select('id').eq('user_id',profile.id).eq('company_id',profile.company_id).maybeSingle()
     await supabase.from('timesheet').update({status:'approved',reviewed_by:empData?.id,reviewed_at:new Date().toISOString()}).eq('id',ts.id)
+    // Email the officer
+    const {data:officer}=await supabase.from('employee').select('first_name,email').eq('id',ts.employee_id).single()
+    if(officer?.email) emailTimesheetApproved({ to:officer.email, firstName:officer.first_name, date:ts.date, hours:fmtHours(ts.total_hours), siteName:siteName(ts.site_id) })
     setSaving(false);onUpdated()
   }
 
@@ -232,6 +275,9 @@ function TimesheetDetail({ts,empName,siteName,canReview,onClose,onUpdated,profil
     setSaving(true)
     const {data:empData}=await supabase.from('employee').select('id').eq('user_id',profile.id).eq('company_id',profile.company_id).maybeSingle()
     await supabase.from('timesheet').update({status:'rejected',rejection_reason:rejReason,reviewed_by:empData?.id,reviewed_at:new Date().toISOString()}).eq('id',ts.id)
+    // Email the officer
+    const {data:officer}=await supabase.from('employee').select('first_name,email').eq('id',ts.employee_id).single()
+    if(officer?.email) emailTimesheetRejected({ to:officer.email, firstName:officer.first_name, date:ts.date, reason:rejReason })
     setSaving(false);onUpdated()
   }
 
@@ -302,4 +348,153 @@ function DSec({title,children}) {
 function DR({l,v,bold}) {
   if(!v) return null
   return <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:'13px',gap:'12px'}}><span style={{color:'var(--text-muted)',flexShrink:0}}>{l}</span><span style={{color:bold?'var(--accent)':'var(--text-primary)',fontWeight:bold?700:500,textAlign:'right'}}>{v}</span></div>
+}
+
+// ── PTO Panel ──────────────────────────────────────────────────────────────────
+
+const PTO_TYPES    = ['Vacation','Sick','Personal','Unpaid','Bereavement','Holiday']
+const PTO_STATUSES = { pending:{bg:'var(--color-warning-bg)',color:'var(--color-warning)',label:'Pending'}, approved:{bg:'var(--color-success-bg)',color:'var(--color-success)',label:'Approved'}, denied:{bg:'var(--color-danger-bg)',color:'var(--color-danger)',label:'Denied'} }
+
+function PTOPanel({ companyId, profile, employees, canReview }) {
+  const [requests, setRequests] = useState([])
+  const [loading, setLoading]   = useState(true)
+  const [showNew, setShowNew]   = useState(false)
+  const [employee, setEmployee] = useState(null)
+  const [filter, setFilter]     = useState('all')
+
+  useEffect(() => { load() }, [companyId])
+
+  async function load() {
+    setLoading(true)
+    const [{ data: empData }, { data: ptoData }] = await Promise.all([
+      supabase.from('employee').select('id').eq('user_id', profile.id).single(),
+      supabase.from('pto_request').select('*').eq('company_id', companyId).order('created_at', { ascending:false }),
+    ])
+    setEmployee(empData)
+    setRequests(ptoData || [])
+    setLoading(false)
+  }
+
+  async function updateStatus(id, status) {
+    const { data: myEmp } = await supabase.from('employee').select('id').eq('user_id', profile.id).single()
+    await supabase.from('pto_request').update({ status, reviewed_by:myEmp?.id, reviewed_at:new Date().toISOString() }).eq('id', id)
+    // Email the requesting employee
+    const req = requests.find(r=>r.id===id)
+    if (req) {
+      const { data: reqEmp } = await supabase.from('employee').select('first_name,email').eq('id', req.employee_id).single()
+      const days = calcDays(req.start_date, req.end_date)
+      if (reqEmp?.email) {
+        if (status === 'approved') emailPTOApproved({ to:reqEmp.email, firstName:reqEmp.first_name, ptoType:req.pto_type, startDate:req.start_date, endDate:req.end_date, days })
+        if (status === 'denied')   emailPTODenied({ to:reqEmp.email, firstName:reqEmp.first_name, ptoType:req.pto_type, startDate:req.start_date, endDate:req.end_date })
+      }
+    }
+    load()
+  }
+
+  const empMap   = Object.fromEntries(employees.map(e => [e.id, `${e.first_name} ${e.last_name}`]))
+  const isOfficer = ['officer','corporal'].includes(profile?.role)
+  const visible   = requests.filter(r => {
+    if (isOfficer && employee && r.employee_id !== employee.id) return false
+    if (filter !== 'all' && r.status !== filter) return false
+    return true
+  })
+
+  const pill = (status) => ({ display:'inline-flex', padding:'2px 8px', borderRadius:'10px', fontSize:'11px', fontWeight:700, fontFamily:'var(--font-condensed)', letterSpacing:'0.5px', ...(PTO_STATUSES[status] || PTO_STATUSES.pending) })
+  const btnStyle = (variant='accent') => ({ display:'inline-flex', alignItems:'center', gap:'6px', background: variant==='accent'?'var(--accent)':variant==='success'?'var(--color-success-bg)':'var(--color-danger-bg)', color: variant==='accent'?'var(--text-inverse)':variant==='success'?'var(--color-success)':'var(--color-danger)', border: variant==='accent'?'none':variant==='success'?'1px solid rgba(58,170,106,0.3)':'1px solid rgba(192,57,43,0.3)', borderRadius:'var(--radius-sm)', padding:'0 12px', height:'34px', fontFamily:'var(--font-condensed)', fontSize:'11px', fontWeight:700, letterSpacing:'1px', cursor:'pointer' })
+
+  function calcDays(start, end) {
+    if (!start || !end) return '—'
+    const d = Math.round((new Date(end+'T12:00:00') - new Date(start+'T12:00:00')) / 86400000) + 1
+    return `${d} day${d!==1?'s':''}`
+  }
+
+  if (loading) return <div style={{padding:'20px',color:'var(--text-muted)',fontFamily:'var(--font-condensed)',letterSpacing:'1px',fontSize:'12px'}}>LOADING...</div>
+
+  return (
+    <div>
+      <div style={{ display:'flex', gap:'10px', marginBottom:'16px', alignItems:'center', flexWrap:'wrap' }}>
+        <select style={selStyle} value={filter} onChange={e=>setFilter(e.target.value)}>
+          <option value="all">All Status</option>
+          {Object.entries(PTO_STATUSES).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
+        </select>
+        <button style={{...btnStyle(),height:'40px',padding:'0 16px',fontSize:'12px'}} onClick={()=>setShowNew(true)}>+ REQUEST PTO</button>
+      </div>
+
+      {visible.length === 0 ? (
+        <div style={{textAlign:'center',padding:'40px',color:'var(--text-muted)',fontSize:'13px'}}>No PTO requests found.</div>
+      ) : (
+        <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',overflow:'hidden'}}>
+          {visible.map((r,i) => {
+            const st = PTO_STATUSES[r.status] || PTO_STATUSES.pending
+            return (
+              <div key={r.id} style={{display:'flex',alignItems:'center',gap:'14px',padding:'14px 18px',borderBottom:i<visible.length-1?'1px solid var(--border)':'none'}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-primary)'}}>{empMap[r.employee_id]||'—'}</div>
+                  <div style={{fontSize:'12px',color:'var(--text-muted)',marginTop:'2px'}}>
+                    {r.pto_type} · {r.start_date} → {r.end_date} · {calcDays(r.start_date,r.end_date)}
+                    {r.notes ? ` · "${r.notes}"` : ''}
+                  </div>
+                </div>
+                <span style={pill(r.status)}>{st.label}</span>
+                {canReview && r.status==='pending' && (
+                  <div style={{display:'flex',gap:'6px'}}>
+                    <button style={btnStyle('success')} onClick={()=>updateStatus(r.id,'approved')}><Icon name="check" size={11}/>APPROVE</button>
+                    <button style={btnStyle('deny')}    onClick={()=>updateStatus(r.id,'denied')}><Icon name="x" size={11}/>DENY</button>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {showNew && <PTORequestModal companyId={companyId} employeeId={employee?.id} onClose={()=>setShowNew(false)} onSaved={()=>{setShowNew(false);load()}} />}
+    </div>
+  )
+}
+
+function PTORequestModal({ companyId, employeeId, onClose, onSaved }) {
+  const [form, setForm] = useState({ pto_type:'Vacation', start_date:'', end_date:'', notes:'' })
+  const [saving, setSaving] = useState(false)
+  const inpStyle = { background:'var(--bg-input)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', padding:'10px 12px', fontSize:'13px', color:'var(--text-primary)', outline:'none', width:'100%', fontFamily:'var(--font-body)', transition:'border-color 150ms ease' }
+  const foc = e => { e.target.style.borderColor='var(--border-focus)' }
+  const blr = e => { e.target.style.borderColor='var(--border)' }
+
+  async function save() {
+    if (!form.start_date || !form.end_date || !employeeId) return
+    setSaving(true)
+    await supabase.from('pto_request').insert({ company_id:companyId, employee_id:employeeId, pto_type:form.pto_type, start_date:form.start_date, end_date:form.end_date, notes:form.notes||null, status:'pending' })
+    setSaving(false); onSaved()
+  }
+
+  const lbl = { fontSize:'11px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', marginBottom:'5px' }
+  const overlay = { position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', zIndex:400, display:'flex', alignItems:'center', justifyContent:'center', padding:'20px' }
+  const modal  = { background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-lg)', padding:'28px', width:'100%', maxWidth:'440px', boxShadow:'var(--shadow-modal)' }
+  const btn    = { display:'inline-flex', alignItems:'center', gap:'8px', background:'var(--accent)', color:'var(--text-inverse)', border:'none', borderRadius:'var(--radius-sm)', padding:'0 22px', height:'44px', fontFamily:'var(--font-condensed)', fontSize:'13px', fontWeight:700, letterSpacing:'1px', cursor:'pointer', transition:'opacity 150ms ease' }
+  const gho    = { display:'inline-flex', alignItems:'center', gap:'8px', background:'transparent', color:'var(--text-secondary)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', padding:'0 18px', height:'44px', fontFamily:'var(--font-condensed)', fontSize:'13px', letterSpacing:'1px', cursor:'pointer' }
+
+  return (
+    <div style={overlay} onClick={e=>{if(e.target===e.currentTarget)onClose()}}>
+      <div style={modal}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'20px'}}>
+          <div style={{fontFamily:'var(--font-display)',fontSize:'20px',letterSpacing:'1.5px',color:'var(--text-primary)'}}>REQUEST PTO</div>
+          <button style={{background:'transparent',border:'none',color:'var(--text-muted)',cursor:'pointer',padding:'4px',display:'flex'}} onClick={onClose}><Icon name="x" size={18}/></button>
+        </div>
+        <div style={{marginBottom:'12px'}}><div style={lbl}>Type</div>
+          <select style={{...inpStyle,cursor:'pointer'}} value={form.pto_type} onChange={e=>setForm(p=>({...p,pto_type:e.target.value}))}>
+            {PTO_TYPES.map(t=><option key={t}>{t}</option>)}
+          </select>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px',marginBottom:'12px'}}>
+          <div><div style={lbl}>Start Date *</div><input style={inpStyle} type="date" value={form.start_date} onChange={e=>setForm(p=>({...p,start_date:e.target.value}))} onFocus={foc} onBlur={blr}/></div>
+          <div><div style={lbl}>End Date *</div><input style={inpStyle} type="date" value={form.end_date} onChange={e=>setForm(p=>({...p,end_date:e.target.value}))} onFocus={foc} onBlur={blr}/></div>
+        </div>
+        <div style={{marginBottom:'20px'}}><div style={lbl}>Notes</div><input style={inpStyle} value={form.notes} onChange={e=>setForm(p=>({...p,notes:e.target.value}))} onFocus={foc} onBlur={blr} placeholder="Optional reason..."/></div>
+        <div style={{display:'flex',gap:'10px'}}>
+          <button style={{...btn,opacity:(!form.start_date||!form.end_date||saving)?0.6:1}} onClick={save} disabled={!form.start_date||!form.end_date||saving}>{saving?'SUBMITTING...':'SUBMIT REQUEST'}</button>
+          <button style={gho} onClick={onClose}>CANCEL</button>
+        </div>
+      </div>
+    </div>
+  )
 }

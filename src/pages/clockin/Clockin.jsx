@@ -40,6 +40,7 @@ export default function ClockIn() {
   const [error, setError]         = useState(null)
   const [saving, setSaving]       = useState(false)
   const [overrideReason, setOverrideReason] = useState('')
+  const [employeeId, setEmployeeId] = useState(null)
   const photoInRef  = useRef(null)
   const photoOutRef = useRef(null)
 
@@ -50,6 +51,7 @@ export default function ClockIn() {
     setStep(STEPS.LOADING); setError(null)
     const { data: empData } = await supabase.from('employee').select('id').eq('user_id', profile.id).eq('company_id', profile.company_id).single()
     if (!empData) { setStep(STEPS.NO_SHIFT); return }
+    setEmployeeId(empData.id)
     const today = new Date()
     const startOfDay = new Date(today); startOfDay.setHours(0,0,0,0)
     const endOfDay   = new Date(today); endOfDay.setHours(23,59,59,999)
@@ -86,7 +88,11 @@ export default function ClockIn() {
           const dist = getDistance(loc.lat, loc.lng, Number(site.latitude), Number(site.longitude))
           const radius = Number(site.geofence_radius) || DEFAULT_GEOFENCE_RADIUS
           setDistance(Math.round(dist))
-          if (dist > radius) { setStep(STEPS.GEOFENCE_WARN); return }
+          if (dist > radius) {
+            setStep(STEPS.GEOFENCE_WARN)
+            supabase.from('clockin_violation').insert({ company_id: profile.company_id, employee_id: employeeId, site_id: site?.id ?? null, latitude: loc.lat, longitude: loc.lng, distance_meters: Math.round(dist), overridden: false }).catch(()=>{})
+            return
+          }
         }
         direction === 'in' ? clockIn(loc) : clockOut(loc)
       },
@@ -117,7 +123,10 @@ export default function ClockIn() {
       const { data: ts, error: tsErr } = await supabase.from('timesheet').insert({ company_id: profile.company_id, employee_id: empData.id, site_id: shift.site_id, shift_id: shift.id, date: now.toISOString().split('T')[0], clock_in: now.toISOString(), clock_in_location: loc, clock_in_photo_url: photoUrl, status: 'pending', device_type: 'web', notes: override ? `Geofence override: ${reason}. Distance: ${distance}m` : null }).select().single()
       if (tsErr) { setError(tsErr.message); setSaving(false); return }
       setTimesheet(ts)
-      if (override) { await supabase.from('notifications').insert({ company_id: profile.company_id, type: 'geofence_override', title: 'Geofence Override', message: `${profile.first_name} ${profile.last_name} clocked in ${distance}m outside geofence at ${site?.name}. Reason: ${reason}`, badge_key: 'open_incidents' }).catch(()=>{}) }
+      if (override) {
+        await supabase.from('notifications').insert({ company_id: profile.company_id, type: 'geofence_override', title: 'Geofence Override', message: `${profile.first_name} ${profile.last_name} clocked in ${distance}m outside geofence at ${site?.name}. Reason: ${reason}`, badge_key: 'open_incidents' }).catch(()=>{})
+        await supabase.from('clockin_violation').insert({ company_id: profile.company_id, employee_id: empData.id, site_id: shift.site_id, shift_id: shift.id, latitude: loc.lat, longitude: loc.lng, distance_meters: distance, override_reason: reason, overridden: true }).catch(()=>{})
+      }
       setStep(STEPS.CLOCKED_IN)
     } catch(e) { setError(e.message) }
     setSaving(false)

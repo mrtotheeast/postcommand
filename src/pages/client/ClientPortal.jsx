@@ -1,0 +1,505 @@
+import { useState, useEffect, useRef } from 'react'
+import { useAuth } from '../../context/AuthContext'
+import { useTheme } from '../../context/ThemeContext'
+import { supabase } from '../../lib/supabase'
+import Icon from '../../components/ui/Icon'
+import { MapContainer, TileLayer, Marker, Circle, Popup } from 'react-leaflet'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
+
+delete L.Icon.Default.prototype._getIconUrl
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+  iconUrl:       'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+  shadowUrl:     'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+})
+
+const TABS = [
+  { id:'overview',  label:'Overview',  icon:'grid' },
+  { id:'coverage',  label:'Coverage',  icon:'map-pin' },
+  { id:'schedule',  label:'Schedule',  icon:'calendar' },
+  { id:'incidents', label:'Incidents', icon:'file-check' },
+  { id:'messages',  label:'Messages',  icon:'message-circle' },
+]
+
+const s = {
+  shell:    { display:'flex', height:'100vh', overflow:'hidden', background:'var(--bg-base)', flexDirection:'column' },
+  topbar:   { display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 24px', height:'58px', minHeight:'58px', background:'var(--bg-surface)', borderBottom:'1px solid var(--border)', flexShrink:0 },
+  logo:     { fontFamily:'var(--font-display)', fontSize:'20px', letterSpacing:'3px', color:'var(--accent)', lineHeight:1 },
+  logoSub:  { fontSize:'10px', color:'var(--text-muted)', letterSpacing:'1px', textTransform:'uppercase', marginTop:'2px' },
+  userPill: { display:'flex', alignItems:'center', gap:'10px' },
+  avatar:   { width:'32px', height:'32px', borderRadius:'50%', background:'var(--accent)', color:'var(--text-inverse)', fontFamily:'var(--font-condensed)', fontSize:'12px', fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center' },
+  userName: { fontSize:'13px', fontWeight:600, color:'var(--text-primary)' },
+  signOut:  { background:'transparent', border:'none', color:'var(--text-muted)', padding:'6px', borderRadius:'var(--radius-sm)', cursor:'pointer', display:'flex', alignItems:'center' },
+  iconBtn:  { background:'var(--bg-card)', border:'1px solid var(--border-subtle)', color:'var(--text-secondary)', borderRadius:'var(--radius-sm)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', minHeight:'36px', minWidth:'36px', padding:'0 8px', gap:'6px', fontSize:'12px', fontFamily:'var(--font-condensed)', letterSpacing:'0.5px' },
+  body:     { flex:1, display:'flex', overflow:'hidden', flexDirection:'column' },
+  tabnav:   { display:'flex', gap:'2px', padding:'0 24px', background:'var(--bg-surface)', borderBottom:'1px solid var(--border)', flexShrink:0, overflowX:'auto' },
+  tab:      { display:'flex', alignItems:'center', gap:'7px', padding:'12px 16px', fontSize:'13px', color:'var(--text-secondary)', background:'transparent', border:'none', cursor:'pointer', fontFamily:'var(--font-condensed)', letterSpacing:'0.5px', borderBottom:'2px solid transparent', marginBottom:'-1px', transition:'all 150ms ease', whiteSpace:'nowrap' },
+  tabAct:   { color:'var(--accent)', borderBottom:'2px solid var(--accent)', fontWeight:700 },
+  content:  { flex:1, overflowY:'auto', overflowX:'hidden' },
+  page:     { padding:'24px', maxWidth:'1100px', animation:'fadeIn 200ms ease' },
+  heading:  { fontFamily:'var(--font-display)', fontSize:'26px', letterSpacing:'2px', color:'var(--text-primary)', lineHeight:1, marginBottom:'4px' },
+  sub:      { fontSize:'12px', color:'var(--text-muted)', marginBottom:'24px' },
+  statsRow: { display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))', gap:'12px', marginBottom:'24px' },
+  statCard: { background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-md)', padding:'16px' },
+  statLbl:  { fontSize:'10px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', marginBottom:'5px' },
+  statVal:  { fontFamily:'var(--font-display)', fontSize:'28px', letterSpacing:'1px', lineHeight:1 },
+  statSub:  { fontSize:'11px', color:'var(--text-muted)', marginTop:'3px' },
+  card:     { background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-md)', padding:'20px', marginBottom:'16px' },
+  cardTitle:{ fontSize:'11px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1.5px', fontFamily:'var(--font-condensed)', marginBottom:'14px' },
+  row:      { display:'flex', alignItems:'center', gap:'12px', padding:'10px 0', borderBottom:'1px solid var(--border)', fontSize:'13px' },
+  dot:      { width:'8px', height:'8px', borderRadius:'50%', flexShrink:0 },
+  mapWrap:  { height:'100%', position:'relative' },
+  badge:    { display:'inline-flex', alignItems:'center', gap:'4px', padding:'2px 8px', borderRadius:'10px', fontSize:'11px', fontWeight:700, fontFamily:'var(--font-condensed)', letterSpacing:'0.5px' },
+}
+
+export default function ClientPortal() {
+  const { profile, signOut } = useAuth()
+  const { isDark, toggleTheme } = useTheme()
+  const [tab, setTab]             = useState('overview')
+  const [sites, setSites]         = useState([])
+  const [activeTS, setActiveTS]   = useState([])
+  const [incidents, setIncidents] = useState([])
+  const [shifts, setShifts]       = useState([])
+  const [messages, setMessages]   = useState([])
+  const [employees, setEmployees] = useState([])
+  const [loading, setLoading]     = useState(true)
+
+  useEffect(() => { if (profile?.company_id) load() }, [profile])
+
+  async function load() {
+    setLoading(true)
+    const today = new Date().toISOString().slice(0, 10)
+    const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString()
+    const [{ data: siteData }, { data: tsData }, { data: incData }, { data: shiftData }, { data: empData }] = await Promise.all([
+      supabase.from('site').select('id,name,city,state,latitude,longitude,geofence_radius,is_active').eq('company_id', profile.company_id).eq('is_active', true),
+      supabase.from('timesheet').select('id,employee_id,site_id,clock_in').eq('company_id', profile.company_id).is('clock_out', null).eq('date', today),
+      supabase.from('incident_report').select('id,cad_number,incident_type,status,created_at,site_id,summary').eq('company_id', profile.company_id).in('status', ['approved','reviewed']).gte('created_at', weekAgo).order('created_at', { ascending:false }).limit(20),
+      supabase.from('shift').select('id,employee_id,site_id,start_time,end_time,position_title,status').eq('company_id', profile.company_id).eq('status','published').gte('start_time', today + 'T00:00:00').order('start_time').limit(30),
+      supabase.from('employee').select('id,first_name,last_name,role,position_title').eq('company_id', profile.company_id).eq('status','active'),
+    ])
+    setSites(siteData || [])
+    setActiveTS(tsData || [])
+    setIncidents(incData || [])
+    setShifts(shiftData || [])
+    setEmployees(empData || [])
+    setLoading(false)
+  }
+
+  const empMap    = Object.fromEntries((employees || []).map(e => [e.id, e]))
+  const siteMap   = Object.fromEntries((sites || []).map(s => [s.id, s]))
+  const onDutyMap = {}
+  for (const ts of activeTS) { onDutyMap[ts.site_id] = (onDutyMap[ts.site_id] || []).concat(ts) }
+  const totalOnDuty = activeTS.length
+  const staffedSites = Object.keys(onDutyMap).length
+
+  const initials = profile ? `${profile.first_name?.[0]??''}${profile.last_name?.[0]??''}`.toUpperCase() : 'C'
+
+  return (
+    <div style={s.shell}>
+      <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}`}</style>
+
+      {/* Top bar */}
+      <header style={s.topbar}>
+        <div>
+          <div style={s.logo}>POST<span style={{ color:'var(--text-primary)' }}>COMMAND</span></div>
+          <div style={s.logoSub}>Client Portal · {profile?.company_slug?.toUpperCase()}</div>
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
+          <button style={s.iconBtn} onClick={toggleTheme}>
+            <Icon name={isDark ? 'sun' : 'moon'} size={15} />
+          </button>
+          <div style={s.userPill}>
+            <div style={s.avatar}>{initials}</div>
+            <div style={s.userName}>{profile?.first_name} {profile?.last_name}</div>
+            <button style={s.signOut} onClick={signOut} title="Sign out">
+              <Icon name="log-out" size={15} />
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* Tab nav */}
+      <nav style={s.tabnav}>
+        {TABS.map(t => (
+          <button key={t.id} style={{ ...s.tab, ...(tab === t.id ? s.tabAct : {}) }} onClick={() => setTab(t.id)}>
+            <Icon name={t.icon} size={14} />{t.label}
+          </button>
+        ))}
+      </nav>
+
+      <div style={s.body}>
+        <div style={s.content}>
+          {loading ? (
+            <div style={{ padding:'40px', fontFamily:'var(--font-display)', fontSize:'18px', letterSpacing:'2px', color:'var(--accent)' }}>LOADING...</div>
+          ) : (
+            <>
+              {tab === 'overview'  && <OverviewTab sites={sites} onDutyMap={onDutyMap} totalOnDuty={totalOnDuty} staffedSites={staffedSites} incidents={incidents} shifts={shifts} siteMap={siteMap} empMap={empMap} />}
+              {tab === 'coverage'  && <CoverageTab sites={sites} onDutyMap={onDutyMap} empMap={empMap} />}
+              {tab === 'schedule'  && <ScheduleTab shifts={shifts} sites={sites} siteMap={siteMap} empMap={empMap} />}
+              {tab === 'incidents' && <IncidentsTab incidents={incidents} siteMap={siteMap} />}
+              {tab === 'messages'  && <MessagesTab companyId={profile?.company_id} profile={profile} />}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Overview ─────────────────────────────────────────────────────────────────
+
+function OverviewTab({ sites, onDutyMap, totalOnDuty, staffedSites, incidents, shifts, siteMap, empMap }) {
+  const today = new Date().toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' })
+  const upcomingShifts = shifts.filter(sh => new Date(sh.start_time) > new Date()).slice(0, 5)
+  const recentIncidents = incidents.slice(0, 4)
+
+  return (
+    <div style={s.page}>
+      <h2 style={s.heading}>SECURITY OVERVIEW</h2>
+      <p style={s.sub}>{today}</p>
+
+      <div style={s.statsRow}>
+        {[
+          { label:'Officers On Duty', value: totalOnDuty, color:'var(--accent)', sub:'Right now' },
+          { label:'Sites Staffed', value: `${staffedSites}/${sites.length}`, color:'var(--color-success)', sub:'Active coverage' },
+          { label:'Incidents (7d)', value: incidents.length, color: incidents.length > 0 ? 'var(--color-warning)' : 'var(--color-success)', sub:'Approved reports' },
+          { label:'Upcoming Shifts', value: upcomingShifts.length, color:'var(--color-info)', sub:'Today & tomorrow' },
+        ].map(c => (
+          <div key={c.label} style={s.statCard}>
+            <div style={s.statLbl}>{c.label}</div>
+            <div style={{ ...s.statVal, color:c.color }}>{c.value}</div>
+            <div style={s.statSub}>{c.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Site coverage grid */}
+      <div style={{ ...s.card }}>
+        <div style={s.cardTitle}>Site Coverage — Now</div>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(220px,1fr))', gap:'10px' }}>
+          {sites.map(site => {
+            const officers = onDutyMap[site.id] || []
+            return (
+              <div key={site.id} style={{ background:'var(--bg-surface)', borderRadius:'var(--radius-sm)', padding:'14px', border:'1px solid var(--border)', display:'flex', flexDirection:'column', gap:'6px' }}>
+                <div style={{ fontSize:'13px', fontWeight:600, color:'var(--text-primary)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{site.name}</div>
+                <div style={{ fontSize:'11px', color:'var(--text-muted)' }}>{site.city}, {site.state}</div>
+                <div style={{ marginTop:'4px' }}>
+                  {officers.length > 0 ? (
+                    <span style={{ ...s.badge, background:'var(--accent-bg)', color:'var(--accent)' }}>
+                      <Icon name="users" size={10} />{officers.length} on duty
+                    </span>
+                  ) : (
+                    <span style={{ ...s.badge, background:'var(--border)', color:'var(--text-muted)' }}>
+                      Unattended
+                    </span>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Recent incidents */}
+      {recentIncidents.length > 0 && (
+        <div style={s.card}>
+          <div style={s.cardTitle}>Recent Incidents</div>
+          {recentIncidents.map(inc => (
+            <div key={inc.id} style={s.row}>
+              <div style={{ ...s.dot, background: inc.status === 'approved' ? 'var(--color-success)' : 'var(--color-warning)' }} />
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:'13px', color:'var(--text-primary)', fontWeight:500 }}>{inc.incident_type}</div>
+                <div style={{ fontSize:'11px', color:'var(--text-muted)' }}>
+                  {inc.cad_number} · {siteMap[inc.site_id]?.name ?? 'Unknown Site'} · {new Date(inc.created_at).toLocaleDateString('en-US', { month:'short', day:'numeric' })}
+                </div>
+              </div>
+              <span style={{ ...s.badge, background: inc.status === 'approved' ? 'var(--color-success-bg)' : 'var(--color-warning-bg)', color: inc.status === 'approved' ? 'var(--color-success)' : 'var(--color-warning)' }}>
+                {inc.status.toUpperCase()}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Coverage (Live Map) ───────────────────────────────────────────────────────
+
+function CoverageTab({ sites, onDutyMap, empMap }) {
+  const sitesWithGeo = sites.filter(s => s.latitude && s.longitude)
+  const center = sitesWithGeo.length > 0
+    ? [Number(sitesWithGeo[0].latitude), Number(sitesWithGeo[0].longitude)]
+    : [38.9, -77.0]
+
+  function makeIcon(count) {
+    const color  = count > 0 ? '#c8a84b' : '#3d4460'
+    const border = count > 0 ? '#a8841e' : '#252838'
+    const text   = count > 0 ? '#0d0f14' : '#7a8299'
+    return L.divIcon({
+      html: `<div style="width:30px;height:30px;border-radius:50%;background:${color};border:2px solid ${border};display:flex;align-items:center;justify-content:center;font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;color:${text};box-shadow:0 2px 8px rgba(0,0,0,0.5);">${count > 0 ? count : ''}</div>`,
+      className:'', iconSize:[30,30], iconAnchor:[15,15], popupAnchor:[0,-15],
+    })
+  }
+
+  return (
+    <div style={{ height:'100%', display:'flex', flexDirection:'column' }}>
+      <div style={{ padding:'16px 24px', borderBottom:'1px solid var(--border)', flexShrink:0 }}>
+        <span style={{ fontFamily:'var(--font-display)', fontSize:'18px', letterSpacing:'2px', color:'var(--text-primary)' }}>LIVE COVERAGE</span>
+        <span style={{ fontSize:'12px', color:'var(--text-muted)', marginLeft:'12px' }}>
+          {Object.keys(onDutyMap).length} sites staffed · {Object.values(onDutyMap).reduce((a,b) => a + b.length, 0)} officers on duty
+        </span>
+      </div>
+      <div style={{ flex:1 }}>
+        <MapContainer center={center} zoom={11} style={{ width:'100%', height:'100%' }}>
+          <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
+          {sitesWithGeo.map(site => {
+            const officers = onDutyMap[site.id] || []
+            return (
+              <Marker key={site.id} position={[Number(site.latitude), Number(site.longitude)]} icon={makeIcon(officers.length)}>
+                <Popup>
+                  <div style={{ fontFamily:'Barlow, sans-serif', minWidth:'160px' }}>
+                    <div style={{ fontFamily:'Barlow Condensed, sans-serif', fontSize:'13px', fontWeight:700, letterSpacing:'1px', marginBottom:'6px' }}>{site.name}</div>
+                    <div style={{ fontSize:'12px', color:'#888', marginBottom:'6px' }}>{site.city}, {site.state}</div>
+                    {officers.length === 0
+                      ? <div style={{ fontSize:'12px', color:'#888' }}>No officers on duty</div>
+                      : <div style={{ fontSize:'12px', color:'#3aaa6a', fontWeight:600 }}>{officers.length} officer{officers.length !== 1 ? 's' : ''} on duty</div>
+                    }
+                  </div>
+                </Popup>
+                {officers.length > 0 && (
+                  <Circle center={[Number(site.latitude), Number(site.longitude)]} radius={site.geofence_radius || 150} pathOptions={{ color:'#c8a84b', fillColor:'#c8a84b', fillOpacity:0.06, weight:1, dashArray:'4 4' }} />
+                )}
+              </Marker>
+            )
+          })}
+        </MapContainer>
+        <style>{`
+          .leaflet-container{background:#0d0f14}
+          .leaflet-popup-content-wrapper{background:#1a1d2a;border:1px solid #252838;border-radius:8px;color:#f0f2f8}
+          .leaflet-popup-tip{background:#1a1d2a}
+          .leaflet-popup-close-button{color:#7a8299!important}
+          .leaflet-control-zoom a{background:#1a1d2a!important;color:#c8a84b!important;border-color:#252838!important}
+        `}</style>
+      </div>
+    </div>
+  )
+}
+
+// ── Schedule ─────────────────────────────────────────────────────────────────
+
+function ScheduleTab({ shifts, siteMap, empMap }) {
+  const grouped = {}
+  for (const sh of shifts) {
+    const day = sh.start_time.slice(0, 10)
+    if (!grouped[day]) grouped[day] = []
+    grouped[day].push(sh)
+  }
+  const days = Object.keys(grouped).sort()
+
+  function fmt(ts) { return new Date(ts).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit', hour12:true }) }
+
+  return (
+    <div style={s.page}>
+      <h2 style={s.heading}>SCHEDULE</h2>
+      <p style={s.sub}>Published shifts for your sites over the next 14 days.</p>
+      {days.length === 0 ? (
+        <div style={{ ...s.card, textAlign:'center', padding:'40px', color:'var(--text-muted)' }}>No published shifts found.</div>
+      ) : days.map(day => (
+        <div key={day} style={{ marginBottom:'18px' }}>
+          <div style={{ fontFamily:'var(--font-condensed)', fontSize:'12px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1.5px', marginBottom:'8px' }}>
+            {new Date(day + 'T12:00:00').toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' })}
+          </div>
+          <div style={{ background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-md)', overflow:'hidden' }}>
+            {grouped[day].map((sh, i) => {
+              const emp  = empMap[sh.employee_id]
+              const site = siteMap[sh.site_id]
+              return (
+                <div key={sh.id} style={{ display:'flex', alignItems:'center', gap:'14px', padding:'12px 16px', borderBottom: i < grouped[day].length - 1 ? '1px solid var(--border)' : 'none' }}>
+                  <Icon name="clock" size={13} color="var(--text-muted)" />
+                  <div style={{ minWidth:'120px', fontSize:'13px', color:'var(--accent)', fontFamily:'var(--font-condensed)', letterSpacing:'0.5px' }}>
+                    {fmt(sh.start_time)} — {fmt(sh.end_time)}
+                  </div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:'13px', color:'var(--text-primary)', fontWeight:500 }}>
+                      {emp ? `${emp.first_name} ${emp.last_name}` : 'Officer'}
+                    </div>
+                    <div style={{ fontSize:'11px', color:'var(--text-muted)' }}>{site?.name ?? 'Unknown Site'}</div>
+                  </div>
+                  {sh.position_title && <div style={{ fontSize:'11px', color:'var(--text-muted)', whiteSpace:'nowrap' }}>{sh.position_title}</div>}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── Incidents ─────────────────────────────────────────────────────────────────
+
+function IncidentsTab({ incidents, siteMap }) {
+  const [selected, setSelected] = useState(null)
+
+  if (incidents.length === 0) {
+    return (
+      <div style={s.page}>
+        <h2 style={s.heading}>INCIDENT REPORTS</h2>
+        <p style={s.sub}>Approved reports from the last 7 days.</p>
+        <div style={{ ...s.card, textAlign:'center', padding:'48px' }}>
+          <Icon name="shield-check" size={28} color="var(--color-success)" />
+          <div style={{ marginTop:'12px', fontSize:'14px', color:'var(--color-success)', fontFamily:'var(--font-condensed)', letterSpacing:'1px' }}>NO INCIDENTS IN THE LAST 7 DAYS</div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div style={s.page}>
+      <h2 style={s.heading}>INCIDENT REPORTS</h2>
+      <p style={s.sub}>{incidents.length} approved report{incidents.length !== 1 ? 's' : ''} in the last 7 days.</p>
+      <div style={{ background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-md)', overflow:'hidden' }}>
+        {incidents.map((inc, i) => (
+          <div key={inc.id}
+            style={{ display:'flex', alignItems:'center', gap:'14px', padding:'14px 18px', borderBottom: i < incidents.length - 1 ? '1px solid var(--border)' : 'none', cursor:'pointer', transition:'background 150ms ease' }}
+            onClick={() => setSelected(selected?.id === inc.id ? null : inc)}
+            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-card-hover)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+          >
+            <div style={{ ...s.dot, background: inc.status === 'approved' ? 'var(--color-success)' : 'var(--color-warning)', width:'10px', height:'10px' }} />
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ fontSize:'13px', fontWeight:600, color:'var(--text-primary)' }}>{inc.incident_type}</div>
+              <div style={{ fontSize:'11px', color:'var(--text-muted)', marginTop:'2px' }}>
+                {inc.cad_number} · {siteMap[inc.site_id]?.name ?? 'Unknown Site'} · {new Date(inc.created_at).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })}
+              </div>
+              {selected?.id === inc.id && inc.summary && (
+                <div style={{ marginTop:'10px', fontSize:'13px', color:'var(--text-secondary)', lineHeight:1.6, paddingTop:'10px', borderTop:'1px solid var(--border)' }}>{inc.summary}</div>
+              )}
+            </div>
+            <Icon name={selected?.id === inc.id ? 'chevron-up' : 'chevron-down'} size={14} color="var(--text-muted)" />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Messages ─────────────────────────────────────────────────────────────────
+
+function MessagesTab({ companyId, profile }) {
+  const [channels, setChannels] = useState([])
+  const [activeChannel, setActiveChannel] = useState(null)
+  const [messages, setMessages]  = useState([])
+  const [input, setInput]        = useState('')
+  const [sending, setSending]    = useState(false)
+  const [employee, setEmployee]  = useState(null)
+
+  useEffect(() => {
+    if (!companyId) return
+    Promise.all([
+      supabase.from('message').select('channel_id').eq('company_id', companyId).then(({ data }) => {
+        const unique = [...new Set((data||[]).map(m => m.channel_id))]
+        setChannels(unique.map(id => ({ id, name: id })))
+        if (unique.length > 0 && !activeChannel) setActiveChannel(unique[0])
+      }),
+      supabase.from('employee').select('id').eq('user_id', profile.id).single().then(({ data }) => setEmployee(data)),
+    ])
+  }, [companyId])
+
+  useEffect(() => {
+    if (!activeChannel || !companyId) return
+    supabase.from('message').select('*').eq('company_id', companyId).eq('channel_id', activeChannel).order('created_at').limit(50)
+      .then(({ data }) => setMessages(data || []))
+    const channel = supabase.channel(`client-chat-${activeChannel}`)
+      .on('postgres_changes', { event:'INSERT', schema:'public', table:'message', filter:`channel_id=eq.${activeChannel}` }, payload => {
+        setMessages(prev => [...prev, payload.new])
+      }).subscribe()
+    return () => supabase.removeChannel(channel)
+  }, [activeChannel, companyId])
+
+  async function sendMessage() {
+    if (!input.trim() || !employee || sending) return
+    setSending(true)
+    await supabase.from('message').insert({
+      company_id: companyId,
+      channel_id: activeChannel,
+      sender_id: employee.id,
+      content: input.trim(),
+      message_type: 'direct',
+    })
+    setInput('')
+    setSending(false)
+  }
+
+  const channelLabel = (id) => {
+    if (id === 'announcements') return 'Announcements'
+    if (id === 'general') return 'General'
+    return id.charAt(0).toUpperCase() + id.slice(1)
+  }
+
+  return (
+    <div style={{ display:'flex', height:'100%', overflow:'hidden' }}>
+      {/* Channel list */}
+      <div style={{ width:'200px', borderRight:'1px solid var(--border)', padding:'12px 0', flexShrink:0, overflowY:'auto' }}>
+        <div style={{ fontSize:'10px', color:'var(--text-muted)', letterSpacing:'1.5px', textTransform:'uppercase', padding:'8px 14px 4px', fontFamily:'var(--font-condensed)' }}>Channels</div>
+        {channels.map(ch => (
+          <button key={ch.id} style={{ display:'flex', alignItems:'center', gap:'8px', width:'100%', padding:'10px 14px', fontSize:'13px', color: activeChannel === ch.id ? 'var(--accent)' : 'var(--text-secondary)', background: activeChannel === ch.id ? 'var(--accent-bg)' : 'transparent', border:'none', borderLeft: activeChannel === ch.id ? '2px solid var(--accent)' : '2px solid transparent', cursor:'pointer', textAlign:'left', fontFamily:'var(--font-body)' }} onClick={() => setActiveChannel(ch.id)}>
+            <Icon name="hash" size={13} />{channelLabel(ch.id)}
+          </button>
+        ))}
+        {channels.length === 0 && (
+          <div style={{ padding:'14px', fontSize:'12px', color:'var(--text-muted)' }}>No messages yet.</div>
+        )}
+      </div>
+
+      {/* Message view */}
+      <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden' }}>
+        {activeChannel ? (
+          <>
+            <div style={{ padding:'12px 18px', borderBottom:'1px solid var(--border)', flexShrink:0, fontSize:'14px', fontWeight:600, color:'var(--text-primary)', display:'flex', alignItems:'center', gap:'8px' }}>
+              <Icon name="hash" size={14} color="var(--text-muted)" />{channelLabel(activeChannel)}
+            </div>
+            <div style={{ flex:1, overflowY:'auto', padding:'16px 18px', display:'flex', flexDirection:'column', gap:'12px' }}>
+              {messages.map(msg => {
+                const isMe = employee && msg.sender_id === employee.id
+                return (
+                  <div key={msg.id} style={{ display:'flex', flexDirection:'column', alignItems: isMe ? 'flex-end' : 'flex-start', gap:'2px' }}>
+                    <div style={{ maxWidth:'70%', background: isMe ? 'var(--accent)' : 'var(--bg-surface)', color: isMe ? 'var(--text-inverse)' : 'var(--text-primary)', borderRadius: isMe ? '12px 12px 2px 12px' : '12px 12px 12px 2px', padding:'10px 14px', fontSize:'13px', lineHeight:1.5, border: isMe ? 'none' : '1px solid var(--border)' }}>
+                      {msg.content}
+                    </div>
+                    <div style={{ fontSize:'10px', color:'var(--text-muted)', marginTop:'1px' }}>
+                      {new Date(msg.created_at).toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit' })}
+                    </div>
+                  </div>
+                )
+              })}
+              {messages.length === 0 && <div style={{ color:'var(--text-muted)', fontSize:'13px' }}>No messages in this channel yet.</div>}
+            </div>
+            <div style={{ padding:'12px 18px', borderTop:'1px solid var(--border)', display:'flex', gap:'10px', flexShrink:0 }}>
+              <input
+                style={{ flex:1, background:'var(--bg-input)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', padding:'10px 14px', fontSize:'13px', color:'var(--text-primary)', outline:'none', fontFamily:'var(--font-body)' }}
+                placeholder="Type a message..."
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
+                onFocus={e => e.target.style.borderColor = 'var(--border-focus)'}
+                onBlur={e => e.target.style.borderColor = 'var(--border)'}
+              />
+              <button
+                style={{ background:'var(--accent)', color:'var(--text-inverse)', border:'none', borderRadius:'var(--radius-sm)', padding:'0 18px', height:'44px', fontFamily:'var(--font-condensed)', fontSize:'13px', fontWeight:700, letterSpacing:'1px', cursor:'pointer', opacity: !input.trim() || sending ? 0.5 : 1 }}
+                onClick={sendMessage}
+                disabled={!input.trim() || sending}
+              >
+                SEND
+              </button>
+            </div>
+          </>
+        ) : (
+          <div style={{ padding:'40px', color:'var(--text-muted)', fontSize:'14px' }}>Select a channel to view messages.</div>
+        )}
+      </div>
+    </div>
+  )
+}
