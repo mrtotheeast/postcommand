@@ -26,22 +26,24 @@
 }
 
 [data-theme="light"]{
-  --bg-base:#f0f4f8;--bg-surface:#e8edf3;--bg-card:#ffffff;--bg-card-hover:#f5f8fc;--bg-sidebar:#1a2b4a;--bg-input:#ffffff;
-  --border:#d0dae6;--border-subtle:#b8c8d8;--border-focus:#a8841e;
-  --text-primary:#0d1f35;--text-secondary:#4a6080;--text-muted:#8899aa;--text-inverse:#ffffff;
-  --accent:#a8841e;--accent-dark:#8a6c18;--accent-bg:rgba(168,132,30,0.1);--accent-border:rgba(168,132,30,0.3);
+  --bg-base:#ffffff;--bg-surface:#f8f9fa;--bg-card:#ffffff;--bg-card-hover:#f5f8fc;--bg-sidebar:#ffffff;--bg-input:#ffffff;
+  --border:#e2e6ea;--border-subtle:#dee2e6;--border-focus:#c8a84b;
+  --text-primary:#0d0f14;--text-secondary:#495057;--text-muted:#868e96;--text-inverse:#ffffff;
+  --accent:#c8a84b;--accent-dark:#a8881e;--accent-bg:rgba(200,168,75,0.12);--accent-border:rgba(200,168,75,0.32);
   --color-success:#2a8a52;--color-danger:#c03030;--color-warning:#c8721a;--color-info:#2a6ab0;
   --badge-bg:#c03030;
-  --tile-blue:rgba(42,106,176,0.1);--tile-gold:rgba(168,132,30,0.1);--tile-red:rgba(192,48,48,0.1);
+  --tile-blue:rgba(42,106,176,0.1);--tile-gold:rgba(200,168,75,0.1);--tile-red:rgba(192,48,48,0.1);
   --tile-green:rgba(42,138,82,0.1);--tile-purple:rgba(100,60,180,0.1);--tile-teal:rgba(20,130,130,0.1);
-  --tile-blue-icon:#2a6ab0;--tile-gold-icon:#a8841e;--tile-red-icon:#c03030;
+  --tile-blue-icon:#2a6ab0;--tile-gold-icon:#c8a84b;--tile-red-icon:#c03030;
   --tile-green-icon:#2a8a52;--tile-purple-icon:#6a3cb0;--tile-teal-icon:#148282;
   --shadow-card:0 2px 12px rgba(0,0,0,0.08);--shadow-modal:0 8px 40px rgba(0,0,0,0.2);
 }
 
 [data-theme="light"] .sidebar{
-  --text-primary:#ffffff;--text-secondary:#8899aa;--text-muted:#4a6080;
-  --border:#1a2d47;--border-subtle:#2a3d5a;--accent:#c9a227;--accent-bg:rgba(201,162,39,0.12);
+  --bg-sidebar:#ffffff;
+  --border:#e2e6ea;--border-subtle:#dee2e6;
+  --text-primary:#0d0f14;--text-secondary:#495057;--text-muted:#868e96;
+  --accent:#c8a84b;--accent-bg:rgba(200,168,75,0.12);
 }
 
 html{font-size:16px;height:100%;-webkit-text-size-adjust:100%}
