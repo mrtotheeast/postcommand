@@ -476,11 +476,12 @@ function DetailPanel({ site, onDuty, tab, setTab, onClose, onEdit, canEdit }) {
   }, [site.id])
 
   const TABS = [
-    { id:'info',       label:'Info' },
-    { id:'status',     label:'Coverage' },
-    { id:'docs',       label:'Documents' },
-    { id:'inspections',label:'Inspections' },
-    { id:'qr',         label:'QR Code' },
+    { id:'info',        label:'Info' },
+    { id:'status',      label:'Coverage' },
+    { id:'docs',        label:'Documents' },
+    { id:'checkpoints', label:'Checkpoints' },
+    { id:'inspections', label:'Inspections' },
+    { id:'qr',          label:'Site QR' },
   ]
 
   return (
@@ -555,6 +556,8 @@ function DetailPanel({ site, onDuty, tab, setTab, onClose, onEdit, canEdit }) {
           )}
 
           {tab === 'docs' && <SiteDocs siteId={site.id} companyId={site.company_id} canEdit={canEdit} />}
+
+          {tab === 'checkpoints' && <SiteCheckpoints siteId={site.id} companyId={site.company_id} siteName={site.name} canEdit={canEdit} />}
 
           {tab === 'inspections' && <SiteInspections siteId={site.id} companyId={site.company_id} siteName={site.name} canEdit={canEdit} />}
 
@@ -653,6 +656,110 @@ function SiteDocs({ siteId, companyId, canEdit }) {
         ) : (
           <button style={{ ...s.ghostBtn, marginTop:'14px', height:'36px', fontSize:'12px', padding:'0 14px', borderStyle:'dashed' }} onClick={()=>setAdding(true)}><Icon name="plus" size={13}/>ADD DOCUMENT</button>
         )
+      )}
+    </div>
+  )
+}
+
+// ── Site Checkpoints ─────────────────────────────────────────────────────────
+
+function cpQrUrl(checkpointId) {
+  const data = encodeURIComponent(`postcommand-checkpoint:${checkpointId}`)
+  return `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${data}&color=0d0f14&bgcolor=ffffff`
+}
+
+function SiteCheckpoints({ siteId, companyId, siteName, canEdit }) {
+  const [checkpoints, setCheckpoints] = useState([])
+  const [loading, setLoading]     = useState(true)
+  const [adding, setAdding]       = useState(false)
+  const [form, setForm]           = useState({ name:'', location_hint:'', order_index:0 })
+  const [saving, setSaving]       = useState(false)
+  const [viewQr, setViewQr]       = useState(null)
+
+  useEffect(() => { load() }, [siteId])
+
+  async function load() {
+    setLoading(true)
+    const { data } = await supabase.from('site_checkpoint').select('*').eq('site_id', siteId).order('order_index')
+    setCheckpoints(data || [])
+    setLoading(false)
+  }
+
+  async function save() {
+    if (!form.name.trim()) return
+    setSaving(true)
+    await supabase.from('site_checkpoint').insert({ company_id:companyId, site_id:siteId, name:form.name.trim(), location_hint:form.location_hint.trim()||null, order_index:checkpoints.length })
+    setSaving(false); setAdding(false); setForm({ name:'', location_hint:'', order_index:0 }); load()
+  }
+
+  async function del(id) {
+    await supabase.from('site_checkpoint').delete().eq('id', id); load()
+  }
+
+  const inputF = e => { e.target.style.borderColor='var(--border-focus)' }
+  const inputB = e => { e.target.style.borderColor='var(--border)' }
+  const inp    = { background:'var(--bg-input)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', padding:'8px 10px', fontSize:'12px', color:'var(--text-primary)', outline:'none', width:'100%', fontFamily:'var(--font-body)', transition:'border-color 150ms ease' }
+  const lbl    = { fontSize:'10px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', marginBottom:'4px' }
+
+  return (
+    <div>
+      <div style={{ fontSize:'12px', color:'var(--text-muted)', marginBottom:'12px', lineHeight:1.5 }}>
+        Checkpoints are QR codes placed at specific locations (door, gate, post). Officers scan them during patrol to log their position.
+      </div>
+
+      {checkpoints.map((cp, i) => (
+        <div key={cp.id} style={{ display:'flex', alignItems:'center', gap:'10px', padding:'10px 0', borderBottom:'1px solid var(--border)' }}>
+          <div style={{ width:'28px', height:'28px', borderRadius:'50%', background:'var(--accent-bg)', border:'1px solid var(--accent-border)', display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'var(--font-condensed)', fontSize:'11px', fontWeight:700, color:'var(--accent)', flexShrink:0 }}>{i+1}</div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:'13px', color:'var(--text-primary)', fontWeight:500 }}>{cp.name}</div>
+            {cp.location_hint && <div style={{ fontSize:'11px', color:'var(--text-muted)' }}>{cp.location_hint}</div>}
+          </div>
+          <button style={{ ...s.iconBtn, minHeight:'32px', minWidth:'32px' }} title="View QR Code" onClick={()=>setViewQr(cp)}>
+            <Icon name="grid" size={13}/>
+          </button>
+          {canEdit && <button style={{ ...s.iconBtn, color:'var(--color-danger)', minHeight:'32px', minWidth:'32px' }} onClick={()=>del(cp.id)}>
+            <Icon name="trash-2" size={13}/>
+          </button>}
+        </div>
+      ))}
+
+      {checkpoints.length === 0 && !adding && (
+        <div style={{ fontSize:'13px', color:'var(--text-muted)', padding:'12px 0' }}>No checkpoints defined. Add them below.</div>
+      )}
+
+      {canEdit && (
+        adding ? (
+          <div style={{ marginTop:'12px', padding:'12px', background:'var(--bg-surface)', borderRadius:'var(--radius-sm)', border:'1px solid var(--border)' }}>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'8px', marginBottom:'8px' }}>
+              <div><div style={lbl}>Checkpoint Name *</div><input style={inp} value={form.name} onChange={e=>setForm(p=>({...p,name:e.target.value}))} onFocus={inputF} onBlur={inputB} placeholder="e.g. Main Entrance"/></div>
+              <div><div style={lbl}>Location Hint</div><input style={inp} value={form.location_hint} onChange={e=>setForm(p=>({...p,location_hint:e.target.value}))} onFocus={inputF} onBlur={inputB} placeholder="e.g. Front door, east side"/></div>
+            </div>
+            <div style={{ display:'flex', gap:'8px' }}>
+              <button style={{ ...s.saveBtn, height:'34px', fontSize:'11px', padding:'0 12px', opacity:(!form.name.trim()||saving)?0.6:1 }} onClick={save} disabled={!form.name.trim()||saving}>{saving?'SAVING...':'SAVE'}</button>
+              <button style={{ ...s.ghostBtn, height:'34px', fontSize:'11px', padding:'0 10px' }} onClick={()=>setAdding(false)}>CANCEL</button>
+            </div>
+          </div>
+        ) : (
+          <button style={{ ...s.ghostBtn, marginTop:'12px', height:'34px', fontSize:'11px', padding:'0 12px', borderStyle:'dashed' }} onClick={()=>setAdding(true)}><Icon name="plus" size={12}/>ADD CHECKPOINT</button>
+        )
+      )}
+
+      {/* QR Code viewer modal */}
+      {viewQr && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.65)', zIndex:500, display:'flex', alignItems:'center', justifyContent:'center', padding:'20px' }} onClick={()=>setViewQr(null)}>
+          <div style={{ background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-lg)', padding:'28px', maxWidth:'300px', width:'100%', textAlign:'center', boxShadow:'var(--shadow-modal)' }} onClick={e=>e.stopPropagation()}>
+            <div style={{ fontFamily:'var(--font-display)', fontSize:'18px', letterSpacing:'1.5px', color:'var(--text-primary)', marginBottom:'4px' }}>{viewQr.name}</div>
+            <div style={{ fontSize:'12px', color:'var(--text-muted)', marginBottom:'16px' }}>{siteName}{viewQr.location_hint?` · ${viewQr.location_hint}`:''}</div>
+            <img src={cpQrUrl(viewQr.id)} alt={viewQr.name} style={{ width:'200px', height:'200px', borderRadius:'var(--radius-md)', border:'8px solid white', background:'white', display:'block', margin:'0 auto 16px' }}/>
+            <div style={{ fontSize:'10px', color:'var(--text-muted)', marginBottom:'14px', fontFamily:'var(--font-condensed)', letterSpacing:'0.5px' }}>ID: {viewQr.id}</div>
+            <div style={{ display:'flex', gap:'8px', justifyContent:'center' }}>
+              <a href={cpQrUrl(viewQr.id)} download={`checkpoint-${viewQr.name.replace(/\s+/g,'_')}.png`} style={{ ...s.saveBtn, textDecoration:'none', height:'38px', fontSize:'12px', padding:'0 14px' }}>
+                <Icon name="download" size={13}/>DOWNLOAD
+              </a>
+              <button style={{ ...s.ghostBtn, height:'38px', fontSize:'12px', padding:'0 12px' }} onClick={()=>setViewQr(null)}>CLOSE</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

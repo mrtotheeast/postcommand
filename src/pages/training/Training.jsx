@@ -543,8 +543,30 @@ function CourseFormModal({ course, companyId, employeeId, onClose, onSaved }) {
       <div style={s.modal}>
         <div style={s.mHead}>
           <div style={s.mTitle}>{course ? 'EDIT COURSE' : 'NEW COURSE'}</div>
-          <button style={s.closeBtn} onClick={onClose}><Icon name="x" size={18} /></button>
+          <div style={{ display:'flex', gap:'8px', alignItems:'center' }}>
+            <button style={{ display:'inline-flex', alignItems:'center', gap:'6px', background:'var(--accent-bg)', color:'var(--accent)', border:'1px solid var(--accent-border)', borderRadius:'var(--radius-sm)', padding:'0 12px', height:'36px', fontFamily:'var(--font-condensed)', fontSize:'11px', fontWeight:700, letterSpacing:'1px', cursor:'pointer' }} onClick={()=>setShowAiPanel(p=>!p)}>
+              <Icon name="zap" size={12}/>AI GENERATE
+            </button>
+            <button style={s.closeBtn} onClick={onClose}><Icon name="x" size={18} /></button>
+          </div>
         </div>
+
+        {showAiPanel && (
+          <div style={{ background:'var(--accent-bg)', border:'1px solid var(--accent-border)', borderRadius:'var(--radius-sm)', padding:'14px', marginBottom:'16px' }}>
+            <div style={{ fontSize:'11px', color:'var(--accent)', fontFamily:'var(--font-condensed)', textTransform:'uppercase', letterSpacing:'1px', marginBottom:'10px', display:'flex', alignItems:'center', gap:'6px' }}>
+              <Icon name="zap" size={12}/>Generate Course with Claude AI
+            </div>
+            <div style={{ display:'flex', gap:'8px', marginBottom:'8px' }}>
+              <input style={{ ...s.inp, flex:1 }} value={aiTopic} onChange={e=>setAiTopic(e.target.value)} onFocus={inputF} onBlur={inputB} placeholder="e.g. Use of Force Policy for Private Security Officers" onKeyDown={e=>e.key==='Enter'&&generateWithAI()}/>
+              <button style={{ ...s.saveBtn, height:'44px', padding:'0 18px', opacity:(!aiTopic.trim()||aiGenerating)?0.6:1 }} onClick={generateWithAI} disabled={!aiTopic.trim()||aiGenerating}>
+                {aiGenerating ? <><Icon name="loader" size={14}/>WRITING...</> : <><Icon name="arrow-right" size={14}/>GENERATE</>}
+              </button>
+            </div>
+            {aiError && <div style={{ fontSize:'12px', color:'var(--color-danger)' }}>{aiError}</div>}
+            <div style={{ fontSize:'11px', color:'var(--text-muted)' }}>Claude will generate title, description, and full course content. You can edit before saving.</div>
+          </div>
+        )}
+
         <div style={s.field}>
           <div style={s.lbl}>Title *</div>
           <input style={s.inp} value={form.title} onChange={e=>setF('title',e.target.value)} onFocus={inputF} onBlur={inputB} placeholder="e.g. Use of Force Policy" />

@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
 import Icon from '../../components/ui/Icon'
 import { exportReportPDF } from '../../lib/pdfExport'
+import { exportToSheets } from '../../lib/googleSheets'
 
 const PERIODS = [
   { id:'7d',  label:'Last 7 Days' },
@@ -229,9 +230,16 @@ export default function Reports() {
         <select style={s.sel} value={period} onChange={e => setPeriod(e.target.value)}>
           {PERIODS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
         </select>
-        <button style={s.exportBtn} onClick={exportCSV}><Icon name="download" size={14} />EXPORT CSV</button>
-        <button style={s.exportBtn} onClick={() => exportReportPDF(computed, periodLabel)}><Icon name="download" size={14} />DOWNLOAD PDF</button>
+        <button style={s.exportBtn} onClick={exportCSV}><Icon name="download" size={14} />CSV</button>
+        <button style={s.exportBtn} onClick={() => exportReportPDF(computed, periodLabel)}><Icon name="download" size={14} />PDF</button>
         <button style={s.exportBtn} onClick={printPDF}><Icon name="printer" size={14} />PRINT</button>
+        <SheetsBtn rows={computed ? [
+          ['Type','Count'],
+          ...computed.incTypeChart.map(d=>[d.label,d.value]),
+          ['---','---'],
+          ['Officer','Hours'],
+          ...computed.topHours.map(d=>[d.label,d.value]),
+        ] : []} title={`Ops Report ${periodLabel}`} type="Operations" />
       </div>
 
       {mainSection === 'financial'   && <FinancialTab companyId={profile?.company_id} period={period} />}
@@ -590,6 +598,35 @@ function PerformanceTab({ companyId, period }) {
           </tbody>
         </table>
       </div>
+    </div>
+  )
+}
+
+
+// ── Google Sheets button ──────────────────────────────────────────────────────
+
+function SheetsBtn({ rows, title, type }) {
+  const [loading, setLoading] = useState(false)
+  const [err, setErr]         = useState(null)
+
+  async function go() {
+    setLoading(true); setErr(null)
+    try { await exportToSheets(title, type, rows) }
+    catch(e) { setErr('Google Sheets not configured yet — add GOOGLE_SERVICE_ACCOUNT_JSON to edge function secrets.') }
+    setLoading(false)
+  }
+
+  return (
+    <div style={{ position:'relative' }}>
+      <button style={{ display:'inline-flex', alignItems:'center', gap:'6px', background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-sm)', padding:'0 14px', height:'42px', fontFamily:'var(--font-condensed)', fontSize:'12px', color:'var(--text-secondary)', cursor:'pointer', letterSpacing:'1px', opacity:loading?0.6:1 }} onClick={go} disabled={loading}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><path d="M14 2v6h6M8 13h8M8 17h8M8 9h2" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+        {loading ? 'EXPORTING...' : 'SHEETS'}
+      </button>
+      {err && (
+        <div style={{ position:'absolute', top:'calc(100% + 6px)', right:0, background:'var(--bg-card)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', padding:'10px 14px', fontSize:'11px', color:'var(--color-warning)', maxWidth:'320px', zIndex:10, boxShadow:'var(--shadow-card)' }}>
+          {err}
+        </div>
+      )}
     </div>
   )
 }
