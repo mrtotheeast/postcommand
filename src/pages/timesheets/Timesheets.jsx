@@ -361,6 +361,7 @@ function PTOPanel({ companyId, profile, employees, canReview }) {
   const [showNew, setShowNew]   = useState(false)
   const [employee, setEmployee] = useState(null)
   const [filter, setFilter]     = useState('all')
+  const [ptoView, setPtoView]   = useState('list') // list | calendar
 
   useEffect(() => { load() }, [companyId])
 
@@ -413,42 +414,54 @@ function PTOPanel({ companyId, profile, employees, canReview }) {
   return (
     <div>
       <div style={{ display:'flex', gap:'10px', marginBottom:'16px', alignItems:'center', flexWrap:'wrap' }}>
-        <select style={selStyle} value={filter} onChange={e=>setFilter(e.target.value)}>
-          <option value="all">All Status</option>
-          {Object.entries(PTO_STATUSES).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
-        </select>
+        <div style={{ display:'flex', gap:'2px', background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-sm)', padding:'3px' }}>
+          {[['list','List'],['calendar','Calendar']].map(([v,l])=>(
+            <button key={v} onClick={()=>setPtoView(v)} style={{ padding:'0 12px', height:'32px', border:'none', borderRadius:'4px', background:ptoView===v?'var(--accent-bg)':'transparent', color:ptoView===v?'var(--accent)':'var(--text-muted)', cursor:'pointer', fontSize:'11px', fontFamily:'var(--font-condensed)', fontWeight:600 }}>{l}</button>
+          ))}
+        </div>
+        {ptoView === 'list' && (
+          <select style={selStyle} value={filter} onChange={e=>setFilter(e.target.value)}>
+            <option value="all">All Status</option>
+            {Object.entries(PTO_STATUSES).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
+          </select>
+        )}
         <button style={{...btnStyle(),height:'40px',padding:'0 16px',fontSize:'12px'}} onClick={()=>setShowNew(true)}>+ REQUEST PTO</button>
       </div>
 
-      {visible.length === 0 ? (
-        <div style={{textAlign:'center',padding:'40px',color:'var(--text-muted)',fontSize:'13px'}}>No PTO requests found.</div>
-      ) : (
-        <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',overflow:'hidden'}}>
-          {visible.map((r,i) => {
-            const st = PTO_STATUSES[r.status] || PTO_STATUSES.pending
-            return (
-              <div key={r.id} style={{display:'flex',alignItems:'center',gap:'14px',padding:'14px 18px',borderBottom:i<visible.length-1?'1px solid var(--border)':'none'}}>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-primary)'}}>{empMap[r.employee_id]||'—'}</div>
-                  <div style={{fontSize:'12px',color:'var(--text-muted)',marginTop:'2px'}}>
-                    {r.pto_type} · {r.start_date} → {r.end_date} · {calcDays(r.start_date,r.end_date)}
-                    {r.notes ? ` · "${r.notes}"` : ''}
-                  </div>
-                </div>
-                <span style={pill(r.status)}>{st.label}</span>
-                {canReview && r.status==='pending' && (
-                  <div style={{display:'flex',gap:'6px'}}>
-                    <button style={btnStyle('success')} onClick={()=>updateStatus(r.id,'approved')}><Icon name="check" size={11}/>APPROVE</button>
-                    <button style={btnStyle('deny')}    onClick={()=>updateStatus(r.id,'denied')}><Icon name="x" size={11}/>DENY</button>
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
+      {ptoView === 'calendar' && <PTOCalendar requests={requests.filter(r=>r.status==='approved')} empMap={Object.fromEntries(employees.map(e=>[e.id,`${e.first_name} ${e.last_name}`]))} />}
 
-      {showNew && <PTORequestModal companyId={companyId} employeeId={employee?.id} onClose={()=>setShowNew(false)} onSaved={()=>{setShowNew(false);load()}} />}
+      {ptoView === 'list' && (
+        <>
+          {visible.length === 0 ? (
+            <div style={{textAlign:'center',padding:'40px',color:'var(--text-muted)',fontSize:'13px'}}>No PTO requests found.</div>
+          ) : (
+            <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',overflow:'hidden'}}>
+              {visible.map((r,i) => {
+                const st = PTO_STATUSES[r.status] || PTO_STATUSES.pending
+                return (
+                  <div key={r.id} style={{display:'flex',alignItems:'center',gap:'14px',padding:'14px 18px',borderBottom:i<visible.length-1?'1px solid var(--border)':'none'}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-primary)'}}>{empMap[r.employee_id]||'—'}</div>
+                      <div style={{fontSize:'12px',color:'var(--text-muted)',marginTop:'2px'}}>
+                        {r.pto_type} · {r.start_date} → {r.end_date} · {calcDays(r.start_date,r.end_date)}
+                        {r.notes ? ` · "${r.notes}"` : ''}
+                      </div>
+                    </div>
+                    <span style={pill(r.status)}>{st.label}</span>
+                    {canReview && r.status==='pending' && (
+                      <div style={{display:'flex',gap:'6px'}}>
+                        <button style={btnStyle('success')} onClick={()=>updateStatus(r.id,'approved')}><Icon name="check" size={11}/>APPROVE</button>
+                        <button style={btnStyle('deny')}    onClick={()=>updateStatus(r.id,'denied')}><Icon name="x" size={11}/>DENY</button>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+          {showNew && <PTORequestModal companyId={companyId} employeeId={employee?.id} onClose={()=>setShowNew(false)} onSaved={()=>{setShowNew(false);load()}} />}
+        </>
+      )}
     </div>
   )
 }
@@ -495,6 +508,75 @@ function PTORequestModal({ companyId, employeeId, onClose, onSaved }) {
           <button style={gho} onClick={onClose}>CANCEL</button>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ── PTO Calendar ──────────────────────────────────────────────────────────────
+
+function PTOCalendar({ requests, empMap }) {
+  const [baseDate, setBaseDate] = useState(new Date())
+  const year  = baseDate.getFullYear()
+  const month = baseDate.getMonth()
+  const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
+  const DAYS   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
+
+  const firstDay = new Date(year, month, 1).getDay()
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+
+  const PTO_COLORS = ['#5b9fe0','#3aaa6a','#c8a84b','#a07ae0','#e8943a','#e05555','#28a0a0']
+
+  // Map employee → color index
+  const empIds = [...new Set(requests.map(r=>r.employee_id))]
+  const empColor = Object.fromEntries(empIds.map((id,i)=>[id, PTO_COLORS[i % PTO_COLORS.length]]))
+
+  function getRequestsForDay(day) {
+    const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`
+    return requests.filter(r => r.start_date <= dateStr && r.end_date >= dateStr)
+  }
+
+  return (
+    <div style={{ background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-md)', overflow:'hidden' }}>
+      {/* Header */}
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'14px 18px', borderBottom:'1px solid var(--border)' }}>
+        <button onClick={()=>setBaseDate(new Date(year,month-1,1))} style={{ background:'transparent', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', color:'var(--text-secondary)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', width:'34px', height:'34px' }}>‹</button>
+        <div style={{ fontFamily:'var(--font-display)', fontSize:'18px', letterSpacing:'2px', color:'var(--text-primary)' }}>{MONTHS[month].toUpperCase()} {year}</div>
+        <button onClick={()=>setBaseDate(new Date(year,month+1,1))} style={{ background:'transparent', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', color:'var(--text-secondary)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', width:'34px', height:'34px' }}>›</button>
+      </div>
+      {/* Day headers */}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', background:'var(--bg-surface)' }}>
+        {DAYS.map(d=><div key={d} style={{ padding:'8px 4px', textAlign:'center', fontSize:'10px', color:'var(--text-muted)', fontFamily:'var(--font-condensed)', textTransform:'uppercase', letterSpacing:'1px' }}>{d}</div>)}
+      </div>
+      {/* Grid */}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:'1px', background:'var(--border)' }}>
+        {[...Array(firstDay)].map((_,i)=><div key={`pad-${i}`} style={{ background:'var(--bg-surface)', minHeight:'70px' }}/>)}
+        {[...Array(daysInMonth)].map((_,i)=>{
+          const day = i + 1
+          const dayReqs = getRequestsForDay(day)
+          const isToday = new Date().getDate()===day && new Date().getMonth()===month && new Date().getFullYear()===year
+          return (
+            <div key={day} style={{ background:'var(--bg-card)', minHeight:'70px', padding:'6px', position:'relative' }}>
+              <div style={{ fontSize:'12px', color:isToday?'var(--accent)':'var(--text-secondary)', fontWeight:isToday?700:400, marginBottom:'4px', width:'22px', height:'22px', display:'flex', alignItems:'center', justifyContent:'center', background:isToday?'var(--accent-bg)':'transparent', borderRadius:'50%' }}>{day}</div>
+              {dayReqs.map(r=>(
+                <div key={r.id} style={{ fontSize:'10px', fontFamily:'var(--font-condensed)', padding:'2px 5px', borderRadius:'3px', marginBottom:'2px', background:`${empColor[r.employee_id]}22`, color:empColor[r.employee_id], borderLeft:`2px solid ${empColor[r.employee_id]}`, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }} title={`${empMap[r.employee_id]||'?'} · ${r.pto_type}`}>
+                  {(empMap[r.employee_id]||'?').split(' ')[0]}
+                </div>
+              ))}
+            </div>
+          )
+        })}
+      </div>
+      {/* Legend */}
+      {empIds.length > 0 && (
+        <div style={{ display:'flex', gap:'12px', flexWrap:'wrap', padding:'12px 18px', borderTop:'1px solid var(--border)' }}>
+          {empIds.map(id=>(
+            <div key={id} style={{ display:'flex', alignItems:'center', gap:'5px', fontSize:'11px', color:'var(--text-secondary)' }}>
+              <div style={{ width:'10px', height:'10px', borderRadius:'2px', background:empColor[id], flexShrink:0 }}/>
+              {empMap[id]||id.slice(0,8)}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

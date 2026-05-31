@@ -138,7 +138,7 @@ export default function Training() {
   if (loading) return <div style={{ padding:'24px' }}>{[...Array(4)].map((_,i) => <div key={i} className="skeleton" style={{ height:'120px', borderRadius:'10px', marginBottom:'12px' }} />)}</div>
 
   const TABS = [
-    ...(isAdmin ? [{ id:'library', label:'Course Library' }, { id:'assignments', label:`Assignments (${totalAssigned})` }] : []),
+    ...(isAdmin ? [{ id:'library', label:'Course Library' }, { id:'assignments', label:`Assignments (${totalAssigned})` }, { id:'leaderboard', label:'Leaderboard' }] : []),
     { id:'my', label:`My Training${myPending > 0 ? ` (${myPending})` : ''}` },
   ]
 
@@ -220,6 +220,10 @@ export default function Training() {
       {/* ── Assignments ── */}
       {tab === 'assignments' && (
         <AssignmentsTab assignments={assignments} courses={courses} empMap={empMap} onRefresh={load} />
+      )}
+
+      {tab === 'leaderboard' && (
+        <Leaderboard assignments={assignments} employees={Object.values(empMap).length > 0 ? null : null} empMap={empMap} courses={courses} />
       )}
 
       {/* ── My Training ── */}
@@ -696,6 +700,59 @@ function AssignModal({ course, employees, assignments, companyId, onClose, onSav
           <button style={s.ghostBtn} onClick={onClose}>CANCEL</button>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ── Leaderboard ───────────────────────────────────────────────────────────────
+
+function Leaderboard({ assignments, empMap, courses }) {
+  const empStats = {}
+  for (const a of assignments) {
+    if (!empStats[a.employee_id]) empStats[a.employee_id] = { total:0, completed:0, overdue:0, inProgress:0 }
+    empStats[a.employee_id].total++
+    if (a.status==='completed')   empStats[a.employee_id].completed++
+    if (a.status==='overdue')     empStats[a.employee_id].overdue++
+    if (a.status==='in_progress') empStats[a.employee_id].inProgress++
+  }
+  const ranked = Object.entries(empStats)
+    .map(([empId, stats]) => ({ empId, name:empMap[empId]||'Unknown', ...stats, pct:stats.total>0?Math.round((stats.completed/stats.total)*100):0 }))
+    .sort((a,b) => b.pct-a.pct || b.completed-a.completed)
+
+  const medal = (i) => i===0?'🥇':i===1?'🥈':i===2?'🥉':`#${i+1}`
+
+  return (
+    <div style={{ background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-md)', overflow:'hidden' }}>
+      {ranked.length===0 ? (
+        <div style={{ padding:'40px', textAlign:'center', color:'var(--text-muted)', fontSize:'14px' }}>No training data yet. Assign courses to get started.</div>
+      ) : (
+        <>
+          <div style={{ display:'grid', gridTemplateColumns:'44px 1fr 70px 70px 70px 110px', padding:'10px 18px', fontSize:'10px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', borderBottom:'1px solid var(--border)', gap:'10px' }}>
+            <div>Rank</div><div>Employee</div><div>Done</div><div>Total</div><div>Overdue</div><div>Completion</div>
+          </div>
+          {ranked.map((r, i) => (
+            <div key={r.empId} style={{ display:'grid', gridTemplateColumns:'44px 1fr 70px 70px 70px 110px', padding:'13px 18px', borderBottom:i<ranked.length-1?'1px solid var(--border)':'none', alignItems:'center', gap:'10px', background:i===0?'rgba(200,168,75,0.05)':'transparent' }}
+              onMouseEnter={e=>e.currentTarget.style.background='var(--bg-card-hover)'}
+              onMouseLeave={e=>e.currentTarget.style.background=i===0?'rgba(200,168,75,0.05)':'transparent'}
+            >
+              <div style={{ fontSize:'18px', textAlign:'center' }}>{medal(i)}</div>
+              <div>
+                <div style={{ fontSize:'13px', fontWeight:600, color:'var(--text-primary)' }}>{r.name}</div>
+                {r.inProgress>0 && <div style={{ fontSize:'11px', color:'var(--color-info)', marginTop:'1px' }}>{r.inProgress} in progress</div>}
+              </div>
+              <div style={{ fontFamily:'var(--font-display)', fontSize:'20px', color:'var(--color-success)', letterSpacing:'1px' }}>{r.completed}</div>
+              <div style={{ fontSize:'13px', color:'var(--text-secondary)' }}>{r.total}</div>
+              <div style={{ fontSize:'13px', color:r.overdue>0?'var(--color-danger)':'var(--text-muted)' }}>{r.overdue||'—'}</div>
+              <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
+                <div style={{ flex:1, height:'6px', background:'var(--border)', borderRadius:'3px', overflow:'hidden' }}>
+                  <div style={{ height:'100%', borderRadius:'3px', background:r.pct===100?'var(--color-success)':r.pct>=50?'var(--accent)':'var(--color-warning)', width:`${r.pct}%`, transition:'width 400ms ease' }}/>
+                </div>
+                <span style={{ fontSize:'12px', fontFamily:'var(--font-condensed)', color:'var(--text-muted)', minWidth:'34px' }}>{r.pct}%</span>
+              </div>
+            </div>
+          ))}
+        </>
+      )}
     </div>
   )
 }

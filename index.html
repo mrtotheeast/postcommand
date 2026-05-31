@@ -14,6 +14,13 @@
     <link rel="manifest" href="/manifest.json" />
     <link rel="apple-touch-icon" href="/favicon.svg" />
     <title>PostCommand</title>
+    <script>
+      // Stamp theme before React hydrates to prevent flash of wrong theme.
+      // Default is always 'dark' unless user explicitly picked 'light'.
+      var t = localStorage.getItem('pc-theme');
+      document.documentElement.setAttribute('data-theme', t === 'light' ? 'light' : 'dark');
+      if (!t) localStorage.setItem('pc-theme', 'dark');
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -25,9 +25,12 @@ export default function Personnel() {
   const [search, setSearch] = useState('')
   const [filterRole, setFilterRole] = useState('all')
   const [filterStatus, setFilterStatus] = useState('all')
-  const [selected, setSelected] = useState(null)
-  const [view, setView] = useState('grid')
+  const [selected, setSelected]     = useState(null)
+  const [view, setView]             = useState('grid')
   const [showImport, setShowImport] = useState(false)
+  const [bulkSelected, setBulkSelected] = useState(new Set())
+  const [bulkMode, setBulkMode]     = useState(false)
+  const [bulkActing, setBulkActing] = useState(false)
   const canViewSensitive = atLeast(profile?.role, 'lieutenant')
   const canEdit = atLeast(profile?.role, 'chief')
 
@@ -71,7 +74,19 @@ export default function Personnel() {
           <p style={{fontSize:'12px',color:'var(--text-muted)',marginTop:'4px'}}>{employees.length} total employees</p>
         </div>
         {canEdit && (
-          <div style={{display:'flex',gap:'8px'}}>
+          <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
+            {bulkMode && bulkSelected.size > 0 && (
+              <BulkActionBar
+                count={bulkSelected.size}
+                companyId={profile.company_id}
+                selectedIds={[...bulkSelected]}
+                onDone={() => { setBulkSelected(new Set()); setBulkMode(false); loadEmployees() }}
+                onCancel={() => { setBulkSelected(new Set()); setBulkMode(false) }}
+              />
+            )}
+            <button style={{display:'flex',alignItems:'center',gap:'8px',background:bulkMode?'var(--accent-bg)':'var(--bg-card)',color:bulkMode?'var(--accent)':'var(--text-secondary)',border:`1px solid ${bulkMode?'var(--accent-border)':'var(--border-subtle)'}`,borderRadius:'var(--radius-md)',padding:'0 16px',height:'44px',fontFamily:'var(--font-condensed)',fontSize:'13px',letterSpacing:'1px',cursor:'pointer'}} onClick={() => { setBulkMode(m=>!m); setBulkSelected(new Set()) }}>
+              <Icon name="check-square" size={15}/>{bulkMode ? 'EXIT BULK' : 'BULK SELECT'}
+            </button>
             <button style={{display:'flex',alignItems:'center',gap:'8px',background:'var(--bg-card)',color:'var(--text-secondary)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'0 16px',height:'44px',fontFamily:'var(--font-condensed)',fontSize:'13px',letterSpacing:'1px',cursor:'pointer'}} onClick={() => setShowImport(true)}><Icon name="upload" size={15}/>IMPORT CSV</button>
             <button style={{display:'flex',alignItems:'center',gap:'8px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-md)',padding:'0 20px',height:'44px',fontFamily:'var(--font-condensed)',fontSize:'14px',fontWeight:700,letterSpacing:'1px',cursor:'pointer'}}><Icon name="plus" size={16}/>ADD EMPLOYEE</button>
           </div>
@@ -125,7 +140,16 @@ export default function Personnel() {
 
       {view==='grid' && filtered.length>0 && (
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))',gap:'12px'}}>
-          {filtered.map(emp=><EmpCard key={emp.id} emp={emp} ini={initials(emp)} canViewSensitive={canViewSensitive} onClick={()=>setSelected(emp)}/>)}
+          {filtered.map(emp=>(
+            <div key={emp.id} style={{position:'relative'}}>
+              {bulkMode && (
+                <div style={{position:'absolute',top:'10px',left:'10px',zIndex:2}} onClick={e=>e.stopPropagation()}>
+                  <input type="checkbox" checked={bulkSelected.has(emp.id)} onChange={()=>{ setBulkSelected(prev=>{ const n=new Set(prev); n.has(emp.id)?n.delete(emp.id):n.add(emp.id); return n }) }} style={{width:'18px',height:'18px',accentColor:'var(--accent)',cursor:'pointer'}}/>
+                </div>
+              )}
+              <EmpCard emp={emp} ini={initials(emp)} canViewSensitive={canViewSensitive} onClick={()=>bulkMode ? setBulkSelected(prev=>{ const n=new Set(prev); n.has(emp.id)?n.delete(emp.id):n.add(emp.id); return n }) : setSelected(emp)} selected={bulkMode && bulkSelected.has(emp.id)}/>
+            </div>
+          ))}
         </div>
       )}
 
@@ -547,6 +571,53 @@ function R({label,value,color}) {
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:'13px'}}>
       <span style={{color:'var(--text-muted)'}}>{label}</span>
       <span style={{color:color||'var(--text-primary)',fontWeight:500,textAlign:'right',maxWidth:'60%',wordBreak:'break-word'}}>{value}</span>
+    </div>
+  )
+}
+
+// ── Bulk Action Bar ───────────────────────────────────────────────────────────
+
+function BulkActionBar({ count, companyId, selectedIds, onDone, onCancel }) {
+  const [acting, setActing] = useState(false)
+  const [inviting, setInviting] = useState(false)
+
+  const btn = (v='accent') => ({ display:'inline-flex', alignItems:'center', gap:'6px', border:'none', borderRadius:'var(--radius-sm)', padding:'0 14px', height:'36px', fontFamily:'var(--font-condensed)', fontSize:'12px', fontWeight:700, letterSpacing:'1px', cursor:'pointer',
+    background: v==='accent'?'var(--accent)':v==='danger'?'var(--color-danger-bg)':v==='ghost'?'var(--bg-card)':'var(--color-info-bg)',
+    color:       v==='accent'?'var(--text-inverse)':v==='danger'?'var(--color-danger)':v==='ghost'?'var(--text-secondary)':'var(--color-info)',
+    border:      v==='ghost'?'1px solid var(--border)':v==='danger'?'1px solid rgba(192,57,43,0.3)':v==='info'?'1px solid rgba(91,159,224,0.3)':'none',
+  })
+
+  async function bulkUpdate(field, value) {
+    setActing(true)
+    await Promise.all(selectedIds.map(id => supabase.from('employee').update({ [field]: value }).eq('id', id)))
+    setActing(false); onDone()
+  }
+
+  async function bulkInvite() {
+    setInviting(true)
+    const { data: emps } = await supabase.from('employee').select('id,first_name,last_name,email,role,company_id').in('id', selectedIds)
+    for (const emp of (emps||[])) {
+      if (!emp.email || emp.has_app_access) continue
+      try {
+        const tempPass = Math.random().toString(36).slice(2,10)+'Aa1!'
+        const { data: authData } = await supabase.auth.signUp({ email:emp.email, password:tempPass, options:{ data:{ first_name:emp.first_name, last_name:emp.last_name } } })
+        if (authData?.user?.id) {
+          await supabase.from('user_profile').upsert({ id:authData.user.id, first_name:emp.first_name, last_name:emp.last_name, email:emp.email, role:emp.role, company_id:emp.company_id, company_slug:'' })
+          await supabase.from('employee').update({ user_id:authData.user.id, has_app_access:true, invitation_status:'invited' }).eq('id', emp.id)
+        }
+      } catch {}
+    }
+    setInviting(false); onDone()
+  }
+
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:'8px', padding:'8px 14px', background:'var(--accent-bg)', border:'1px solid var(--accent-border)', borderRadius:'var(--radius-md)', flexWrap:'wrap' }}>
+      <span style={{ fontSize:'13px', color:'var(--accent)', fontFamily:'var(--font-condensed)', fontWeight:700, letterSpacing:'0.5px', marginRight:'4px' }}>{count} selected</span>
+      <button style={btn('info')} onClick={() => bulkUpdate('status','active')} disabled={acting}><Icon name="check" size={12}/>SET ACTIVE</button>
+      <button style={btn('info')} onClick={() => bulkUpdate('status','inactive')} disabled={acting}><Icon name="minus-circle" size={12}/>SET INACTIVE</button>
+      <button style={btn('accent')} onClick={bulkInvite} disabled={inviting}><Icon name="mail" size={12}/>{inviting?'INVITING...':'INVITE ALL'}</button>
+      <button style={btn('danger')} onClick={() => { if(window.confirm(`Remove app access for ${count} employees?`)) bulkUpdate('has_app_access',false) }} disabled={acting}><Icon name="lock" size={12}/>REVOKE ACCESS</button>
+      <button style={btn('ghost')} onClick={onCancel}>CANCEL</button>
     </div>
   )
 }

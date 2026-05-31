@@ -3,8 +3,10 @@ const ThemeContext = createContext(null)
 export function ThemeProvider({ children }) {
   const [theme, setTheme] = useState(() => {
     const saved = localStorage.getItem('pc-theme')
+    // Only honour an explicit user choice — never follow OS preference.
+    // PostCommand is a dark-first app (deep black + NPS gold).
     if (saved === 'light' || saved === 'dark') return saved
-    return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+    return 'dark'
   })
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)

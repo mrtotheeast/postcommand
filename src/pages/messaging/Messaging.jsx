@@ -35,6 +35,8 @@ export default function Messaging() {
   const [sending, setSending]             = useState(false)
   const [showDMPicker, setShowDMPicker]   = useState(false)
   const [dmSearch, setDmSearch]           = useState('')
+  const [scheduleMode, setScheduleMode]  = useState(false)
+  const [scheduleAt, setScheduleAt]      = useState('')
   const messagesEndRef = useRef(null)
   const inputRef       = useRef(null)
   const subRef         = useRef(null)
@@ -89,6 +91,12 @@ export default function Messaging() {
 
   async function sendMessage() {
     if (!input.trim() || sending) return
+    // Scheduled message — store with future send_at timestamp
+    if (scheduleMode && scheduleAt) {
+      const ch = visibleChannels?.find(c=>c.id===activeChannel)
+      await supabase.from('scheduled_message').insert({ company_id:profile.company_id, channel_id:activeChannel, channel_name:ch?.name||activeChannel, sender_id:profile.employee_id||null, sender_name:`${profile.first_name} ${profile.last_name}`, sender_role:profile.role, content:input.trim(), send_at:new Date(scheduleAt).toISOString() })
+      setInput(''); setSending(false); setScheduleMode(false); setScheduleAt(''); inputRef.current?.focus(); return
+    }
     const channelId = activeTab === 'channels' ? activeChannel : getDMId(profile.employee_id||'', activeDM)
     const ch = CHANNELS.find(c => c.id === activeChannel)
     setSending(true)
@@ -244,19 +252,34 @@ export default function Messaging() {
               {activeTab==='dms'&&!activeDM?'Select a conversation':'Only supervisors can post here'}
             </div>
           ) : (
-            <div style={{display:'flex',gap:'10px',alignItems:'flex-end'}}>
-              <textarea ref={inputRef} value={input} onChange={e=>setInput(e.target.value)} onKeyDown={handleKeyDown}
-                placeholder={activeTab==='channels'?`Message #${activeChInfo?.name?.toLowerCase()}...`:`Message ${activeDMEmp?.first_name||''}...`}
-                rows={1} style={{flex:1,padding:'10px 14px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-lg)',color:'var(--text-primary)',fontSize:'14px',resize:'none',outline:'none',lineHeight:1.5,maxHeight:'120px',overflowY:'auto',fontFamily:'inherit'}}
-                onInput={e=>{e.target.style.height='auto';e.target.style.height=Math.min(e.target.scrollHeight,120)+'px'}}
-                onFocus={e=>e.target.style.borderColor='var(--border-focus)'} onBlur={e=>e.target.style.borderColor='var(--border-subtle)'}/>
-              <button onClick={sendMessage} disabled={!input.trim()||sending}
-                style={{width:'44px',height:'44px',borderRadius:'50%',background:input.trim()?'var(--accent)':'var(--bg-card)',border:'1px solid var(--border-subtle)',cursor:input.trim()?'pointer':'default',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,transition:'all 150ms ease'}}>
-                <Icon name="send" size={17} color={input.trim()?'var(--text-inverse)':'var(--text-muted)'}/>
-              </button>
-            </div>
+            <>
+              {scheduleMode && (
+                <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'8px',padding:'8px 12px',background:'var(--accent-bg)',border:'1px solid var(--accent-border)',borderRadius:'var(--radius-sm)'}}>
+                  <Icon name="clock" size={14} color="var(--accent)"/>
+                  <span style={{fontSize:'12px',color:'var(--accent)',fontFamily:'var(--font-condensed)',letterSpacing:'0.5px'}}>SCHEDULE FOR:</span>
+                  <input type="datetime-local" value={scheduleAt} onChange={e=>setScheduleAt(e.target.value)} style={{background:'var(--bg-input)',border:'1px solid var(--accent-border)',borderRadius:'var(--radius-sm)',padding:'4px 8px',fontSize:'12px',color:'var(--text-primary)',outline:'none',fontFamily:'var(--font-body)'}}/>
+                  <button onClick={()=>{setScheduleMode(false);setScheduleAt('')}} style={{background:'transparent',border:'none',color:'var(--text-muted)',cursor:'pointer',padding:'2px',display:'flex'}}><Icon name="x" size={14}/></button>
+                </div>
+              )}
+              <div style={{display:'flex',gap:'10px',alignItems:'flex-end'}}>
+                <textarea ref={inputRef} value={input} onChange={e=>setInput(e.target.value)} onKeyDown={handleKeyDown}
+                  placeholder={activeTab==='channels'?`Message #${activeChInfo?.name?.toLowerCase()}...`:`Message ${activeDMEmp?.first_name||''}...`}
+                  rows={1} style={{flex:1,padding:'10px 14px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-lg)',color:'var(--text-primary)',fontSize:'14px',resize:'none',outline:'none',lineHeight:1.5,maxHeight:'120px',overflowY:'auto',fontFamily:'inherit'}}
+                  onInput={e=>{e.target.style.height='auto';e.target.style.height=Math.min(e.target.scrollHeight,120)+'px'}}
+                  onFocus={e=>e.target.style.borderColor='var(--border-focus)'} onBlur={e=>e.target.style.borderColor='var(--border-subtle)'}/>
+                {canBroadcast && activeChannel==='announcements' && !scheduleMode && (
+                  <button onClick={()=>setScheduleMode(true)} title="Schedule announcement" style={{width:'44px',height:'44px',borderRadius:'50%',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,transition:'all 150ms ease'}}>
+                    <Icon name="clock" size={17} color="var(--text-muted)"/>
+                  </button>
+                )}
+                <button onClick={sendMessage} disabled={!input.trim()||sending||(scheduleMode&&!scheduleAt)}
+                  style={{width:'44px',height:'44px',borderRadius:'50%',background:input.trim()&&(!scheduleMode||scheduleAt)?'var(--accent)':'var(--bg-card)',border:'1px solid var(--border-subtle)',cursor:input.trim()?'pointer':'default',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,transition:'all 150ms ease'}}>
+                  <Icon name={scheduleMode?'clock':'send'} size={17} color={input.trim()&&(!scheduleMode||scheduleAt)?'var(--text-inverse)':'var(--text-muted)'}/>
+                </button>
+              </div>
+            </>
           )}
-          <div style={{fontSize:'11px',color:'var(--text-muted)',marginTop:'6px'}}>Enter to send · Shift+Enter for new line</div>
+          <div style={{fontSize:'11px',color:'var(--text-muted)',marginTop:'6px'}}>{scheduleMode?'Message will be scheduled · click the clock to send':'Enter to send · Shift+Enter for new line'}</div>
         </div>
       </div>
 

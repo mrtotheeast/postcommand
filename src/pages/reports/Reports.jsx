@@ -222,7 +222,7 @@ export default function Reports() {
 
       <div style={s.toolbar}>
         <div style={{ display:'flex', gap:'2px', background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-sm)', padding:'3px' }}>
-          {[['ops','Operations'],['financial','Financial']].map(([v,l]) => (
+          {[['ops','Operations'],['financial','Financial'],['performance','Performance']].map(([v,l]) => (
             <button key={v} onClick={() => setMainSection(v)} style={{ padding:'0 14px', height:'34px', border:'none', borderRadius:'4px', background:mainSection===v?'var(--accent-bg)':'transparent', color:mainSection===v?'var(--accent)':'var(--text-muted)', cursor:'pointer', fontSize:'11px', fontFamily:'var(--font-condensed)', fontWeight:mainSection===v?700:400, letterSpacing:'1px' }}>{l.toUpperCase()}</button>
           ))}
         </div>
@@ -234,8 +234,9 @@ export default function Reports() {
         <button style={s.exportBtn} onClick={printPDF}><Icon name="printer" size={14} />PRINT</button>
       </div>
 
-      {mainSection === 'financial' && <FinancialTab companyId={profile?.company_id} period={period} />}
-      {mainSection !== 'financial' && <>
+      {mainSection === 'financial'   && <FinancialTab companyId={profile?.company_id} period={period} />}
+      {mainSection === 'performance' && <PerformanceTab companyId={profile?.company_id} period={period} />}
+      {mainSection === 'ops' && <>
 
 
       {/* KPI row */}
@@ -437,6 +438,157 @@ function FinancialTab({ companyId, period }) {
             <div style={{ fontSize:'14px', fontFamily:'var(--font-condensed)', fontWeight:700, color:bucket.color, minWidth:'90px', textAlign:'right' }}>{fmtMoney(bucket.items.reduce((a,b)=>a+(b.total||0),0))}</div>
           </div>
         ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Officer Performance Tab ───────────────────────────────────────────────────
+
+function PerformanceTab({ companyId, period }) {
+  const [data, setData]     = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [sort, setSort]     = useState('hours')
+  const [dir, setDir]       = useState(-1)
+
+  useEffect(() => { if (companyId) load() }, [companyId, period])
+
+  function periodStart() {
+    const now = new Date()
+    if (period==='7d')  return new Date(now-7*86400000).toISOString()
+    if (period==='30d') return new Date(now-30*86400000).toISOString()
+    if (period==='90d') return new Date(now-90*86400000).toISOString()
+    return new Date(now.getFullYear(),0,1).toISOString()
+  }
+
+  async function load() {
+    setLoading(true)
+    const start = periodStart()
+    const today = new Date().toISOString().slice(0,10)
+    const [{ data: employees }, { data: timesheets }, { data: shifts }, { data: incidents },
+           { data: patrols }, { data: checkpoints }, { data: violations }, { data: trainAssign }] = await Promise.all([
+      supabase.from('employee').select('id,first_name,last_name,role,position_title').eq('company_id', companyId).eq('status','active'),
+      supabase.from('timesheet').select('id,employee_id,clock_in,clock_out,total_hours,status,date').eq('company_id', companyId).gte('date', start.slice(0,10)),
+      supabase.from('shift').select('id,employee_id,start_time').eq('company_id', companyId).gte('start_time', start).not('status','eq','cancelled'),
+      supabase.from('incident_report').select('id,employee_id').eq('company_id', companyId).gte('created_at', start),
+      supabase.from('patrol_log').select('id,employee_id,started_at,ended_at,status').eq('company_id', companyId).gte('started_at', start),
+      supabase.from('patrol_checkpoint').select('id,patrol_log_id').eq('company_id', companyId),
+      supabase.from('clockin_violation').select('id,employee_id,overridden').eq('company_id', companyId).gte('created_at', start),
+      supabase.from('training_assignment').select('id,employee_id,status').eq('company_id', companyId),
+    ])
+
+    const cpMap = {} // patrol_log_id → count
+    for (const cp of (checkpoints||[])) { cpMap[cp.patrol_log_id] = (cpMap[cp.patrol_log_id]||0)+1 }
+
+    const stats = (employees||[]).map(emp => {
+      const empTs     = (timesheets||[]).filter(t=>t.employee_id===emp.id)
+      const empShifts = (shifts||[]).filter(s=>s.employee_id===emp.id)
+      const hours     = empTs.filter(t=>t.status==='approved').reduce((a,t)=>a+(Number(t.total_hours)||0),0)
+      const empPatrols = (patrols||[]).filter(p=>p.employee_id===emp.id&&p.status==='completed'&&p.ended_at)
+      const patrolHours = empPatrols.reduce((a,p)=>a+(new Date(p.ended_at)-new Date(p.started_at))/3600000,0)
+      const cps       = empPatrols.reduce((a,p)=>a+(cpMap[p.id]||0),0)
+      const empInc    = (incidents||[]).filter(i=>i.employee_id===emp.id).length
+      const empViol   = (violations||[]).filter(v=>v.employee_id===emp.id)
+      const empTrain  = (trainAssign||[]).filter(a=>a.employee_id===emp.id)
+      const trainPct  = empTrain.length>0 ? Math.round((empTrain.filter(a=>a.status==='completed').length/empTrain.length)*100) : null
+
+      // Punctuality: clock_in vs shift start_time (minutes late)
+      let lateMinutes = 0, lateCount = 0
+      for (const ts of empTs) {
+        const sh = empShifts.find(s=>s.start_time?.slice(0,10)===ts.date)
+        if (sh && ts.clock_in) {
+          const diff = (new Date(ts.clock_in)-new Date(sh.start_time))/60000
+          if (diff>5) { lateMinutes+=diff; lateCount++ }
+        }
+      }
+      const avgLate = lateCount>0 ? Math.round(lateMinutes/lateCount) : 0
+
+      return { ...emp, hours:Math.round(hours*10)/10, shifts:empTs.length, incidents:empInc, patrols:empPatrols.length, patrolHours:Math.round(patrolHours*10)/10, checkpoints:cps, violations:empViol.length, overrides:empViol.filter(v=>v.overridden).length, lateCount, avgLate, trainPct }
+    })
+
+    setData(stats); setLoading(false)
+  }
+
+  const sorted = data ? [...data].sort((a,b)=>(b[sort]-a[sort])*dir).slice(0,50) : []
+
+  function TH({ col, label }) {
+    return (
+      <th style={{ textAlign:'left', fontSize:'10px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', padding:'8px 12px', borderBottom:'1px solid var(--border)', whiteSpace:'nowrap', cursor:'pointer', userSelect:'none' }}
+        onClick={()=>{ if(sort===col) setDir(d=>-d); else { setSort(col); setDir(-1) } }}>
+        {label}{sort===col?(dir===-1?' ↓':' ↑'):''}
+      </th>
+    )
+  }
+
+  function exportCSV() {
+    if (!sorted.length) return
+    const rows = [['Name','Role','Hours','Shifts','Incidents','Patrols','Patrol Hrs','Checkpoints','Violations','Overrides','Late Count','Avg Late (min)','Training %']]
+    sorted.forEach(r=>rows.push([`${r.first_name} ${r.last_name}`,r.role,r.hours,r.shifts,r.incidents,r.patrols,r.patrolHours,r.checkpoints,r.violations,r.overrides,r.lateCount,r.avgLate,r.trainPct??'—']))
+    const csv=rows.map(r=>r.map(c=>`"${c}"`).join(',')).join('\n')
+    const blob=new Blob([csv],{type:'text/csv'}); const url=URL.createObjectURL(blob)
+    const a=document.createElement('a'); a.href=url; a.download=`officer-performance-${period}.csv`; a.click(); URL.revokeObjectURL(url)
+  }
+
+  if (loading) return <div style={{ padding:'20px', color:'var(--text-muted)', fontFamily:'var(--font-condensed)', letterSpacing:'1px', fontSize:'12px' }}>LOADING...</div>
+
+  const td  = { padding:'10px 12px', fontSize:'12px', color:'var(--text-secondary)', verticalAlign:'middle', borderBottom:'1px solid var(--border)' }
+  const tdn = { padding:'10px 12px', fontSize:'12px', color:'var(--text-primary)', fontWeight:600, verticalAlign:'middle', borderBottom:'1px solid var(--border)' }
+
+  return (
+    <div>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'16px' }}>
+        <div style={{ fontSize:'12px', color:'var(--text-muted)' }}>{sorted.length} active officers · click columns to sort</div>
+        <button style={{ display:'inline-flex', alignItems:'center', gap:'6px', background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-sm)', padding:'0 14px', height:'36px', fontFamily:'var(--font-condensed)', fontSize:'12px', color:'var(--text-secondary)', cursor:'pointer' }} onClick={exportCSV}>
+          <Icon name="download" size={13}/>EXPORT CSV
+        </button>
+      </div>
+      <div style={{ background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-md)', overflow:'auto' }}>
+        <table style={{ width:'100%', borderCollapse:'collapse', minWidth:'900px' }}>
+          <thead>
+            <tr>
+              <th style={{ textAlign:'left', fontSize:'10px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', padding:'8px 12px', borderBottom:'1px solid var(--border)' }}>Officer</th>
+              <TH col="hours"       label="Hours" />
+              <TH col="shifts"      label="Shifts" />
+              <TH col="incidents"   label="Incidents" />
+              <TH col="patrols"     label="Patrols" />
+              <TH col="patrolHours" label="Patrol Hrs" />
+              <TH col="checkpoints" label="Checkpoints" />
+              <TH col="violations"  label="Violations" />
+              <TH col="lateCount"   label="Late" />
+              <TH col="trainPct"    label="Training %" />
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map(r => (
+              <tr key={r.id} onMouseEnter={e=>e.currentTarget.style.background='var(--bg-card-hover)'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                <td style={tdn}>
+                  {r.first_name} {r.last_name}
+                  <div style={{ fontSize:'10px', color:'var(--text-muted)', fontWeight:400, marginTop:'1px' }}>{r.position_title||r.role}</div>
+                </td>
+                <td style={{ ...td, color:'var(--accent)', fontFamily:'var(--font-condensed)', fontWeight:700 }}>{r.hours}h</td>
+                <td style={td}>{r.shifts}</td>
+                <td style={td}>{r.incidents || '—'}</td>
+                <td style={td}>{r.patrols || '—'}</td>
+                <td style={td}>{r.patrolHours > 0 ? `${r.patrolHours}h` : '—'}</td>
+                <td style={td}>{r.checkpoints || '—'}</td>
+                <td style={{ ...td, color: r.violations>0 ? 'var(--color-danger)' : 'var(--text-secondary)', fontWeight: r.violations>0 ? 600 : 400 }}>{r.violations || '—'}</td>
+                <td style={{ ...td, color: r.lateCount>2 ? 'var(--color-warning)' : 'var(--text-secondary)' }}>
+                  {r.lateCount > 0 ? `${r.lateCount}× (avg ${r.avgLate}m)` : '—'}
+                </td>
+                <td style={td}>
+                  {r.trainPct !== null ? (
+                    <div style={{ display:'flex', alignItems:'center', gap:'6px' }}>
+                      <div style={{ width:'50px', height:'5px', background:'var(--border)', borderRadius:'3px', overflow:'hidden' }}>
+                        <div style={{ height:'100%', borderRadius:'3px', background:r.trainPct===100?'var(--color-success)':r.trainPct>=50?'var(--accent)':'var(--color-warning)', width:`${r.trainPct}%` }}/>
+                      </div>
+                      <span style={{ fontSize:'11px' }}>{r.trainPct}%</span>
+                    </div>
+                  ) : '—'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   )

@@ -29,7 +29,8 @@ export default function Scheduling() {
   const [employees,setEmployees] = useState([])
   const [sites,setSites]       = useState([])
   const [loading,setLoading]   = useState(true)
-  const [showCreate,setShowCreate] = useState(false)
+  const [showCreate,setShowCreate]   = useState(false)
+  const [showAutoAssign,setShowAutoAssign] = useState(false)
   const [selected,setSelected] = useState(null)
   const [filterSite,setFilterSite] = useState('all')
   const [filterStatus,setFilterStatus] = useState('all')
@@ -116,6 +117,7 @@ export default function Scheduling() {
                 </button>
               ))}
             </div>)}
+            {canCreate&&mainTab==='schedule'&&<button onClick={()=>setShowAutoAssign(true)} style={{display:'flex',alignItems:'center',gap:'6px',background:'var(--bg-card)',color:'var(--text-secondary)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-sm)',padding:'0 14px',minHeight:'36px',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:600,letterSpacing:'1px',cursor:'pointer'}}><Icon name="cpu" size={14}/>AUTO-ASSIGN</button>}
             {canCreate&&mainTab==='schedule'&&<button onClick={()=>setShowCreate(true)} style={{display:'flex',alignItems:'center',gap:'6px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-sm)',padding:'0 14px',minHeight:'36px',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,letterSpacing:'1px',cursor:'pointer'}}><Icon name="plus" size={14}/>ADD SHIFT</button>}
           </div>
         </div>
@@ -166,6 +168,7 @@ export default function Scheduling() {
         }}
         onDelete={async(id)=>{ await supabase.from('shift').delete().eq('id',id); setSelected(null); loadAll() }}/>}
       {showCreate&&<CreateShiftModal employees={sortedEmployees} sites={sites} companyId={profile.company_id} createdBy={profile.id} onClose={()=>setShowCreate(false)} onSaved={()=>{setShowCreate(false);loadAll()}}/>}
+      {showAutoAssign&&<AutoAssignModal employees={sortedEmployees} sites={sites} shifts={shifts} companyId={profile.company_id} createdBy={profile.id} onClose={()=>setShowAutoAssign(false)} onSaved={()=>{setShowAutoAssign(false);loadAll()}}/>}
     </div>
   )
 }
@@ -611,3 +614,119 @@ function AvailabilityPanel({ companyId, profile, employees, canEdit }) {
   )
 }
 function SR({l,v}){if(!v)return null;return <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:'13px'}}><span style={{color:'var(--text-muted)'}}>{l}</span><span style={{color:'var(--text-primary)',fontWeight:500,textAlign:'right',maxWidth:'65%'}}>{v}</span></div>}
+
+// ── Auto-Assign Modal ─────────────────────────────────────────────────────────
+
+function AutoAssignModal({ employees, sites, shifts, companyId, createdBy, onClose, onSaved }) {
+  const today = new Date().toISOString().split('T')[0]
+  const [form, setForm] = useState({ site_id:'', date:today, sh:'08', sm:'00', eh:'16', em:'00', role:'officer', count:1 })
+  const [preview, setPreview]   = useState(null)
+  const [saving, setSaving]     = useState(false)
+  const [error, setError]       = useState(null)
+  const set = (k,v) => setForm(f=>({...f,[k]:v}))
+
+  const hrs  = Array.from({length:24},(_,i)=>String(i).padStart(2,'0'))
+  const mins = ['00','15','30','45']
+  const inp  = { width:'100%', padding:'10px 12px', background:'var(--bg-input)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-md)', color:'var(--text-primary)', fontSize:'13px', outline:'none', boxSizing:'border-box', height:'44px' }
+  const lbl  = { fontSize:'11px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', display:'block', marginBottom:'6px' }
+
+  function findCandidates() {
+    if (!form.site_id || !form.date) { setError('Select a site and date.'); return }
+    setError(null)
+    const start = new Date(form.date+'T'+form.sh+':'+form.sm+':00')
+    const end   = new Date(form.date+'T'+form.eh+':'+form.em+':00')
+    if (end<=start) { setError('End time must be after start.'); return }
+
+    // Employees already scheduled that day (any site)
+    const alreadyScheduled = new Set(
+      shifts.filter(s => {
+        const sDate = s.start_time?.slice(0,10)
+        if (sDate !== form.date) return false
+        // Overlap check
+        const sStart=new Date(s.start_time), sEnd=new Date(s.end_time)
+        return start<sEnd && end>sStart
+      }).map(s=>s.employee_id)
+    )
+
+    // Filter by role and not already scheduled
+    const candidates = employees.filter(e =>
+      (form.role==='any' || e.role===form.role || e.position_title?.toLowerCase().includes(form.role)) &&
+      !alreadyScheduled.has(e.id)
+    ).slice(0, Number(form.count))
+
+    setPreview({ candidates, start, end })
+  }
+
+  async function assign() {
+    if (!preview?.candidates?.length) return
+    setSaving(true)
+    const rows = preview.candidates.map(e => ({
+      company_id:companyId, employee_id:e.id, site_id:form.site_id,
+      start_time:preview.start.toISOString(), end_time:preview.end.toISOString(),
+      role:form.role==='any'?e.role:form.role, is_armed:false, status:'draft', created_by:createdBy
+    }))
+    const { error } = await supabase.from('shift').insert(rows)
+    if (error) { setError(error.message); setSaving(false); return }
+    setSaving(false); onSaved()
+  }
+
+  return (
+    <>
+      <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:200,backdropFilter:'blur(2px)'}}/>
+      <div style={{position:'fixed',top:'50%',left:'50%',transform:'translate(-50%,-50%)',width:'min(520px,95vw)',background:'var(--bg-surface)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-lg)',zIndex:201,display:'flex',flexDirection:'column',maxHeight:'90vh',boxShadow:'var(--shadow-modal)'}}>
+        <div style={{padding:'18px 24px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
+          <div>
+            <div style={{fontFamily:'var(--font-display)',fontSize:'18px',letterSpacing:'2px',color:'var(--text-primary)'}}>AUTO-ASSIGN SHIFTS</div>
+            <div style={{fontSize:'12px',color:'var(--text-muted)',marginTop:'2px'}}>Fill open slots from available officers</div>
+          </div>
+          <button onClick={onClose} style={{background:'transparent',border:'none',color:'var(--text-muted)',cursor:'pointer',display:'flex',minHeight:'44px',minWidth:'44px',alignItems:'center',justifyContent:'center'}}><Icon name="x" size={18}/></button>
+        </div>
+        <div style={{flex:1,overflowY:'auto',padding:'20px 24px',display:'flex',flexDirection:'column',gap:'14px'}}>
+          {error && <div style={{background:'var(--color-danger-bg)',border:'1px solid rgba(224,85,85,0.3)',borderRadius:'var(--radius-md)',padding:'10px 14px',fontSize:'13px',color:'var(--color-danger)'}}>{error}</div>}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px'}}>
+            <div><label style={lbl}>Site *</label><select style={inp} value={form.site_id} onChange={e=>set('site_id',e.target.value)}><option value="">Select site...</option>{sites.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+            <div><label style={lbl}>Date *</label><input type="date" style={inp} value={form.date} onChange={e=>set('date',e.target.value)}/></div>
+            <div><label style={lbl}>Start Time</label><div style={{display:'flex',gap:'6px'}}><select style={{...inp,flex:1}} value={form.sh} onChange={e=>set('sh',e.target.value)}>{hrs.map(h=><option key={h}>{h}</option>)}</select><select style={{...inp,flex:1}} value={form.sm} onChange={e=>set('sm',e.target.value)}>{mins.map(m=><option key={m}>{m}</option>)}</select></div></div>
+            <div><label style={lbl}>End Time</label><div style={{display:'flex',gap:'6px'}}><select style={{...inp,flex:1}} value={form.eh} onChange={e=>set('eh',e.target.value)}>{hrs.map(h=><option key={h}>{h}</option>)}</select><select style={{...inp,flex:1}} value={form.em} onChange={e=>set('em',e.target.value)}>{mins.map(m=><option key={m}>{m}</option>)}</select></div></div>
+            <div><label style={lbl}>Role</label><select style={inp} value={form.role} onChange={e=>set('role',e.target.value)}><option value="any">Any available</option>{['officer','corporal','sergeant','lieutenant'].map(r=><option key={r} value={r}>{ROLE_LABELS[r]||r}</option>)}</select></div>
+            <div><label style={lbl}>Officers Needed</label><input type="number" min="1" max="20" style={inp} value={form.count} onChange={e=>set('count',Math.max(1,Math.min(20,Number(e.target.value))))}/></div>
+          </div>
+
+          <button onClick={findCandidates} style={{display:'inline-flex',alignItems:'center',gap:'8px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'0 18px',height:'42px',fontFamily:'var(--font-condensed)',fontSize:'13px',color:'var(--text-secondary)',cursor:'pointer',letterSpacing:'1px'}}>
+            <Icon name="search" size={14}/>FIND AVAILABLE OFFICERS
+          </button>
+
+          {preview && (
+            <div>
+              <div style={{fontSize:'11px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1.5px',fontFamily:'var(--font-condensed)',marginBottom:'10px'}}>
+                {preview.candidates.length} officer{preview.candidates.length!==1?'s':''} available (not already scheduled)
+              </div>
+              {preview.candidates.length === 0 ? (
+                <div style={{padding:'20px',textAlign:'center',color:'var(--text-muted)',fontSize:'13px',background:'var(--bg-card)',borderRadius:'var(--radius-md)'}}>No available officers match your criteria for this time slot.</div>
+              ) : (
+                <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',overflow:'hidden'}}>
+                  {preview.candidates.map((e,i)=>(
+                    <div key={e.id} style={{display:'flex',alignItems:'center',gap:'12px',padding:'11px 16px',borderBottom:i<preview.candidates.length-1?'1px solid var(--border)':'none'}}>
+                      <div style={{width:'32px',height:'32px',borderRadius:'50%',background:'var(--accent-bg)',border:'1px solid var(--accent-border)',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,color:'var(--accent)',flexShrink:0}}>{e.first_name[0]}{e.last_name[0]}</div>
+                      <div style={{flex:1}}>
+                        <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-primary)'}}>{e.first_name} {e.last_name}</div>
+                        <div style={{fontSize:'11px',color:'var(--text-muted)'}}>{ROLE_LABELS[e.role]||e.role}{e.position_title?` · ${e.position_title}`:''}</div>
+                      </div>
+                      <Icon name="check-circle" size={16} color="var(--color-success)"/>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+        <div style={{padding:'16px 24px',borderTop:'1px solid var(--border)',display:'flex',gap:'10px',flexShrink:0}}>
+          <button onClick={assign} disabled={!preview?.candidates?.length||saving} style={{flex:1,height:'44px',background:'var(--accent)',border:'none',borderRadius:'var(--radius-md)',color:'var(--text-inverse)',fontFamily:'var(--font-condensed)',fontSize:'14px',fontWeight:700,cursor:'pointer',opacity:(!preview?.candidates?.length||saving)?0.5:1}}>
+            {saving?'ASSIGNING...':`CREATE ${preview?.candidates?.length||0} DRAFT SHIFT${(preview?.candidates?.length||0)!==1?'S':''}`}
+          </button>
+          <button onClick={onClose} style={{height:'44px',background:'transparent',border:'1px solid var(--border)',borderRadius:'var(--radius-md)',color:'var(--text-secondary)',fontFamily:'var(--font-condensed)',fontSize:'13px',cursor:'pointer',padding:'0 20px'}}>CANCEL</button>
+        </div>
+      </div>
+    </>
+  )
+}

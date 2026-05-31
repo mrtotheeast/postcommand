@@ -74,10 +74,12 @@ function complianceScore(docs) {
 export default function HR() {
   const { profile } = useAuth()
   const [tab, setTab]             = useState('documents')
-  const [employees, setEmployees] = useState([])
-  const [docs, setDocs]           = useState([])
-  const [writeups, setWriteups]   = useState([])
-  const [loading, setLoading]     = useState(true)
+  const [employees, setEmployees]   = useState([])
+  const [docs, setDocs]             = useState([])
+  const [writeups, setWriteups]     = useState([])
+  const [loading, setLoading]       = useState(true)
+  const [sendingReminders, setSendingReminders] = useState(false)
+  const [reminderResult, setReminderResult]     = useState(null)
   const [search, setSearch]       = useState('')
   const [filterCompliance, setFilterCompliance] = useState('all')
   const [selected, setSelected]   = useState(null)
@@ -128,8 +130,29 @@ export default function HR() {
   return (
     <div style={s.page}>
       <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}`}</style>
-      <h2 style={s.heading}>HR & DOCUMENTS</h2>
-      <p style={s.sub}>Employee documentation, compliance tracking, and onboarding.</p>
+      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:'4px', flexWrap:'wrap', gap:'12px' }}>
+        <div>
+          <h2 style={s.heading}>HR & DOCUMENTS</h2>
+          <p style={{ fontSize:'12px', color:'var(--text-muted)', marginTop:'4px' }}>Employee documentation, compliance tracking, and onboarding.</p>
+        </div>
+        <div style={{ display:'flex', gap:'8px', alignItems:'center' }}>
+          {reminderResult && <span style={{ fontSize:'12px', color:'var(--color-success)' }}>✓ {reminderResult}</span>}
+          <button
+            style={{ display:'inline-flex', alignItems:'center', gap:'8px', background:'var(--color-warning-bg)', color:'var(--color-warning)', border:'1px solid rgba(232,148,58,0.3)', borderRadius:'var(--radius-sm)', padding:'0 16px', height:'40px', fontFamily:'var(--font-condensed)', fontSize:'12px', fontWeight:700, letterSpacing:'1px', cursor:'pointer', opacity:sendingReminders?0.6:1 }}
+            onClick={async () => {
+              setSendingReminders(true); setReminderResult(null)
+              try {
+                const { data } = await supabase.functions.invoke('cert-reminders')
+                setReminderResult(`${data?.sent||0} reminder${(data?.sent||0)!==1?'s':''} sent`)
+              } catch { setReminderResult('Error — check Supabase logs') }
+              setSendingReminders(false)
+            }}
+            disabled={sendingReminders}
+          >
+            <Icon name="bell" size={13}/>{sendingReminders ? 'SENDING...' : 'SEND CERT REMINDERS'}
+          </button>
+        </div>
+      </div>
 
       <div style={s.stats}>
         {[

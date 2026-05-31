@@ -18,6 +18,7 @@ const TABS = [
   { id:'overview',  label:'Overview',  icon:'grid' },
   { id:'coverage',  label:'Coverage',  icon:'map-pin' },
   { id:'schedule',  label:'Schedule',  icon:'calendar' },
+  { id:'requests',  label:'Requests',  icon:'send' },
   { id:'incidents', label:'Incidents', icon:'file-check' },
   { id:'messages',  label:'Messages',  icon:'message-circle' },
 ]
@@ -138,6 +139,7 @@ export default function ClientPortal() {
               {tab === 'coverage'  && <CoverageTab sites={sites} onDutyMap={onDutyMap} empMap={empMap} />}
               {tab === 'schedule'  && <ScheduleTab shifts={shifts} sites={sites} siteMap={siteMap} empMap={empMap} />}
               {tab === 'incidents' && <IncidentsTab incidents={incidents} siteMap={siteMap} />}
+              {tab === 'requests'  && <ServiceRequestsTab companyId={profile?.company_id} profile={profile} sites={sites} />}
               {tab === 'messages'  && <MessagesTab companyId={profile?.company_id} profile={profile} />}
             </>
           )}
@@ -387,6 +389,115 @@ function IncidentsTab({ incidents, siteMap }) {
 }
 
 // ── Messages ─────────────────────────────────────────────────────────────────
+
+// ── Service Requests Tab ──────────────────────────────────────────────────────
+
+const SR_TYPES    = ['Additional Coverage', 'Schedule Change', 'Emergency Response', 'Site Inspection', 'Equipment Issue', 'Personnel Complaint', 'Event Security', 'Other']
+const SR_PRIORITY = ['Normal', 'Urgent', 'Critical']
+const SR_STATUS   = { pending:{bg:'var(--color-warning-bg)',color:'var(--color-warning)',label:'Pending'}, acknowledged:{bg:'var(--color-info-bg)',color:'var(--color-info)',label:'Acknowledged'}, resolved:{bg:'var(--color-success-bg)',color:'var(--color-success)',label:'Resolved'} }
+
+function ServiceRequestsTab({ companyId, profile, sites }) {
+  const [requests, setRequests] = useState([])
+  const [loading, setLoading]   = useState(true)
+  const [showNew, setShowNew]   = useState(false)
+  const [form, setForm]         = useState({ request_type:'Additional Coverage', priority:'Normal', site_id:'', description:'', preferred_date:'' })
+  const [saving, setSaving]     = useState(false)
+  const [saved, setSaved]       = useState(false)
+
+  useEffect(() => { if (companyId) load() }, [companyId])
+
+  async function load() {
+    setLoading(true)
+    const { data } = await supabase.from('service_request').select('*').eq('company_id', companyId).order('created_at', { ascending:false })
+    setRequests(data || [])
+    setLoading(false)
+  }
+
+  async function submit() {
+    if (!form.description.trim()) return
+    setSaving(true)
+    await supabase.from('service_request').insert({ company_id:companyId, request_type:form.request_type, priority:form.priority, site_id:form.site_id||null, description:form.description.trim(), preferred_date:form.preferred_date||null, status:'pending', submitted_by:profile?.email })
+    setSaving(false); setSaved(true); setShowNew(false)
+    setForm({ request_type:'Additional Coverage', priority:'Normal', site_id:'', description:'', preferred_date:'' })
+    load(); setTimeout(() => setSaved(false), 3000)
+  }
+
+  const inp = { background:'var(--bg-input)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', padding:'10px 12px', fontSize:'13px', color:'var(--text-primary)', outline:'none', width:'100%', fontFamily:'var(--font-body)', transition:'border-color 150ms ease' }
+  const foc = e => { e.target.style.borderColor='var(--border-focus)' }
+  const blr = e => { e.target.style.borderColor='var(--border)' }
+
+  return (
+    <div style={s.page}>
+      <h2 style={s.heading}>SERVICE REQUESTS</h2>
+      <p style={s.sub}>Submit requests for additional coverage, schedule changes, or other service needs.</p>
+
+      {saved && <div style={{ ...s.card, background:'var(--color-success-bg)', border:'1px solid rgba(58,170,106,0.3)', padding:'14px 20px', marginBottom:'16px', display:'flex', alignItems:'center', gap:'10px', color:'var(--color-success)', fontSize:'13px' }}><Icon name="check-circle" size={15}/>Request submitted. Our team will acknowledge within 24 hours.</div>}
+
+      <div style={{ marginBottom:'20px' }}>
+        <button style={{ display:'inline-flex', alignItems:'center', gap:'8px', background:'var(--accent)', color:'var(--text-inverse)', border:'none', borderRadius:'var(--radius-sm)', padding:'0 20px', height:'44px', fontFamily:'var(--font-condensed)', fontSize:'14px', fontWeight:700, letterSpacing:'1px', cursor:'pointer' }} onClick={() => setShowNew(v=>!v)}>
+          <Icon name={showNew?'x':'plus'} size={16}/>{showNew ? 'CANCEL' : 'NEW REQUEST'}
+        </button>
+      </div>
+
+      {showNew && (
+        <div style={{ ...s.card, marginBottom:'20px' }}>
+          <div style={{ fontSize:'11px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1.5px', fontFamily:'var(--font-condensed)', marginBottom:'16px' }}>New Service Request</div>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px', marginBottom:'12px' }}>
+            <div><div style={{ fontSize:'11px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', marginBottom:'5px' }}>Request Type</div>
+              <select style={{...inp,cursor:'pointer'}} value={form.request_type} onChange={e=>setForm(p=>({...p,request_type:e.target.value}))}>{SR_TYPES.map(t=><option key={t}>{t}</option>)}</select>
+            </div>
+            <div><div style={{ fontSize:'11px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', marginBottom:'5px' }}>Priority</div>
+              <select style={{...inp,cursor:'pointer'}} value={form.priority} onChange={e=>setForm(p=>({...p,priority:e.target.value}))}>{SR_PRIORITY.map(p=><option key={p}>{p}</option>)}</select>
+            </div>
+            <div><div style={{ fontSize:'11px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', marginBottom:'5px' }}>Site (optional)</div>
+              <select style={{...inp,cursor:'pointer'}} value={form.site_id} onChange={e=>setForm(p=>({...p,site_id:e.target.value}))}>
+                <option value="">Any / Not site-specific</option>
+                {(sites||[]).map(sv=><option key={sv.id} value={sv.id}>{sv.name}</option>)}
+              </select>
+            </div>
+            <div><div style={{ fontSize:'11px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', marginBottom:'5px' }}>Preferred Date</div>
+              <input type="date" style={inp} value={form.preferred_date} onChange={e=>setForm(p=>({...p,preferred_date:e.target.value}))} onFocus={foc} onBlur={blr}/>
+            </div>
+          </div>
+          <div style={{ marginBottom:'14px' }}>
+            <div style={{ fontSize:'11px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', marginBottom:'5px' }}>Description *</div>
+            <textarea style={{...inp,minHeight:'80px',resize:'vertical',lineHeight:1.6}} value={form.description} onChange={e=>setForm(p=>({...p,description:e.target.value}))} onFocus={foc} onBlur={blr} placeholder="Describe your request in detail..."/>
+          </div>
+          <button style={{ display:'inline-flex', alignItems:'center', gap:'8px', background:'var(--accent)', color:'var(--text-inverse)', border:'none', borderRadius:'var(--radius-sm)', padding:'0 20px', height:'44px', fontFamily:'var(--font-condensed)', fontSize:'13px', fontWeight:700, letterSpacing:'1px', cursor:'pointer', opacity:(!form.description.trim()||saving)?0.6:1 }} onClick={submit} disabled={!form.description.trim()||saving}>
+            <Icon name="send" size={14}/>{saving?'SUBMITTING...':'SUBMIT REQUEST'}
+          </button>
+        </div>
+      )}
+
+      {loading ? <div style={{ color:'var(--text-muted)', fontSize:'12px', fontFamily:'var(--font-condensed)', letterSpacing:'1px' }}>LOADING...</div> : requests.length === 0 ? (
+        <div style={{ ...s.card, textAlign:'center', padding:'40px', color:'var(--text-muted)' }}>No service requests submitted yet.</div>
+      ) : (
+        <div style={{ background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-md)', overflow:'hidden' }}>
+          {requests.map((r,i) => {
+            const st = SR_STATUS[r.status] || SR_STATUS.pending
+            const prioColor = r.priority==='Critical'?'var(--color-danger)':r.priority==='Urgent'?'var(--color-warning)':'var(--text-muted)'
+            return (
+              <div key={r.id} style={{ display:'flex', alignItems:'flex-start', gap:'14px', padding:'16px 18px', borderBottom:i<requests.length-1?'1px solid var(--border)':'none' }}>
+                <div style={{ flex:1 }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:'8px', marginBottom:'4px', flexWrap:'wrap' }}>
+                    <div style={{ fontSize:'13px', fontWeight:600, color:'var(--text-primary)' }}>{r.request_type}</div>
+                    <span style={{ fontSize:'10px', color:prioColor, fontFamily:'var(--font-condensed)', fontWeight:700, letterSpacing:'0.5px' }}>{r.priority.toUpperCase()}</span>
+                  </div>
+                  <div style={{ fontSize:'12px', color:'var(--text-muted)', marginBottom:'6px' }}>
+                    {new Date(r.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}
+                    {r.preferred_date ? ` · Preferred: ${r.preferred_date}` : ''}
+                  </div>
+                  <div style={{ fontSize:'13px', color:'var(--text-secondary)', lineHeight:1.5 }}>{r.description}</div>
+                </div>
+                <span style={{ ...s.badge, background:st.bg, color:st.color, flexShrink:0 }}>{st.label}</span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
 
 function MessagesTab({ companyId, profile }) {
   const [channels, setChannels] = useState([])
