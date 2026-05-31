@@ -476,10 +476,11 @@ function DetailPanel({ site, onDuty, tab, setTab, onClose, onEdit, canEdit }) {
   }, [site.id])
 
   const TABS = [
-    { id:'info',   label:'Info' },
-    { id:'status', label:'Coverage' },
-    { id:'docs',   label:'Documents' },
-    { id:'qr',     label:'QR Code' },
+    { id:'info',       label:'Info' },
+    { id:'status',     label:'Coverage' },
+    { id:'docs',       label:'Documents' },
+    { id:'inspections',label:'Inspections' },
+    { id:'qr',         label:'QR Code' },
   ]
 
   return (
@@ -554,6 +555,8 @@ function DetailPanel({ site, onDuty, tab, setTab, onClose, onEdit, canEdit }) {
           )}
 
           {tab === 'docs' && <SiteDocs siteId={site.id} companyId={site.company_id} canEdit={canEdit} />}
+
+          {tab === 'inspections' && <SiteInspections siteId={site.id} companyId={site.company_id} siteName={site.name} canEdit={canEdit} />}
 
           {tab === 'qr' && (
             <div style={s.qrBox}>
@@ -651,6 +654,152 @@ function SiteDocs({ siteId, companyId, canEdit }) {
           <button style={{ ...s.ghostBtn, marginTop:'14px', height:'36px', fontSize:'12px', padding:'0 14px', borderStyle:'dashed' }} onClick={()=>setAdding(true)}><Icon name="plus" size={13}/>ADD DOCUMENT</button>
         )
       )}
+    </div>
+  )
+}
+
+// ── Site Inspections ──────────────────────────────────────────────────────────
+
+const INSPECTION_ITEMS = [
+  'Entry/Exit points secured',
+  'Lighting functional — perimeter',
+  'Lighting functional — interior',
+  'CCTV cameras operational',
+  'Alarm system tested',
+  'Fire exits clear and accessible',
+  'First aid kit stocked',
+  'AED accessible and charged',
+  'Hazardous materials secured',
+  'Visitor log maintained',
+  'Officer post orders on site',
+  'Communication equipment charged',
+  'Vehicle access controlled',
+  'Fence/barrier integrity',
+  'No unauthorized personnel observed',
+]
+
+function SiteInspections({ siteId, companyId, siteName, canEdit }) {
+  const [inspections, setInspections] = useState([])
+  const [loading, setLoading]         = useState(true)
+  const [showNew, setShowNew]         = useState(false)
+  const [checks, setChecks]           = useState(Object.fromEntries(INSPECTION_ITEMS.map(i=>[i, null]))) // null | pass | fail | na
+  const [notes, setNotes]             = useState('')
+  const [saving, setSaving]           = useState(false)
+  const [expanded, setExpanded]       = useState(null)
+
+  useEffect(() => { load() }, [siteId])
+  async function load() {
+    setLoading(true)
+    const { data } = await supabase.from('site_inspection').select('*').eq('site_id', siteId).order('inspected_at', { ascending:false }).limit(20)
+    setInspections(data || []); setLoading(false)
+  }
+
+  async function save() {
+    setSaving(true)
+    const items = Object.entries(checks).map(([item, result]) => ({ item, result: result || 'na' }))
+    const passed = items.filter(i=>i.result==='pass').length
+    const failed = items.filter(i=>i.result==='fail').length
+    const score  = items.filter(i=>i.result!=='na').length > 0 ? Math.round((passed/(passed+failed))*100) : null
+    await supabase.from('site_inspection').insert({ company_id:companyId, site_id:siteId, inspected_at:new Date().toISOString(), items, notes:notes.trim()||null, score, passed, failed })
+    setSaving(false); setShowNew(false); setChecks(Object.fromEntries(INSPECTION_ITEMS.map(i=>[i,null]))); setNotes(''); load()
+  }
+
+  const RESULT_STYLES = {
+    pass: { bg:'var(--color-success-bg)', color:'var(--color-success)', label:'✓' },
+    fail: { bg:'var(--color-danger-bg)',  color:'var(--color-danger)',  label:'✗' },
+    na:   { bg:'var(--border)',           color:'var(--text-muted)',    label:'N/A' },
+  }
+
+  function scoreColor(score) {
+    if (score == null) return 'var(--text-muted)'
+    if (score >= 90) return 'var(--color-success)'
+    if (score >= 70) return 'var(--color-warning)'
+    return 'var(--color-danger)'
+  }
+
+  const inpBase = { background:'transparent', border:'none', borderRadius:'var(--radius-sm)', padding:'4px 8px', fontFamily:'var(--font-condensed)', fontSize:'11px', fontWeight:700, letterSpacing:'0.5px', cursor:'pointer', transition:'all 150ms ease', minHeight:'30px', minWidth:'44px' }
+
+  return (
+    <div>
+      {canEdit && !showNew && (
+        <button style={{ ...s.saveBtn, height:'36px', fontSize:'12px', padding:'0 14px', marginBottom:'14px' }} onClick={()=>setShowNew(true)}>
+          <Icon name="clipboard" size={13}/>NEW INSPECTION
+        </button>
+      )}
+
+      {showNew && (
+        <div style={{ background:'var(--bg-surface)', border:'1px solid var(--border)', borderRadius:'var(--radius-md)', padding:'14px', marginBottom:'14px' }}>
+          <div style={{ fontSize:'11px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1.5px', fontFamily:'var(--font-condensed)', marginBottom:'12px' }}>
+            New Inspection — {siteName}
+          </div>
+          <div style={{ display:'flex', gap:'8px', marginBottom:'10px', flexWrap:'wrap' }}>
+            <span style={{ ...s.pill, background:'var(--color-success-bg)', color:'var(--color-success)' }}>✓ Pass</span>
+            <span style={{ ...s.pill, background:'var(--color-danger-bg)', color:'var(--color-danger)' }}>✗ Fail</span>
+            <span style={{ ...s.pill, background:'var(--border)', color:'var(--text-muted)' }}>N/A</span>
+            <span style={{ fontSize:'11px', color:'var(--text-muted)', alignSelf:'center' }}>— tap each item to cycle</span>
+          </div>
+          {INSPECTION_ITEMS.map(item => {
+            const current = checks[item]
+            const cycle = () => setChecks(p => ({ ...p, [item]: current===null?'pass':current==='pass'?'fail':current==='fail'?'na':null }))
+            const rs = current ? RESULT_STYLES[current] : null
+            return (
+              <div key={item} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 0', borderBottom:'1px solid var(--border)' }}>
+                <span style={{ fontSize:'12px', color: rs ? 'var(--text-primary)' : 'var(--text-muted)' }}>{item}</span>
+                <button style={{ ...inpBase, background: rs?.bg || 'var(--bg-card)', color: rs?.color || 'var(--text-muted)', border:`1px solid ${rs?rs.color+'33':'var(--border)'}` }} onClick={cycle}>
+                  {rs?.label || '—'}
+                </button>
+              </div>
+            )
+          })}
+          <div style={{ marginTop:'12px' }}>
+            <div style={{ fontSize:'10px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', marginBottom:'5px' }}>Notes</div>
+            <textarea style={{ background:'var(--bg-input)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', padding:'8px 10px', fontSize:'12px', color:'var(--text-primary)', outline:'none', width:'100%', resize:'vertical', minHeight:'60px', lineHeight:1.5, fontFamily:'var(--font-body)' }} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Observations, issues noted, follow-up required..." onFocus={e=>e.target.style.borderColor='var(--border-focus)'} onBlur={e=>e.target.style.borderColor='var(--border)'}/>
+          </div>
+          <div style={{ display:'flex', gap:'8px', marginTop:'10px' }}>
+            <button style={{ ...s.saveBtn, height:'36px', fontSize:'12px', padding:'0 14px', opacity:saving?0.6:1 }} onClick={save} disabled={saving}>{saving?'SAVING...':'SUBMIT INSPECTION'}</button>
+            <button style={{ ...s.ghostBtn, height:'36px', fontSize:'12px', padding:'0 12px' }} onClick={()=>setShowNew(false)}>CANCEL</button>
+          </div>
+        </div>
+      )}
+
+      {loading ? <div style={{ fontSize:'12px', color:'var(--text-muted)', fontFamily:'var(--font-condensed)', letterSpacing:'1px' }}>LOADING...</div>
+        : inspections.length === 0 ? <div style={{ fontSize:'13px', color:'var(--text-muted)', padding:'16px 0' }}>No inspections on record for this site.</div>
+        : inspections.map(insp => {
+          const isOpen = expanded === insp.id
+          const items  = Array.isArray(insp.items) ? insp.items : []
+          const failed = items.filter(i=>i.result==='fail')
+          return (
+            <div key={insp.id} style={{ border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', marginBottom:'8px', overflow:'hidden' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:'10px', padding:'11px 14px', cursor:'pointer', background:'var(--bg-surface)' }} onClick={()=>setExpanded(isOpen?null:insp.id)}>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:'13px', color:'var(--text-primary)', fontWeight:500 }}>
+                    {new Date(insp.inspected_at).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'})}
+                  </div>
+                  <div style={{ fontSize:'11px', color:'var(--text-muted)', marginTop:'2px', display:'flex', gap:'10px' }}>
+                    {insp.score!=null && <span style={{ color:scoreColor(insp.score), fontWeight:700 }}>{insp.score}% pass rate</span>}
+                    {failed.length > 0 && <span style={{ color:'var(--color-danger)' }}>{failed.length} failed item{failed.length!==1?'s':''}</span>}
+                  </div>
+                </div>
+                <Icon name={isOpen?'chevron-up':'chevron-down'} size={14} color="var(--text-muted)"/>
+              </div>
+              {isOpen && (
+                <div style={{ padding:'10px 14px', borderTop:'1px solid var(--border)' }}>
+                  {items.map((it,i) => {
+                    const rs = RESULT_STYLES[it.result] || RESULT_STYLES.na
+                    return (
+                      <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'5px 0', borderBottom:i<items.length-1?'1px solid var(--border)':'none' }}>
+                        <span style={{ fontSize:'12px', color:'var(--text-secondary)' }}>{it.item}</span>
+                        <span style={{ ...s.pill, background:rs.bg, color:rs.color, fontSize:'10px' }}>{it.result?.toUpperCase()}</span>
+                      </div>
+                    )
+                  })}
+                  {insp.notes && <div style={{ marginTop:'10px', fontSize:'12px', color:'var(--text-muted)', fontStyle:'italic', lineHeight:1.5 }}>{insp.notes}</div>}
+                </div>
+              )}
+            </div>
+          )
+        })
+      }
     </div>
   )
 }
