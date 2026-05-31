@@ -23,7 +23,8 @@ import { CCW_STATES, CCW_MAP, PERMIT_TYPES, getStateColor } from './ccwData'
 import Icon from '../../components/ui/Icon'
 import { supabase } from '../../lib/supabase'
 
-const GEO_URL = 'https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json'
+// Served from /public to avoid CDN dependency and service worker cross-origin issues.
+const GEO_URL = '/us-states.json'
 
 // FIPS → state code
 const FIPS = {

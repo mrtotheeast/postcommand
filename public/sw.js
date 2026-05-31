@@ -22,11 +22,12 @@ self.addEventListener('fetch', e => {
   const url = new URL(e.request.url)
   if (e.request.method !== 'GET') return
 
-  // Skip: Supabase API, external APIs
-  if (url.hostname.includes('supabase.co')) return
-  if (url.hostname.includes('googleapis.com')) return
-  if (url.hostname.includes('nominatim.openstreetmap.org')) return
-  if (url.hostname.includes('api.qrserver.com')) return
+  // Skip ALL cross-origin requests — let them go straight to the network.
+  // Intercepting external CDN/API responses and trying to clone them causes
+  // "Response body is already used" errors (seen with us-atlas GeoJSON, map tiles, etc.)
+  if (url.origin !== self.location.origin) return
+
+  // Same-origin only from here down:
 
   // Cache-first: static assets (JS/CSS/images/fonts)
   if (STATIC_EXT.test(url.pathname)) {
