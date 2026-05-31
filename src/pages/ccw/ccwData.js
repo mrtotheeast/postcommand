@@ -4,10 +4,10 @@
 // Always verify with your state's AG office before carrying
 
 export const PERMIT_TYPES = {
-  constitutional: { label:'Constitutional Carry', color:'#1a7a4a', bg:'rgba(26,122,74,0.15)', short:'CC' },
-  shall_issue:    { label:'Shall-Issue',          color:'#2a72b8', bg:'rgba(42,114,184,0.15)', short:'SI' },
-  may_issue:      { label:'May-Issue',             color:'#c8781a', bg:'rgba(200,120,26,0.15)', short:'MI' },
-  no_issue:       { label:'No Civilian Carry',     color:'#b03030', bg:'rgba(176,48,48,0.15)', short:'NI' },
+  constitutional: { label:'Constitutional Carry', color:'#4caf50', bg:'rgba(76,175,80,0.14)',   short:'CC' },
+  shall_issue:    { label:'Shall-Issue',          color:'#2196f3', bg:'rgba(33,150,243,0.14)',  short:'SI' },
+  may_issue:      { label:'May-Issue',            color:'#ff9800', bg:'rgba(255,152,0,0.14)',   short:'MI' },
+  no_issue:       { label:'No Civilian Carry',    color:'#f44336', bg:'rgba(244,67,54,0.14)',   short:'NI' },
 }
 
 // Full 50-state + DC dataset
