@@ -138,7 +138,7 @@ export default function Training() {
   if (loading) return <div style={{ padding:'24px' }}>{[...Array(4)].map((_,i) => <div key={i} className="skeleton" style={{ height:'120px', borderRadius:'10px', marginBottom:'12px' }} />)}</div>
 
   const TABS = [
-    ...(isAdmin ? [{ id:'library', label:'Course Library' }, { id:'assignments', label:`Assignments (${totalAssigned})` }, { id:'leaderboard', label:'Leaderboard' }] : []),
+    ...(isAdmin ? [{ id:'library', label:'Course Library' }, { id:'assignments', label:`Assignments (${totalAssigned})` }, { id:'leaderboard', label:'Leaderboard' }, { id:'badges', label:'Badges' }, { id:'certificates', label:'Certificates' }] : []),
     { id:'my', label:`My Training${myPending > 0 ? ` (${myPending})` : ''}` },
   ]
 
@@ -221,6 +221,9 @@ export default function Training() {
       {tab === 'assignments' && (
         <AssignmentsTab assignments={assignments} courses={courses} empMap={empMap} onRefresh={load} />
       )}
+
+      {tab === 'badges' && <BadgesTab companyId={profile?.company_id} employees={employees} employee={employee} />}
+      {tab === 'certificates' && <CertificatesTab companyId={profile?.company_id} courses={courses} employees={employees} assignments={assignments} />}
 
       {tab === 'leaderboard' && (
         <Leaderboard assignments={assignments} employees={Object.values(empMap).length > 0 ? null : null} empMap={empMap} courses={courses} />
@@ -798,6 +801,169 @@ function Leaderboard({ assignments, empMap, courses }) {
           ))}
         </>
       )}
+    </div>
+  )
+}
+
+// ── Badges Tab ────────────────────────────────────────────────────────────────
+
+function BadgesTab({ companyId, employees, employee }) {
+  const [badges, setBadges]   = useState([])
+  const [empBadges, setEmpBadges] = useState([])
+  const [showNew, setShowNew] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [form, setForm]       = useState({ name:'', emoji:'🏆', description:'', color:'#c8a84b' })
+  const [saving, setSaving]   = useState(false)
+  const [assignMode, setAssignMode] = useState(null)
+  const [assignEmp, setAssignEmp]   = useState('')
+  const empMap = Object.fromEntries(employees.map(e=>[e.id,`${e.first_name} ${e.last_name}`]))
+  useEffect(() => { if (companyId) load() }, [companyId])
+  async function load() {
+    setLoading(true)
+    const [{ data:bd },{ data:eb }] = await Promise.all([
+      supabase.from('badge').select('*').eq('company_id',companyId).order('created_at',{ascending:false}),
+      supabase.from('employee_badge').select('*').eq('company_id',companyId),
+    ])
+    setBadges(bd||[]); setEmpBadges(eb||[]); setLoading(false)
+  }
+  async function create() {
+    if (!form.name.trim()) return
+    setSaving(true); await supabase.from('badge').insert({company_id:companyId,...form}); setSaving(false); setShowNew(false); setForm({name:'',emoji:'🏆',description:'',color:'#c8a84b'}); load()
+  }
+  async function assign(badgeId) {
+    if (!assignEmp) return
+    await supabase.from('employee_badge').insert({company_id:companyId,badge_id:badgeId,employee_id:assignEmp,awarded_by:employee?.id}); setAssignMode(null); setAssignEmp(''); load()
+  }
+  const EMOJIS=['🏆','⭐','🥇','🎯','🛡️','💼','🤝','👑','🌟','🔥','💡','✅']
+  const inp={background:'var(--bg-input)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',padding:'8px 11px',fontSize:'13px',color:'var(--text-primary)',outline:'none',width:'100%',fontFamily:'var(--font-body)',transition:'border-color 150ms ease'}
+  const lbl={fontSize:'10px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',marginBottom:'4px'}
+  if (loading) return <div style={{color:'var(--text-muted)',fontSize:'12px',fontFamily:'var(--font-condensed)',letterSpacing:'1px'}}>LOADING...</div>
+  return (
+    <div>
+      <div style={{display:'flex',gap:'10px',marginBottom:'16px',alignItems:'center'}}>
+        <button style={{...s.addBtn,height:'38px',fontSize:'12px',padding:'0 14px'}} onClick={()=>setShowNew(p=>!p)}>+ NEW BADGE</button>
+      </div>
+      {showNew && (
+        <div style={{background:'var(--bg-surface)',border:'1px solid var(--border)',borderRadius:'var(--radius-md)',padding:'14px',marginBottom:'14px'}}>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'10px'}}>
+            <div><div style={lbl}>Name *</div><input style={inp} value={form.name} onChange={e=>setForm(p=>({...p,name:e.target.value}))} onFocus={e=>e.target.style.borderColor='var(--border-focus)'} onBlur={e=>e.target.style.borderColor='var(--border)'} placeholder="Excellence Award"/></div>
+            <div><div style={lbl}>Color</div><div style={{display:'flex',gap:'8px',alignItems:'center'}}><input type="color" value={form.color} onChange={e=>setForm(p=>({...p,color:e.target.value}))} style={{width:'40px',height:'40px',padding:'2px',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',cursor:'pointer',background:'var(--bg-input)'}}/><span style={{fontSize:'12px',color:'var(--text-muted)'}}>{form.color}</span></div></div>
+          </div>
+          <div style={{marginBottom:'8px'}}><div style={lbl}>Emoji</div><div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>{EMOJIS.map(e=><button key={e} onClick={()=>setForm(p=>({...p,emoji:e}))} style={{width:'32px',height:'32px',fontSize:'16px',border:`2px solid ${form.emoji===e?'var(--accent)':'var(--border)'}`,borderRadius:'var(--radius-sm)',cursor:'pointer',background:form.emoji===e?'var(--accent-bg)':'transparent'}}>{e}</button>)}</div></div>
+          <div style={{marginBottom:'10px'}}><div style={lbl}>Description</div><input style={inp} value={form.description} onChange={e=>setForm(p=>({...p,description:e.target.value}))} onFocus={e=>e.target.style.borderColor='var(--border-focus)'} onBlur={e=>e.target.style.borderColor='var(--border)'} placeholder="Awarded for exceptional performance..."/></div>
+          <div style={{display:'flex',gap:'8px'}}>
+            <button style={{...s.saveBtn,height:'36px',fontSize:'11px',padding:'0 14px',opacity:(!form.name.trim()||saving)?0.6:1}} onClick={create} disabled={!form.name.trim()||saving}>{saving?'SAVING...':'CREATE'}</button>
+            <button style={{...s.ghostBtn,height:'36px',fontSize:'11px',padding:'0 12px'}} onClick={()=>setShowNew(false)}>CANCEL</button>
+          </div>
+        </div>
+      )}
+      {badges.length===0 ? <div style={{textAlign:'center',padding:'32px',color:'var(--text-muted)',fontSize:'13px'}}>No badges created yet.</div>
+        : <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(220px,1fr))',gap:'10px'}}>
+          {badges.map(b=>{
+            const holders = empBadges.filter(eb=>eb.badge_id===b.id)
+            return (
+              <div key={b.id} style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'14px'}}>
+                <div style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'8px'}}>
+                  <span style={{fontSize:'24px'}}>{b.emoji}</span>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:'13px',fontWeight:600,color:b.color||'var(--accent)'}}>{b.name}</div>
+                    {b.description && <div style={{fontSize:'11px',color:'var(--text-muted)',marginTop:'1px'}}>{b.description}</div>}
+                  </div>
+                </div>
+                <div style={{fontSize:'11px',color:'var(--text-muted)',marginBottom:'8px'}}>{holders.length} award{holders.length!==1?'s':''}</div>
+                {assignMode===b.id ? (
+                  <div style={{display:'flex',gap:'6px'}}>
+                    <select style={{...inp,flex:1,padding:'5px 8px',height:'32px',fontSize:'11px',cursor:'pointer'}} value={assignEmp} onChange={e=>setAssignEmp(e.target.value)}>
+                      <option value="">Select employee...</option>
+                      {employees.map(e=><option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>)}
+                    </select>
+                    <button style={{height:'32px',padding:'0 10px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-sm)',fontFamily:'var(--font-condensed)',fontSize:'11px',fontWeight:700,cursor:'pointer'}} onClick={()=>assign(b.id)}>AWARD</button>
+                    <button style={{height:'32px',padding:'0 8px',background:'transparent',color:'var(--text-muted)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',cursor:'pointer',fontFamily:'var(--font-condensed)',fontSize:'11px'}} onClick={()=>setAssignMode(null)}>✕</button>
+                  </div>
+                ) : (
+                  <button style={{width:'100%',height:'30px',background:'var(--accent-bg)',color:'var(--accent)',border:'1px solid var(--accent-border)',borderRadius:'var(--radius-sm)',fontFamily:'var(--font-condensed)',fontSize:'11px',fontWeight:700,cursor:'pointer'}} onClick={()=>setAssignMode(b.id)}>ASSIGN BADGE</button>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      }
+    </div>
+  )
+}
+
+// ── Certificates Tab ──────────────────────────────────────────────────────────
+
+function CertificatesTab({ companyId, courses, employees, assignments }) {
+  const [templateUrl, setTemplateUrl] = useState(() => localStorage.getItem(`pc-cert-template-${companyId}`)||'')
+  const [selectedAssignment, setSelectedAssignment] = useState(null)
+  const [generating, setGenerating] = useState(false)
+  const empMap    = Object.fromEntries(employees.map(e=>[e.id,`${e.first_name} ${e.last_name}`]))
+  const courseMap = Object.fromEntries(courses.map(c=>[c.id,c]))
+  const completed = assignments.filter(a=>a.status==='completed')
+
+  function saveTemplate() { localStorage.setItem(`pc-cert-template-${companyId}`,templateUrl) }
+
+  async function generateCert(assignment) {
+    setGenerating(true)
+    const empName  = empMap[assignment.employee_id]||'Officer'
+    const course   = courseMap[assignment.course_id]
+    const certNum  = `PC-${Date.now().toString(36).toUpperCase()}`
+    const date     = new Date(assignment.completed_at||new Date()).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})
+    const canvas   = document.createElement('canvas')
+    canvas.width = 900; canvas.height = 636
+    const ctx    = canvas.getContext('2d')
+    if (templateUrl) {
+      try {
+        const img = new Image(); img.crossOrigin='anonymous'
+        await new Promise((res,rej)=>{ img.onload=res; img.onerror=rej; img.src=templateUrl })
+        ctx.drawImage(img,0,0,900,636)
+      } catch { ctx.fillStyle='#fff'; ctx.fillRect(0,0,900,636) }
+    } else { ctx.fillStyle='#fff'; ctx.fillRect(0,0,900,636) }
+    ctx.fillStyle='#0d1f35'; ctx.textAlign='center'
+    ctx.font='bold 32px Georgia,serif';  ctx.fillText('CERTIFICATE OF COMPLETION',450,180)
+    ctx.font='22px Georgia,serif'; ctx.fillStyle='#888'; ctx.fillText('This certifies that',450,240)
+    ctx.font='bold 42px Georgia,serif'; ctx.fillStyle='#c8a84b'; ctx.fillText(empName,450,300)
+    ctx.font='20px Georgia,serif'; ctx.fillStyle='#888'; ctx.fillText('has successfully completed',450,350)
+    ctx.font='bold 26px Georgia,serif'; ctx.fillStyle='#0d1f35'; ctx.fillText(course?.title||'Training Course',450,400)
+    ctx.font='16px Georgia,serif'; ctx.fillStyle='#888'; ctx.fillText(date,450,445)
+    ctx.font='12px sans-serif'; ctx.fillStyle='#aaa'; ctx.fillText(`Certificate No: ${certNum}`,450,520)
+    const link = document.createElement('a'); link.href=canvas.toDataURL('image/png'); link.download=`cert-${empName.replace(/\s+/g,'-')}-${certNum}.png`; link.click()
+    await supabase.from('training_certificate').upsert({ company_id:companyId, employee_id:assignment.employee_id, course_id:assignment.course_id, cert_number:certNum, issued_at:new Date().toISOString(), template_url:templateUrl||null },{ onConflict:'employee_id,course_id' })
+    setGenerating(false)
+  }
+
+  const inp={background:'var(--bg-input)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',padding:'9px 12px',fontSize:'13px',color:'var(--text-primary)',outline:'none',width:'100%',fontFamily:'var(--font-body)',transition:'border-color 150ms ease'}
+
+  return (
+    <div>
+      <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'18px',marginBottom:'16px'}}>
+        <div style={{fontSize:'11px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',marginBottom:'10px'}}>Certificate Template (optional)</div>
+        <div style={{display:'flex',gap:'8px',marginBottom:'8px'}}>
+          <input style={inp} value={templateUrl} onChange={e=>setTemplateUrl(e.target.value)} onFocus={e=>e.target.style.borderColor='var(--border-focus)'} onBlur={e=>e.target.style.borderColor='var(--border)'} placeholder="https://example.com/template.png (900×636 recommended)"/>
+          <button style={{...s.ghostBtn,height:'44px',padding:'0 14px',fontSize:'12px',whiteSpace:'nowrap'}} onClick={saveTemplate}>SAVE URL</button>
+        </div>
+        <div style={{fontSize:'11px',color:'var(--text-muted)'}}>Without a template, a clean white certificate is generated. Employee name, course, date, and certificate number are overlaid automatically.</div>
+      </div>
+      <div style={{fontSize:'11px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',marginBottom:'10px'}}>{completed.length} completed training{completed.length!==1?'s':''}</div>
+      {completed.length===0 ? <div style={{textAlign:'center',padding:'32px',color:'var(--text-muted)',fontSize:'13px'}}>No completed assignments yet.</div>
+        : <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',overflow:'hidden'}}>
+          {completed.map((a,i)=>{
+            const course = courseMap[a.course_id]
+            return (
+              <div key={a.id} style={{display:'flex',alignItems:'center',gap:'14px',padding:'12px 18px',borderBottom:i<completed.length-1?'1px solid var(--border)':'none'}}>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-primary)'}}>{empMap[a.employee_id]||'—'}</div>
+                  <div style={{fontSize:'11px',color:'var(--text-muted)',marginTop:'1px'}}>{course?.title||'—'} · Completed {a.completed_at?new Date(a.completed_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—'}</div>
+                </div>
+                <button style={{display:'inline-flex',alignItems:'center',gap:'6px',background:'var(--color-success-bg)',color:'var(--color-success)',border:'1px solid rgba(58,170,106,0.3)',borderRadius:'var(--radius-sm)',padding:'0 12px',height:'32px',fontFamily:'var(--font-condensed)',fontSize:'11px',fontWeight:700,cursor:'pointer',opacity:generating?0.6:1}} onClick={()=>generateCert(a)} disabled={generating}>
+                  <Icon name="award" size={12}/>{generating?'GENERATING...':'DOWNLOAD CERT'}
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      }
     </div>
   )
 }

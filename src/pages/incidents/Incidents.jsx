@@ -37,6 +37,8 @@ export default function Incidents() {
   const canReview  = atLeast(profile?.role, 'sergeant')
   const canApprove = atLeast(profile?.role, 'lieutenant')
   const canVoid    = atLeast(profile?.role, 'chief')
+  const canAnalyze = atLeast(profile?.role, 'lieutenant')
+  const [mainTab, setMainTab] = useState('reports')
 
   useEffect(() => { loadReports() }, [profile])
 
@@ -69,11 +71,16 @@ export default function Incidents() {
         <div>
           <h2 style={{fontFamily:'var(--font-display)',fontSize:'28px',letterSpacing:'2px',color:'var(--text-primary)',lineHeight:1}}>INCIDENT REPORTS</h2>
           <p style={{fontSize:'12px',color:'var(--text-muted)',marginTop:'4px'}}>{reports.length} total · 3-year retention</p>
+          <div style={{display:'flex',gap:'2px',marginTop:'10px'}}>
+            {[['reports','Reports'],...(canAnalyze?[['analysis','AI Analysis']]:[])]
+              .map(([v,l])=>(<button key={v} onClick={()=>setMainTab(v)} style={{padding:'6px 14px',fontSize:'12px',background:'transparent',border:'none',cursor:'pointer',fontFamily:'var(--font-condensed)',letterSpacing:'0.5px',borderBottom:`2px solid ${mainTab===v?'var(--accent)':'transparent'}`,color:mainTab===v?'var(--accent)':'var(--text-muted)',transition:'all 150ms ease',fontWeight:mainTab===v?700:400}}>{l}</button>))}
+          </div>
         </div>
         <button onClick={()=>setShowForm(true)} style={{display:'flex',alignItems:'center',gap:'8px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-md)',padding:'0 20px',height:'44px',fontFamily:'var(--font-condensed)',fontSize:'14px',fontWeight:700,letterSpacing:'1px',cursor:'pointer'}}>
           <Icon name="plus" size={16}/>NEW REPORT
         </button>
       </div>
+      {mainTab==='analysis' && <AIIncidentAnalysis reports={reports} companyId={profile?.company_id} />}
 
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(130px,1fr))',gap:'10px',marginBottom:'20px'}}>
         {[{label:'Total',value:stats.total,color:'var(--text-primary)'},{label:'This Month',value:stats.thisMonth,color:'var(--color-info)'},{label:'Pending Review',value:stats.submitted,color:'var(--color-warning)'},{label:'Approved',value:stats.approved,color:'var(--color-success)'}].map(s=>(
@@ -420,4 +427,100 @@ function DSec({title,children}) {
 function DR({l,v}) {
   if(!v) return null
   return <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',fontSize:'13px',gap:'12px'}}><span style={{color:'var(--text-muted)',flexShrink:0}}>{l}</span><span style={{color:'var(--text-primary)',fontWeight:500,textAlign:'right',maxWidth:'70%',wordBreak:'break-word'}}>{v}</span></div>
+}
+// ── AI Incident Analysis ──────────────────────────────────────────────────────
+
+function AIIncidentAnalysis({ reports, companyId }) {
+  const KEY = `pc-ai-analysis-${companyId}`
+  const [result, setResult]   = useState(() => { try { return JSON.parse(localStorage.getItem(KEY)||'null') } catch { return null } })
+  const [running, setRunning] = useState(false)
+  const [error,   setError]   = useState(null)
+
+  const since90 = new Date(Date.now()-90*86400000).toISOString()
+  const recentReports = reports.filter(r=>r.created_at>=since90)
+
+  async function runAnalysis() {
+    setRunning(true); setError(null)
+    try {
+      const summary = {
+        total: recentReports.length,
+        byType: Object.entries(recentReports.reduce((a,r)=>{a[r.incident_type]=(a[r.incident_type]||0)+1;return a},{})).sort((a,b)=>b[1]-a[1]).slice(0,8),
+        byStatus: Object.entries(recentReports.reduce((a,r)=>{a[r.status]=(a[r.status]||0)+1;return a},{})),
+      }
+      const { data, error: fnErr } = await supabase.functions.invoke('generate-analysis', {
+        body: { type:'incident_analysis', data: summary, period:'last 90 days' }
+      })
+      if (fnErr || data?.error) throw new Error(fnErr?.message || data?.error || 'Analysis failed')
+      const saved = { ...data, timestamp: new Date().toISOString(), reportCount: recentReports.length }
+      localStorage.setItem(KEY, JSON.stringify(saved))
+      setResult(saved)
+    } catch(e) {
+      // Fallback: generate basic analysis from local data
+      const types = recentReports.reduce((a,r)=>{a[r.incident_type]=(a[r.incident_type]||0)+1;return a},{})
+      const topType = Object.entries(types).sort((a,b)=>b[1]-a[1])[0]
+      const fallback = {
+        timestamp: new Date().toISOString(),
+        reportCount: recentReports.length,
+        topTypes: Object.entries(types).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([t,c])=>({type:t,count:c})),
+        recommendations: [
+          'Review incident patterns monthly with field supervisors',
+          'Ensure all incidents are submitted within 24 hours of occurrence',
+          topType ? `High volume of ${topType[0]} incidents — consider targeted prevention measures` : 'Maintain current reporting standards',
+        ],
+        note: 'Basic analysis (AI edge function not configured — set ANTHROPIC_API_KEY in Supabase secrets to enable AI-powered insights)'
+      }
+      localStorage.setItem(KEY, JSON.stringify(fallback))
+      setResult(fallback)
+    }
+    setRunning(false)
+  }
+
+  return (
+    <div style={{marginBottom:'24px'}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'16px',flexWrap:'wrap',gap:'10px'}}>
+        <div>
+          <div style={{fontSize:'11px',color:'var(--text-muted)',fontFamily:'var(--font-condensed)',textTransform:'uppercase',letterSpacing:'1px'}}>Analyzing {recentReports.length} incidents from last 90 days</div>
+          {result?.timestamp && <div style={{fontSize:'11px',color:'var(--text-muted)',marginTop:'2px'}}>Last run: {new Date(result.timestamp).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</div>}
+        </div>
+        <button style={{display:'inline-flex',alignItems:'center',gap:'8px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-sm)',padding:'0 18px',height:'40px',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',opacity:running?0.6:1}} onClick={runAnalysis} disabled={running}>
+          <Icon name="cpu" size={14}/>{running?'ANALYZING...':'RUN ANALYSIS'}
+        </button>
+      </div>
+
+      {!result ? (
+        <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'40px',textAlign:'center',color:'var(--text-muted)',fontSize:'13px'}}>
+          <Icon name="cpu" size={28} color="var(--text-muted)"/><div style={{marginTop:'10px'}}>Click "Run Analysis" to generate AI-powered insights from your incident data.</div>
+        </div>
+      ) : (
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:'12px'}}>
+          {result.topTypes?.length > 0 && (
+            <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'18px'}}>
+              <div style={{fontSize:'11px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1.5px',fontFamily:'var(--font-condensed)',marginBottom:'12px'}}>Top Incident Types</div>
+              {result.topTypes.map((t,i)=>(
+                <div key={i} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderBottom:'1px solid var(--border)',fontSize:'13px'}}>
+                  <span style={{color:'var(--text-primary)'}}>{t.type}</span>
+                  <span style={{color:'var(--accent)',fontFamily:'var(--font-condensed)',fontWeight:700}}>{t.count}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {result.recommendations?.length > 0 && (
+            <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'18px',gridColumn:'span 1'}}>
+              <div style={{fontSize:'11px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1.5px',fontFamily:'var(--font-condensed)',marginBottom:'12px'}}>Recommendations</div>
+              {result.recommendations.map((r,i)=>(
+                <div key={i} style={{display:'flex',gap:'8px',padding:'6px 0',borderBottom:'1px solid var(--border)',fontSize:'12px',color:'var(--text-secondary)',lineHeight:1.5}}>
+                  <span style={{color:'var(--accent)',flexShrink:0,fontWeight:700}}>{i+1}.</span><span>{r}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {result.note && (
+            <div style={{background:'var(--color-warning-bg)',border:'1px solid rgba(232,148,58,0.3)',borderRadius:'var(--radius-md)',padding:'14px',gridColumn:'1/-1'}}>
+              <div style={{fontSize:'12px',color:'var(--color-warning)',lineHeight:1.6}}>{result.note}</div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }

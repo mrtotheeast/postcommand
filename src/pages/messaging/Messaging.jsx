@@ -140,8 +140,9 @@ export default function Messaging() {
         <div style={{padding:'16px',borderBottom:'1px solid var(--border)',flexShrink:0}}>
           <h2 style={{fontFamily:'var(--font-display)',fontSize:'18px',letterSpacing:'2px',color:'var(--text-primary)',lineHeight:1,marginBottom:'12px'}}>MESSAGING</h2>
           <div style={{display:'flex',gap:'2px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-sm)',padding:'3px'}}>
-            {[['channels','Channels'],['dms','Direct']].map(([v,l])=>(
-              <button key={v} onClick={()=>setActiveTab(v)} style={{flex:1,height:'30px',border:'none',borderRadius:'4px',background:activeTab===v?'var(--accent-bg)':'transparent',color:activeTab===v?'var(--accent)':'var(--text-muted)',cursor:'pointer',fontSize:'11px',fontFamily:'var(--font-condensed)',fontWeight:600}}>{l}</button>
+            {[['channels','Channels'],['dms','Direct'],...(isAdmin?[['dmmonitor','DM Monitor']]:[])]
+              .map(([v,l])=>(
+              <button key={v} onClick={()=>setActiveTab(v)} style={{flex:1,height:'30px',border:'none',borderRadius:'4px',background:activeTab===v?'var(--accent-bg)':'transparent',color:activeTab===v?'var(--accent)':'var(--text-muted)',cursor:'pointer',fontSize:'10px',fontFamily:'var(--font-condensed)',fontWeight:600}}>{l}</button>
             ))}
           </div>
         </div>
@@ -185,8 +186,18 @@ export default function Messaging() {
         {isAdmin&&<div style={{padding:'12px',borderTop:'1px solid var(--border)',flexShrink:0}}><div style={{fontSize:'10px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',display:'flex',alignItems:'center',gap:'6px'}}><Icon name="eye" size={12} color="var(--text-muted)"/>Audit mode active</div></div>}
       </div>
 
-      {/* Chat area */}
-      <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+      {/* DM Monitor */}
+      {activeTab==='dmmonitor' && (
+        <div style={{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}>
+          <div style={{padding:'14px 20px',borderBottom:'1px solid var(--border)',background:'var(--color-warning-bg)',flexShrink:0}}>
+            <div style={{fontSize:'12px',color:'var(--color-warning)',fontFamily:'var(--font-condensed)',letterSpacing:'1px',fontWeight:700,display:'flex',alignItems:'center',gap:'8px'}}><Icon name="eye" size={14}/>DM MONITORING — For compliance and safety purposes only. Read-only.</div>
+          </div>
+          <DMMonitorPanel companyId={profile.company_id} employees={employees} />
+        </div>
+      )}
+
+      {/* Chat area + DM picker (hidden in monitor mode) */}
+      {activeTab!=='dmmonitor' && <><div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
         <div style={{padding:'14px 20px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:'12px',flexShrink:0,background:'var(--bg-surface)'}}>
           {activeTab==='channels' ? <>
             <div style={{width:'36px',height:'36px',borderRadius:'8px',background:'var(--accent-bg)',display:'flex',alignItems:'center',justifyContent:'center'}}>
@@ -311,6 +322,60 @@ export default function Messaging() {
           </div>
         </div>
       </>}
+      </> }
+    </div>
+  )
+}
+
+function DMMonitorPanel({ companyId, employees }) {
+  const [threads, setThreads] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [search,  setSearch]  = useState('')
+  const [viewing, setViewing] = useState(null)
+  const [msgs,    setMsgs]    = useState([])
+  const empMap = Object.fromEntries(employees.map(e=>[e.id,`${e.first_name} ${e.last_name}`]))
+  useEffect(() => { load() }, [companyId])
+  async function load() {
+    setLoading(true)
+    const { data } = await supabase.from('message').select('channel_id,created_at,content,sender_name').eq('company_id',companyId).like('channel_id','dm_%').order('created_at',{ascending:false}).limit(200)
+    const map = {}
+    for (const m of (data||[])) { if (!map[m.channel_id]) map[m.channel_id]={id:m.channel_id,last:m.created_at,preview:m.content?.slice(0,50),count:0}; map[m.channel_id].count++ }
+    setThreads(Object.values(map).sort((a,b)=>new Date(b.last)-new Date(a.last))); setLoading(false)
+  }
+  async function openThread(id) {
+    setViewing(id)
+    const { data } = await supabase.from('message').select('*').eq('company_id',companyId).eq('channel_id',id).order('created_at')
+    setMsgs(data||[])
+  }
+  const filteredThreads = threads.filter(t => !search || t.id.includes(search.toLowerCase()))
+  if (loading) return <div style={{padding:'20px',color:'var(--text-muted)',fontSize:'12px',fontFamily:'var(--font-condensed)',letterSpacing:'1px'}}>LOADING...</div>
+  return (
+    <div style={{display:'flex',flex:1,overflow:'hidden'}}>
+      <div style={{width:'260px',borderRight:'1px solid var(--border)',overflowY:'auto'}}>
+        <div style={{padding:'10px 14px'}}><input style={{width:'100%',background:'var(--bg-input)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',padding:'7px 10px',fontSize:'12px',color:'var(--text-primary)',outline:'none',fontFamily:'var(--font-body)'}} placeholder="Search threads..." value={search} onChange={e=>setSearch(e.target.value)} onFocus={e=>e.target.style.borderColor='var(--border-focus)'} onBlur={e=>e.target.style.borderColor='var(--border)'}/></div>
+        {filteredThreads.map(t=>(
+          <button key={t.id} onClick={()=>openThread(t.id)} style={{display:'block',width:'100%',padding:'10px 14px',borderBottom:'1px solid var(--border)',background:viewing===t.id?'var(--accent-bg)':'transparent',border:'none',cursor:'pointer',textAlign:'left'}}>
+            <div style={{fontSize:'12px',fontWeight:600,color:'var(--text-primary)',marginBottom:'2px'}}>Thread ({t.count} msgs)</div>
+            <div style={{fontSize:'11px',color:'var(--text-muted)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{t.preview}</div>
+            <div style={{fontSize:'10px',color:'var(--text-muted)',marginTop:'2px'}}>{new Date(t.last).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</div>
+          </button>
+        ))}
+        {filteredThreads.length===0 && <div style={{padding:'20px',textAlign:'center',color:'var(--text-muted)',fontSize:'12px'}}>No DM threads found.</div>}
+      </div>
+      <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+        {!viewing ? (
+          <div style={{padding:'40px',textAlign:'center',color:'var(--text-muted)',fontSize:'13px'}}>Select a thread to view.</div>
+        ) : (
+          <div style={{flex:1,overflowY:'auto',padding:'16px'}}>
+            {msgs.map(m=>(
+              <div key={m.id} style={{marginBottom:'12px'}}>
+                <div style={{fontSize:'11px',color:'var(--text-muted)',marginBottom:'2px'}}>{m.sender_name} · {new Date(m.created_at).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</div>
+                <div style={{background:'var(--bg-surface)',borderRadius:'var(--radius-sm)',padding:'8px 12px',fontSize:'13px',color:'var(--text-primary)'}}>{m.content}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

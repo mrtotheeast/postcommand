@@ -174,8 +174,9 @@ export default function HR() {
           { id: 'documents',  label: 'Documents' },
           { id: 'writeups',   label: `Write-Ups (${writeups.length})` },
           { id: 'onboarding', label: `Onboarding (${onboarding.length})` },
-          { id: 'violations', label: 'Geofence Violations' },
-          { id: 'esignature', label: 'E-Signature' },
+          { id: 'violations',  label: 'Geofence Violations' },
+          { id: 'recognition', label: 'Recognition' },
+          { id: 'esignature',  label: 'E-Signature' },
         ].map(t => (
           <button key={t.id} style={{ ...s.tab, ...(tab === t.id ? s.tabActive : {}) }} onClick={() => setTab(t.id)}>{t.label}</button>
         ))}
@@ -256,6 +257,10 @@ export default function HR() {
 
       {tab === 'violations' && (
         <ViolationsTab companyId={profile.company_id} />
+      )}
+
+      {tab === 'recognition' && (
+        <RecognitionTab companyId={profile.company_id} profile={profile} employees={employees} />
       )}
 
       {tab === 'esignature' && (
@@ -783,6 +788,67 @@ function ViolationsTab({ companyId }) {
           {visible.length>100 && <div style={{ padding:'12px 18px', fontSize:'12px', color:'var(--text-muted)', borderTop:'1px solid var(--border)' }}>Showing 100 of {visible.length} violations</div>}
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Recognition Tab ───────────────────────────────────────────────────────────
+
+const REC_TYPES  = ['Above & Beyond','Perfect Attendance','Safety Champion','Team Player','Leadership','Customer Service']
+const REC_EMOJIS = ['⭐','🎯','🛡️','🤝','👑','💼']
+
+function RecognitionTab({ companyId, profile, employees }) {
+  const [recs, setRecs]     = useState([])
+  const [loading, setLoading] = useState(true)
+  const [showNew, setShowNew] = useState(false)
+  const [form, setForm]     = useState({ employee_id:'', recognition_type:REC_TYPES[0], message:'', badge_emoji:'⭐' })
+  const [saving, setSaving] = useState(false)
+  const [myEmpId, setMyEmpId] = useState(null)
+  const empMap = Object.fromEntries(employees.map(e=>[e.id,`${e.first_name} ${e.last_name}`]))
+  useEffect(() => { if (!companyId) return; load(); supabase.from('employee').select('id').eq('user_id',profile.id).single().then(({data})=>setMyEmpId(data?.id)) }, [companyId])
+  async function load() { setLoading(true); const { data } = await supabase.from('recognition').select('*').eq('company_id',companyId).order('created_at',{ascending:false}).limit(50); setRecs(data||[]); setLoading(false) }
+  async function submit() {
+    if (!form.employee_id||!form.message.trim()) return
+    setSaving(true); await supabase.from('recognition').insert({ company_id:companyId, given_by:myEmpId, ...form }); setSaving(false); setShowNew(false); setForm({employee_id:'',recognition_type:REC_TYPES[0],message:'',badge_emoji:'⭐'}); load()
+  }
+  const TYPE_COLORS = { 'Above & Beyond':'#f59e0b','Perfect Attendance':'#10b981','Safety Champion':'#ef4444','Team Player':'#6366f1','Leadership':'#8b5cf6','Customer Service':'#ec4899' }
+  const inp2 = { background:'var(--bg-input)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', padding:'9px 12px', fontSize:'13px', color:'var(--text-primary)', outline:'none', width:'100%', fontFamily:'var(--font-body)', transition:'border-color 150ms ease' }
+  const lbl2 = { fontSize:'11px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', marginBottom:'5px' }
+  return (
+    <div>
+      {!showNew ? (
+        <button style={{display:'inline-flex',alignItems:'center',gap:'8px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-sm)',padding:'0 18px',height:'40px',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,cursor:'pointer',marginBottom:'16px'}} onClick={()=>setShowNew(true)}><Icon name="star" size={14}/>GIVE RECOGNITION</button>
+      ) : (
+        <div style={{background:'var(--bg-surface)',border:'1px solid var(--border)',borderRadius:'var(--radius-md)',padding:'16px',marginBottom:'16px'}}>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'10px'}}>
+            <div><div style={lbl2}>Employee *</div><select style={{...inp2,cursor:'pointer'}} value={form.employee_id} onChange={e=>setForm(p=>({...p,employee_id:e.target.value}))}><option value="">Select...</option>{employees.map(e=><option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>)}</select></div>
+            <div><div style={lbl2}>Type</div><select style={{...inp2,cursor:'pointer'}} value={form.recognition_type} onChange={e=>setForm(p=>({...p,recognition_type:e.target.value}))}>{REC_TYPES.map(t=><option key={t}>{t}</option>)}</select></div>
+          </div>
+          <div style={{marginBottom:'10px'}}><div style={lbl2}>Badge</div><div style={{display:'flex',gap:'6px'}}>{REC_EMOJIS.map(e=><button key={e} onClick={()=>setForm(p=>({...p,badge_emoji:e}))} style={{width:'34px',height:'34px',fontSize:'16px',border:`2px solid ${form.badge_emoji===e?'var(--accent)':'var(--border)'}`,borderRadius:'var(--radius-sm)',cursor:'pointer',background:form.badge_emoji===e?'var(--accent-bg)':'transparent'}}>{e}</button>)}</div></div>
+          <div style={{marginBottom:'12px'}}><div style={lbl2}>Message *</div><textarea style={{...inp2,minHeight:'60px',resize:'vertical',lineHeight:1.5}} value={form.message} onChange={e=>setForm(p=>({...p,message:e.target.value}))} onFocus={e=>e.target.style.borderColor='var(--border-focus)'} onBlur={e=>e.target.style.borderColor='var(--border)'} placeholder="What did they do great..."/></div>
+          <div style={{display:'flex',gap:'8px'}}>
+            <button style={{display:'inline-flex',alignItems:'center',gap:'8px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-sm)',padding:'0 16px',height:'38px',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,cursor:'pointer',opacity:(!form.employee_id||!form.message.trim()||saving)?0.6:1}} onClick={submit} disabled={!form.employee_id||!form.message.trim()||saving}>{saving?'SENDING...':'SEND'}</button>
+            <button style={{display:'inline-flex',alignItems:'center',gap:'8px',background:'transparent',color:'var(--text-secondary)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',padding:'0 14px',height:'38px',fontFamily:'var(--font-condensed)',fontSize:'12px',cursor:'pointer'}} onClick={()=>setShowNew(false)}>CANCEL</button>
+          </div>
+        </div>
+      )}
+      {loading ? <div style={{color:'var(--text-muted)',fontSize:'12px',fontFamily:'var(--font-condensed)',letterSpacing:'1px'}}>LOADING...</div>
+        : recs.length===0 ? <div style={{textAlign:'center',padding:'32px',color:'var(--text-muted)',fontSize:'13px'}}>No recognitions yet.</div>
+        : recs.map(r => {
+          const color = TYPE_COLORS[r.recognition_type]||'var(--accent)'
+          return (
+            <div key={r.id} style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'14px',marginBottom:'10px'}}>
+              <div style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'8px'}}>
+                <span style={{fontSize:'20px'}}>{r.badge_emoji||'⭐'}</span>
+                <div style={{flex:1}}><div style={{fontSize:'13px',fontWeight:600,color:'var(--text-primary)'}}>{empMap[r.employee_id]||'—'}</div><span style={{fontSize:'10px',fontWeight:700,fontFamily:'var(--font-condensed)',letterSpacing:'0.5px',color,background:`${color}18`,padding:'1px 7px',borderRadius:'10px'}}>{r.recognition_type}</span></div>
+                <div style={{fontSize:'11px',color:'var(--text-muted)'}}>{new Date(r.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div>
+              </div>
+              <div style={{fontSize:'13px',color:'var(--text-secondary)',lineHeight:1.6}}>{r.message}</div>
+              {r.given_by && <div style={{fontSize:'11px',color:'var(--text-muted)',marginTop:'6px'}}>Given by {empMap[r.given_by]||'Admin'}</div>}
+            </div>
+          )
+        })
+      }
     </div>
   )
 }

@@ -40,6 +40,7 @@ export default function Scheduling() {
   const [mobileEmpIdx,setMobileEmpIdx] = useState(0)
   const [isMobile,setIsMobile] = useState(window.innerWidth<768)
   const [mainTab,setMainTab] = useState('schedule')
+  const canBid = atLeast(profile?.role,'officer')
   const canCreate  = atLeast(profile?.role,'sergeant')
   const canApprove = atLeast(profile?.role,'lieutenant')
   const canPublish = atLeast(profile?.role,'lieutenant')
@@ -104,7 +105,7 @@ export default function Scheduling() {
           </div>
           <div style={{display:'flex',alignItems:'center',gap:'6px',flexWrap:'wrap'}}>
             <div style={{display:'flex',gap:'2px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-sm)',padding:'3px'}}>
-              {[['schedule','Schedule'],['swaps','Swaps'],['availability','Availability']].map(([v,l])=>(
+              {[['schedule','Schedule'],['swaps','Swaps'],['availability','Availability'],['bids','Shift Bids']].map(([v,l])=>(
                 <button key={v} onClick={()=>setMainTab(v)} style={{padding:'0 10px',minHeight:'36px',border:'none',borderRadius:'4px',background:mainTab===v?'var(--accent-bg)':'transparent',color:mainTab===v?'var(--accent)':'var(--text-muted)',cursor:'pointer',fontSize:'10px',fontFamily:'var(--font-condensed)',letterSpacing:'1px',fontWeight:mainTab===v?700:400}}>
                   {l.toUpperCase()}
                 </button>
@@ -141,6 +142,7 @@ export default function Scheduling() {
 
       {mainTab==='swaps' && <SwapsPanel companyId={profile.company_id} profile={profile} employees={employees} shifts={shifts} canApprove={canApprove}/>}
       {mainTab==='availability' && <AvailabilityPanel companyId={profile.company_id} profile={profile} employees={employees} canEdit={canCreate}/>}
+      {mainTab==='bids' && <ShiftBidsPanel companyId={profile.company_id} profile={profile} employees={employees} sites={sites} canPost={canCreate}/>}
 
       {mainTab==='schedule' && loading ? (
         <div style={{padding:'16px 20px',display:'grid',gridTemplateColumns:viewMode==='year'?'repeat(auto-fill,minmax(200px,1fr))':'repeat(7,1fr)',gap:'8px'}}>
@@ -728,5 +730,111 @@ function AutoAssignModal({ employees, sites, shifts, companyId, createdBy, onClo
         </div>
       </div>
     </>
+  )
+}
+// ── Shift Bids Panel ──────────────────────────────────────────────────────────
+
+function ShiftBidsPanel({ companyId, profile, employees, sites, canPost }) {
+  const [bids, setBids]     = useState([])
+  const [loading, setLoading] = useState(true)
+  const [showNew, setShowNew] = useState(false)
+  const [form, setForm]     = useState({ site_id:'', date:'', sh:'08', sm:'00', eh:'16', em:'00', role:'officer', bonus:'' })
+  const [saving, setSaving] = useState(false)
+  const [myEmpId, setMyEmpId] = useState(null)
+  const [applications, setApplications] = useState([])
+  const empMap  = Object.fromEntries(employees.map(e=>[e.id,`${e.first_name} ${e.last_name}`]))
+  const siteMap = Object.fromEntries(sites.map(s=>[s.id,s.name]))
+  const isOfficer = ['officer','corporal'].includes(profile?.role)
+  useEffect(() => { if (!companyId) return; load(); supabase.from('employee').select('id').eq('user_id',profile.id).single().then(({data})=>setMyEmpId(data?.id)) }, [companyId])
+  async function load() {
+    setLoading(true)
+    const [{ data:bidData }, { data:appData }] = await Promise.all([
+      supabase.from('shift_bid').select('*').eq('company_id',companyId).eq('status','open').order('start_time'),
+      supabase.from('shift_bid_application').select('*').eq('company_id',companyId),
+    ])
+    setBids(bidData||[]); setApplications(appData||[]); setLoading(false)
+  }
+  async function postBid() {
+    if (!form.site_id||!form.date) return
+    setSaving(true)
+    const start = new Date(form.date+'T'+form.sh+':'+form.sm+':00')
+    const end   = new Date(form.date+'T'+form.eh+':'+form.em+':00')
+    await supabase.from('shift_bid').insert({ company_id:companyId, site_id:form.site_id, start_time:start.toISOString(), end_time:end.toISOString(), role:form.role, bonus:Number(form.bonus)||0, status:'open' })
+    setSaving(false); setShowNew(false); load()
+  }
+  async function applyBid(bidId) {
+    if (!myEmpId) return
+    await supabase.from('shift_bid_application').insert({ shift_bid_id:bidId, employee_id:myEmpId, company_id:companyId, status:'pending' })
+    load()
+  }
+  async function awardBid(bidId, empId) {
+    await supabase.from('shift_bid').update({ status:'awarded' }).eq('id',bidId)
+    await supabase.from('shift_bid_application').update({ status:'awarded' }).eq('shift_bid_id',bidId).eq('employee_id',empId)
+    load()
+  }
+  const hrs=['00','01','02','03','04','05','06','07','08','09','10','11','12','13','14','15','16','17','18','19','20','21','22','23']
+  const mins=['00','15','30','45']
+  const inp={width:'100%',padding:'9px 11px',background:'var(--bg-input)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:'var(--text-primary)',fontSize:'12px',outline:'none',height:'40px'}
+  const lbl={fontSize:'11px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',display:'block',marginBottom:'5px'}
+  const bidApps = (bidId) => applications.filter(a=>a.shift_bid_id===bidId)
+  const hasApplied = (bidId) => applications.some(a=>a.shift_bid_id===bidId&&a.employee_id===myEmpId)
+  return (
+    <div style={{flex:1,overflowY:'auto',padding:'20px'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'16px'}}>
+        <div style={{fontSize:'11px',color:'var(--text-muted)',fontFamily:'var(--font-condensed)',letterSpacing:'1px',textTransform:'uppercase'}}>{bids.length} open bid{bids.length!==1?'s':''}</div>
+        {canPost && <button style={{display:'inline-flex',alignItems:'center',gap:'6px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-sm)',padding:'0 14px',height:'36px',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,cursor:'pointer'}} onClick={()=>setShowNew(s=>!s)}>+ POST OPEN SHIFT</button>}
+      </div>
+      {showNew && (
+        <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'16px',marginBottom:'16px'}}>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'10px'}}>
+            <div><label style={lbl}>Site *</label><select style={inp} value={form.site_id} onChange={e=>setForm(f=>({...f,site_id:e.target.value}))}><option value="">Select...</option>{sites.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+            <div><label style={lbl}>Date *</label><input type="date" style={inp} value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))}/></div>
+            <div><label style={lbl}>Start</label><div style={{display:'flex',gap:'4px'}}><select style={{...inp,flex:1}} value={form.sh} onChange={e=>setForm(f=>({...f,sh:e.target.value}))}>{hrs.map(h=><option key={h}>{h}</option>)}</select><select style={{...inp,flex:1}} value={form.sm} onChange={e=>setForm(f=>({...f,sm:e.target.value}))}>{mins.map(m=><option key={m}>{m}</option>)}</select></div></div>
+            <div><label style={lbl}>End</label><div style={{display:'flex',gap:'4px'}}><select style={{...inp,flex:1}} value={form.eh} onChange={e=>setForm(f=>({...f,eh:e.target.value}))}>{hrs.map(h=><option key={h}>{h}</option>)}</select><select style={{...inp,flex:1}} value={form.em} onChange={e=>setForm(f=>({...f,em:e.target.value}))}>{mins.map(m=><option key={m}>{m}</option>)}</select></div></div>
+            <div><label style={lbl}>Role</label><select style={inp} value={form.role} onChange={e=>setForm(f=>({...f,role:e.target.value}))}>{['officer','corporal','sergeant'].map(r=><option key={r} value={r}>{r}</option>)}</select></div>
+            <div><label style={lbl}>Bonus ($)</label><input type="number" min="0" style={inp} value={form.bonus} onChange={e=>setForm(f=>({...f,bonus:e.target.value}))} placeholder="0"/></div>
+          </div>
+          <div style={{display:'flex',gap:'8px'}}>
+            <button style={{display:'inline-flex',alignItems:'center',gap:'6px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-sm)',padding:'0 14px',height:'36px',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,cursor:'pointer',opacity:(!form.site_id||!form.date||saving)?0.6:1}} onClick={postBid} disabled={!form.site_id||!form.date||saving}>{saving?'POSTING...':'POST BID'}</button>
+            <button style={{display:'inline-flex',alignItems:'center',gap:'6px',background:'transparent',color:'var(--text-secondary)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',padding:'0 12px',height:'36px',fontFamily:'var(--font-condensed)',fontSize:'12px',cursor:'pointer'}} onClick={()=>setShowNew(false)}>CANCEL</button>
+          </div>
+        </div>
+      )}
+      {loading ? <div style={{color:'var(--text-muted)',fontSize:'12px',fontFamily:'var(--font-condensed)',letterSpacing:'1px'}}>LOADING...</div>
+        : bids.length===0 ? <div style={{textAlign:'center',padding:'40px',color:'var(--text-muted)',fontSize:'13px'}}>No open shift bids.</div>
+        : bids.map(bid => {
+          const apps = bidApps(bid.id)
+          const applied = hasApplied(bid.id)
+          return (
+            <div key={bid.id} style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'14px',marginBottom:'10px'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'8px'}}>
+                <div>
+                  <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-primary)'}}>{siteMap[bid.site_id]||'—'}</div>
+                  <div style={{fontSize:'11px',color:'var(--text-muted)',marginTop:'2px'}}>{new Date(bid.start_time).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})} · {new Date(bid.start_time).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})} – {new Date(bid.end_time).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})} · {bid.role}</div>
+                </div>
+                <div style={{textAlign:'right'}}>
+                  {bid.bonus>0 && <div style={{fontSize:'13px',color:'var(--color-success)',fontWeight:700,fontFamily:'var(--font-condensed)'}}>+${bid.bonus} bonus</div>}
+                  <div style={{fontSize:'11px',color:'var(--text-muted)'}}>{apps.length} bid{apps.length!==1?'s':''}</div>
+                </div>
+              </div>
+              {isOfficer && !applied && <button style={{display:'inline-flex',alignItems:'center',gap:'6px',background:'var(--accent-bg)',color:'var(--accent)',border:'1px solid var(--accent-border)',borderRadius:'var(--radius-sm)',padding:'0 12px',height:'32px',fontFamily:'var(--font-condensed)',fontSize:'11px',fontWeight:700,cursor:'pointer'}} onClick={()=>applyBid(bid.id)}>BID FOR THIS SHIFT</button>}
+              {isOfficer && applied && <span style={{fontSize:'11px',color:'var(--color-success)',fontFamily:'var(--font-condensed)',fontWeight:700}}>✓ YOUR BID SUBMITTED</span>}
+              {canPost && apps.length>0 && (
+                <div style={{marginTop:'10px',borderTop:'1px solid var(--border)',paddingTop:'8px'}}>
+                  <div style={{fontSize:'10px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',marginBottom:'6px'}}>Applicants</div>
+                  {apps.map(app=>(
+                    <div key={app.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'5px 0',borderBottom:'1px solid var(--border)'}}>
+                      <span style={{fontSize:'12px',color:'var(--text-primary)'}}>{empMap[app.employee_id]||'—'}</span>
+                      {app.status==='pending' ? <button style={{display:'inline-flex',alignItems:'center',gap:'4px',background:'var(--color-success-bg)',color:'var(--color-success)',border:'1px solid rgba(58,170,106,0.3)',borderRadius:'var(--radius-sm)',padding:'0 10px',height:'28px',fontFamily:'var(--font-condensed)',fontSize:'10px',fontWeight:700,cursor:'pointer'}} onClick={()=>awardBid(bid.id,app.employee_id)}>AWARD</button>
+                        : <span style={{fontSize:'10px',color:'var(--color-success)',fontFamily:'var(--font-condensed)',fontWeight:700}}>AWARDED ✓</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })
+      }
+    </div>
   )
 }

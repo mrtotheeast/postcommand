@@ -31,6 +31,7 @@ export default function Personnel() {
   const [bulkSelected, setBulkSelected] = useState(new Set())
   const [bulkMode, setBulkMode]     = useState(false)
   const [bulkActing, setBulkActing] = useState(false)
+  const [mainView, setMainView]     = useState('directory') // 'directory' | 'photo_approvals'
   const canViewSensitive = atLeast(profile?.role, 'lieutenant')
   const canEdit = atLeast(profile?.role, 'chief')
 
@@ -72,6 +73,13 @@ export default function Personnel() {
         <div>
           <h2 style={{fontFamily:'var(--font-display)',fontSize:'28px',letterSpacing:'2px',color:'var(--text-primary)',lineHeight:1}}>PERSONNEL</h2>
           <p style={{fontSize:'12px',color:'var(--text-muted)',marginTop:'4px'}}>{employees.length} total employees</p>
+          {canEdit && (
+            <div style={{display:'flex',gap:'2px',marginTop:'10px'}}>
+              {[['directory','Directory'],['photo_approvals','Photo Approvals']].map(([v,l])=>(
+                <button key={v} onClick={()=>setMainView(v)} style={{padding:'6px 14px',fontSize:'12px',background:'transparent',border:'none',cursor:'pointer',fontFamily:'var(--font-condensed)',letterSpacing:'0.5px',borderBottom:`2px solid ${mainView===v?'var(--accent)':'transparent'}`,color:mainView===v?'var(--accent)':'var(--text-muted)',transition:'all 150ms ease',fontWeight:mainView===v?700:400}}>{l}</button>
+              ))}
+            </div>
+          )}
         </div>
         {canEdit && (
           <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
@@ -129,6 +137,9 @@ export default function Personnel() {
         </div>
       </div>
 
+      {mainView==='photo_approvals' && <PhotoApprovalsTab companyId={profile.company_id} />}
+      {mainView==='directory' && (
+      <>
       {(search||filterRole!=='all'||filterStatus!=='all') && <div style={{fontSize:'12px',color:'var(--text-muted)',marginBottom:'12px'}}>Showing {filtered.length} of {employees.length}</div>}
 
       {filtered.length===0 && (
@@ -164,6 +175,8 @@ export default function Personnel() {
 
       {selected && <EmpDetail emp={selected} canViewSensitive={canViewSensitive} canEdit={canEdit} onClose={()=>setSelected(null)} onRefresh={loadEmployees}/>}
       {showImport && <CSVImportModal companyId={profile.company_id} onClose={() => setShowImport(false)} onImported={() => { setShowImport(false); loadEmployees() }} />}
+      </>
+      )}
     </div>
   )
 }
@@ -618,6 +631,67 @@ function BulkActionBar({ count, companyId, selectedIds, onDone, onCancel }) {
       <button style={btn('accent')} onClick={bulkInvite} disabled={inviting}><Icon name="mail" size={12}/>{inviting?'INVITING...':'INVITE ALL'}</button>
       <button style={btn('danger')} onClick={() => { if(window.confirm(`Remove app access for ${count} employees?`)) bulkUpdate('has_app_access',false) }} disabled={acting}><Icon name="lock" size={12}/>REVOKE ACCESS</button>
       <button style={btn('ghost')} onClick={onCancel}>CANCEL</button>
+    </div>
+  )
+}
+
+// ── Photo Approvals Tab ───────────────────────────────────────────────────────
+
+function PhotoApprovalsTab({ companyId }) {
+  const [emps, setEmps]   = useState([])
+  const [loading, setLoading] = useState(true)
+  const [acting, setActing]   = useState(null)
+
+  useEffect(() => { load() }, [companyId])
+  async function load() {
+    setLoading(true)
+    const { data } = await supabase.from('employee')
+      .select('id,first_name,last_name,role,profile_photo_url,profile_photo_status')
+      .eq('company_id', companyId)
+      .eq('profile_photo_status','pending')
+    setEmps(data||[])
+    setLoading(false)
+  }
+  async function decide(id, approve) {
+    setActing(id)
+    if (approve) {
+      await supabase.from('employee').update({ profile_photo_status:'approved' }).eq('id',id)
+    } else {
+      await supabase.from('employee').update({ profile_photo_status:'rejected', profile_photo_url:null }).eq('id',id)
+    }
+    setActing(null); load()
+  }
+
+  if (loading) return <div style={{padding:'20px',color:'var(--text-muted)',fontSize:'12px',fontFamily:'var(--font-condensed)',letterSpacing:'1px'}}>LOADING...</div>
+
+  return (
+    <div>
+      <div style={{fontSize:'12px',color:'var(--text-muted)',marginBottom:'14px'}}>{emps.length} photo{emps.length!==1?'s':''} pending approval</div>
+      {emps.length===0 ? (
+        <div style={{textAlign:'center',padding:'48px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)'}}>
+          <Icon name="check-circle" size={28} color="var(--color-success)"/>
+          <div style={{marginTop:'10px',fontSize:'14px',color:'var(--color-success)',fontFamily:'var(--font-condensed)',letterSpacing:'1px'}}>ALL CLEAR — No photos pending</div>
+        </div>
+      ) : (
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(260px,1fr))',gap:'12px'}}>
+          {emps.map(emp=>(
+            <div key={emp.id} style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'16px',display:'flex',flexDirection:'column',gap:'12px'}}>
+              <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
+                <img src={emp.profile_photo_url} alt="" style={{width:'56px',height:'56px',borderRadius:'50%',objectFit:'cover',border:'2px solid var(--border)',flexShrink:0}} onError={e=>e.target.style.opacity='0.3'}/>
+                <div>
+                  <div style={{fontSize:'14px',fontWeight:600,color:'var(--text-primary)'}}>{emp.first_name} {emp.last_name}</div>
+                  <div style={{fontSize:'11px',color:'var(--text-muted)',marginTop:'2px'}}>{ROLE_LABELS[emp.role]||emp.role}</div>
+                  <span style={{fontSize:'10px',color:'var(--color-warning)',background:'var(--color-warning-bg)',padding:'1px 6px',borderRadius:'10px',fontFamily:'var(--font-condensed)',fontWeight:700,letterSpacing:'0.5px',marginTop:'4px',display:'inline-block'}}>PENDING</span>
+                </div>
+              </div>
+              <div style={{display:'flex',gap:'8px'}}>
+                <button style={{flex:1,height:'36px',background:'var(--color-success-bg)',border:'1px solid rgba(58,170,106,0.3)',borderRadius:'var(--radius-sm)',color:'var(--color-success)',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'6px',opacity:acting===emp.id?0.6:1}} onClick={()=>decide(emp.id,true)} disabled={acting===emp.id}><Icon name="check" size={13}/>APPROVE</button>
+                <button style={{flex:1,height:'36px',background:'var(--color-danger-bg)',border:'1px solid rgba(192,57,43,0.3)',borderRadius:'var(--radius-sm)',color:'var(--color-danger)',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'6px',opacity:acting===emp.id?0.6:1}} onClick={()=>decide(emp.id,false)} disabled={acting===emp.id}><Icon name="x" size={13}/>REJECT</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

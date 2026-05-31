@@ -25,6 +25,8 @@ import Billing from './pages/billing/Billing'
 import Archived from './pages/archived/Archived'
 import SuperAdmin from './pages/admin/SuperAdmin'
 import More from './pages/more/More'
+import PerformanceReviews from './pages/reviews/PerformanceReviews'
+import ClientManagement from './pages/clients/ClientManagement'
 
 function ComingSoon({ name }) {
   return <div style={{padding:'40px 24px',fontFamily:'var(--font-display)',fontSize:'24px',letterSpacing:'2px',color:'var(--accent)'}}>{name.toUpperCase()} — COMING SOON</div>
@@ -71,6 +73,8 @@ export default function App() {
       <Route path="/archived"   element={<ProtectedRoute><Archived /></ProtectedRoute>} />
       <Route path="/admin"      element={<ProtectedRoute><SuperAdmin /></ProtectedRoute>} />
       <Route path="/more"       element={<ProtectedRoute><More /></ProtectedRoute>} />
+      <Route path="/reviews"    element={<ProtectedRoute><PerformanceReviews /></ProtectedRoute>} />
+      <Route path="/clients"    element={<ProtectedRoute><ClientManagement /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
   )

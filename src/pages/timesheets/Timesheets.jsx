@@ -151,7 +151,7 @@ export default function Timesheets() {
         </div>
         <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
           <div style={{display:'flex',gap:'2px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-sm)',padding:'3px'}}>
-            {[['list','List'],['summary','Summary'],['pto','PTO']].map(([v,l])=>(
+            {[['list','List'],['summary','Summary'],['pto','PTO'],['taxforms','Tax Forms']].map(([v,l])=>(
               <button key={v} onClick={()=>setView(v)} style={{padding:'0 12px',height:'32px',border:'none',borderRadius:'4px',background:view===v?'var(--accent-bg)':'transparent',color:view===v?'var(--accent)':'var(--text-muted)',cursor:'pointer',fontSize:'11px',fontFamily:'var(--font-condensed)',fontWeight:600}}>{l}</button>
             ))}
           </div>
@@ -192,6 +192,8 @@ export default function Timesheets() {
 
       {loading ? (
         <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>{[...Array(5)].map((_,i)=><div key={i} style={{height:'64px',borderRadius:'10px'}} className="skeleton"/>)}</div>
+      ) : view==='taxforms' ? (
+        <TaxFormsPanel companyId={profile.company_id} employees={employees} sheets={sheets} />
       ) : view==='pto' ? (
         <PTOPanel companyId={profile.company_id} profile={profile} employees={employees} canReview={canReview} />
       ) : view==='summary' ? (
@@ -579,6 +581,102 @@ function PTOCalendar({ requests, empMap }) {
           ))}
         </div>
       )}
+    </div>
+  )
+}
+// ── Tax Forms Panel ───────────────────────────────────────────────────────────
+
+function TaxFormsPanel({ companyId, employees, sheets }) {
+  const [positions, setPositions] = useState({}) // empId → { pay_rate, pay_type }
+  const [year, setYear] = useState(new Date().getFullYear())
+  useEffect(() => {
+    supabase.from('position').select('*').eq('company_id',companyId).then(({data})=>{
+      const m={}; for(const p of (data||[])) m[p.id]=p; setPositions(m)
+    })
+  }, [companyId])
+
+  const empMap = Object.fromEntries(employees.map(e=>[e.id,e]))
+  const yearSheets = sheets.filter(ts=>{
+    if (ts.status!=='approved') return false
+    const d = new Date(ts.date||ts.clock_in)
+    return d.getFullYear()===year
+  })
+
+  const empEarnings = employees.map(emp=>{
+    const empTs = yearSheets.filter(ts=>ts.employee_id===emp.id)
+    const totalHours = empTs.reduce((a,ts)=>a+(Number(ts.total_hours)||0),0)
+    const payRate = 0 // Would come from position table — show N/A if not set
+    const grossPay = payRate > 0 ? totalHours * payRate : null
+    return { ...emp, totalHours:Math.round(totalHours*100)/100, grossPay, payRate }
+  }).filter(e=>e.totalHours>0)
+
+  function generatePDF(emp, formType) {
+    const w = window.open('','_blank','width=700,height=900')
+    const isW2 = formType==='W2'
+    w.document.write(`<!DOCTYPE html><html><head><title>${formType} — ${emp.first_name} ${emp.last_name}</title>
+<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Helvetica,Arial,sans-serif;font-size:11px;color:#1a1a2e;padding:32px}
+h1{font-size:20px;font-weight:900;color:#0d1f35;margin-bottom:4px}
+.form-box{border:2px solid #0d1f35;border-radius:4px;padding:20px;margin:16px 0}
+.field{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eee;font-size:11px}
+.field-label{color:#666}
+.disclaimer{background:#fff3cd;border:1px solid #ffc107;border-radius:4px;padding:12px;margin-top:20px;font-size:10px;color:#856404;line-height:1.5}
+@media print{body{padding:16px}}
+</style></head><body>
+<h1>PostCommand — ${formType} Reference Form</h1>
+<div style="font-size:11px;color:#888;margin-bottom:4px">Tax Year ${year} — FOR REFERENCE ONLY</div>
+<div class="form-box">
+  <div style="font-size:13px;font-weight:bold;margin-bottom:12px">${isW2?'W-2 Wage and Tax Statement':'Form 1099 — Nonemployee Compensation'}</div>
+  <div class="field"><span class="field-label">Employee Name</span><span>${emp.first_name} ${emp.last_name}</span></div>
+  <div class="field"><span class="field-label">Employment Type</span><span>${emp.employment_type||'N/A'}</span></div>
+  <div class="field"><span class="field-label">Employer</span><span>Nationwide Police Services LLC</span></div>
+  <div class="field"><span class="field-label">Tax Year</span><span>${year}</span></div>
+  <div class="field"><span class="field-label">Hours Worked</span><span>${emp.totalHours}h</span></div>
+  <div class="field"><span class="field-label">Gross Wages / Compensation</span><span>${emp.grossPay ? '$'+emp.grossPay.toLocaleString() : 'See payroll records'}</span></div>
+  <div class="field"><span class="field-label">Federal Tax Withheld</span><span>See payroll records</span></div>
+  <div class="field"><span class="field-label">State Tax Withheld</span><span>See payroll records</span></div>
+</div>
+<div class="disclaimer">
+  <strong>⚠ FOR REFERENCE ONLY</strong><br/>
+  This document is generated for administrative reference purposes only and is NOT a valid tax form for IRS filing. Consult a licensed payroll provider (ADP, Paychex, Gusto) to generate official W-2 and 1099 forms with proper tax calculations, withholding amounts, and IRS-required formatting. PostCommand and Nationwide Police Services LLC are not responsible for tax filing decisions made based on this document.
+</div>
+</body></html>`)
+    w.document.close(); w.print()
+  }
+
+  return (
+    <div>
+      <div style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'16px'}}>
+        <select style={{background:'var(--bg-input)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',padding:'8px 12px',fontSize:'13px',color:'var(--text-primary)',outline:'none',cursor:'pointer',fontFamily:'var(--font-body)'}} value={year} onChange={e=>setYear(Number(e.target.value))}>
+          {[2026,2025,2024,2023].map(y=><option key={y} value={y}>{y}</option>)}
+        </select>
+        <div style={{fontSize:'12px',color:'var(--text-muted)'}}>{empEarnings.length} employees with approved hours in {year}</div>
+      </div>
+      <div style={{background:'var(--color-warning-bg)',border:'1px solid rgba(232,148,58,0.3)',borderRadius:'var(--radius-md)',padding:'12px 16px',marginBottom:'16px',fontSize:'12px',color:'var(--color-warning)',lineHeight:1.6}}>
+        <strong>For reference only.</strong> These are administrative summaries based on approved timesheets. Consult a licensed payroll provider for official W-2 and 1099 filing.
+      </div>
+      <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',overflow:'hidden'}}>
+        <table style={{width:'100%',borderCollapse:'collapse'}}>
+          <thead><tr>
+            {['Employee','Type','Hours','Actions'].map(h=><th key={h} style={{textAlign:'left',fontSize:'10px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',padding:'8px 14px',borderBottom:'1px solid var(--border)',whiteSpace:'nowrap'}}>{h}</th>)}
+          </tr></thead>
+          <tbody>
+            {empEarnings.map((emp,i)=>(
+              <tr key={emp.id} style={{borderBottom:i<empEarnings.length-1?'1px solid var(--border)':'none'}}>
+                <td style={{padding:'12px 14px',fontSize:'13px',fontWeight:600,color:'var(--text-primary)'}}>{emp.first_name} {emp.last_name}</td>
+                <td style={{padding:'12px 14px',fontSize:'12px',color:'var(--text-secondary)'}}>{emp.employment_type==='1099'?'1099 (Contractor)':'W-2 (Employee)'}</td>
+                <td style={{padding:'12px 14px',fontSize:'13px',color:'var(--accent)',fontFamily:'var(--font-condensed)',fontWeight:700}}>{emp.totalHours}h</td>
+                <td style={{padding:'12px 14px'}}>
+                  <div style={{display:'flex',gap:'6px'}}>
+                    <button style={{display:'inline-flex',alignItems:'center',gap:'6px',background:'var(--color-info-bg)',color:'var(--color-info)',border:'1px solid rgba(91,159,224,0.3)',borderRadius:'var(--radius-sm)',padding:'0 12px',height:'32px',fontFamily:'var(--font-condensed)',fontSize:'11px',fontWeight:700,cursor:'pointer'}} onClick={()=>generatePDF(emp,'W2')}>W-2</button>
+                    {emp.employment_type==='1099'&&<button style={{display:'inline-flex',alignItems:'center',gap:'6px',background:'var(--color-warning-bg)',color:'var(--color-warning)',border:'1px solid rgba(232,148,58,0.3)',borderRadius:'var(--radius-sm)',padding:'0 12px',height:'32px',fontFamily:'var(--font-condensed)',fontSize:'11px',fontWeight:700,cursor:'pointer'}} onClick={()=>generatePDF(emp,'1099')}>1099</button>}
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {empEarnings.length===0&&<tr><td colSpan={4} style={{padding:'32px',textAlign:'center',color:'var(--text-muted)',fontSize:'13px'}}>No approved timesheets for {year}.</td></tr>}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

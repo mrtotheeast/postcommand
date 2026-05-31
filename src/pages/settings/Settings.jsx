@@ -236,6 +236,8 @@ function TeamTab({ profile, companyId, theme, toggleTheme }) {
         ))}
       </div>
 
+      <PositionsSection companyId={companyId} />
+
       <div style={s.card}>
         <div style={s.cardTitle}>Timekeeping & Geofence</div>
         {opsSaved && <Toast msg="Settings saved." type="ok" />}
@@ -475,7 +477,58 @@ function IntegrationsTab({ companyId }) {
         )}
         <button style={{ ...s.btn, marginTop:'14px' }} onClick={save}><Icon name="save" size={14}/>SAVE INTEGRATIONS</button>
       </div>
+
+      {/* PTO Configuration */}
+      <PTOSettingsSection companyId={companyId} />
     </>
+  )
+}
+
+function PTOSettingsSection({ companyId }) {
+  const KEY = `pc-pto-settings-${companyId}`
+  const [form, setForm] = useState(() => { try { return JSON.parse(localStorage.getItem(KEY)||'{}') } catch { return {} } })
+  const [saved, setSaved] = useState(false)
+  const defaults = { accrual_method:'Manual', accrual_rate:0, max_carryover:40, max_balance:160, types:['Vacation','Sick','Personal','Bereavement','Unpaid','Holiday'] }
+  const vals = { ...defaults, ...form }
+  function setF(k,v) { setForm(p=>({...p,[k]:v})) }
+  function toggleType(t) { const ts=vals.types; setF('types',ts.includes(t)?ts.filter(x=>x!==t):[...ts,t]) }
+  function save() { localStorage.setItem(KEY,JSON.stringify({...defaults,...form})); setSaved(true); setTimeout(()=>setSaved(false),2500) }
+  return (
+    <div style={s.card}>
+      <div style={s.cardTitle}>PTO Configuration</div>
+      {saved && <div style={{ fontSize:'13px', padding:'9px 12px', borderRadius:'var(--radius-sm)', marginBottom:'12px', display:'flex', alignItems:'center', gap:'8px', background:'var(--color-success-bg)', color:'var(--color-success)', border:'1px solid rgba(58,170,106,0.3)' }}><Icon name="check-circle" size={14}/>PTO settings saved.</div>}
+      <div style={s.row}>
+        <div style={s.field}>
+          <div style={s.lbl}>Accrual Method</div>
+          <select style={{ ...s.inp, cursor:'pointer' }} value={vals.accrual_method} onChange={e=>setF('accrual_method',e.target.value)}>
+            {['Manual','Hours Worked','Per Pay Period'].map(m=><option key={m}>{m}</option>)}
+          </select>
+        </div>
+        <div style={s.field}>
+          <div style={s.lbl}>Accrual Rate (hours per period)</div>
+          <Inp value={vals.accrual_rate} onChange={e=>setF('accrual_rate',Number(e.target.value))} type="number" placeholder="0" />
+        </div>
+        <div style={s.field}>
+          <div style={s.lbl}>Max Carryover (hours)</div>
+          <Inp value={vals.max_carryover} onChange={e=>setF('max_carryover',Number(e.target.value))} type="number" placeholder="40" />
+        </div>
+        <div style={s.field}>
+          <div style={s.lbl}>Max Balance (hours)</div>
+          <Inp value={vals.max_balance} onChange={e=>setF('max_balance',Number(e.target.value))} type="number" placeholder="160" />
+        </div>
+      </div>
+      <div style={{ marginBottom:'14px' }}>
+        <div style={s.lbl}>Available PTO Types</div>
+        <div style={{ display:'flex', gap:'10px', flexWrap:'wrap', marginTop:'8px' }}>
+          {['Vacation','Sick','Personal','Bereavement','Unpaid','Holiday'].map(t=>(
+            <label key={t} style={{ display:'flex', alignItems:'center', gap:'6px', fontSize:'13px', color:'var(--text-primary)', cursor:'pointer' }}>
+              <input type="checkbox" checked={vals.types.includes(t)} onChange={()=>toggleType(t)} style={{ accentColor:'var(--accent)', width:'15px', height:'15px', cursor:'pointer' }}/>{t}
+            </label>
+          ))}
+        </div>
+      </div>
+      <button style={s.btn} onClick={save}><Icon name="save" size={14}/>SAVE PTO SETTINGS</button>
+    </div>
   )
 }
 
@@ -672,5 +725,61 @@ function AITab({ companyId }) {
         <button style={s.btn} onClick={save}><Icon name="save" size={14}/>SAVE AI SETTINGS</button>
       </div>
     </>
+  )
+}
+
+// ── Positions Section ─────────────────────────────────────────────────────────
+
+function PositionsSection({ companyId }) {
+  const [positions, setPositions] = useState([])
+  const [loading,   setLoading]   = useState(true)
+  const [form,      setForm]      = useState({ title:'', department:'', pay_type:'hourly', pay_rate:'', description:'' })
+  const [editId,    setEditId]    = useState(null)
+  const [saving,    setSaving]    = useState(false)
+  useEffect(() => { if (companyId) load() }, [companyId])
+  async function load() { setLoading(true); const { data } = await supabase.from('position').select('*').eq('company_id',companyId).order('title'); setPositions(data||[]); setLoading(false) }
+  async function save() {
+    if (!form.title.trim()) return
+    setSaving(true)
+    if (editId) await supabase.from('position').update({...form,pay_rate:Number(form.pay_rate)||null}).eq('id',editId)
+    else await supabase.from('position').insert({company_id:companyId,...form,pay_rate:Number(form.pay_rate)||null})
+    setSaving(false); setForm({title:'',department:'',pay_type:'hourly',pay_rate:'',description:''}); setEditId(null); load()
+  }
+  async function del(id) { if (!window.confirm('Delete this position?')) return; await supabase.from('position').delete().eq('id',id); load() }
+  function startEdit(p) { setForm({title:p.title,department:p.department||'',pay_type:p.pay_type||'hourly',pay_rate:String(p.pay_rate||''),description:p.description||''}); setEditId(p.id) }
+  const foc=e=>e.target.style.borderColor='var(--border-focus)'; const blr=e=>e.target.style.borderColor='var(--border)'
+  return (
+    <div style={s.card}>
+      <div style={s.cardTitle}>Position Management</div>
+      {loading ? <div style={{color:'var(--text-muted)',fontSize:'12px',fontFamily:'var(--font-condensed)',letterSpacing:'1px'}}>LOADING...</div> : (
+        <>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'10px'}}>
+            <div><div style={s.lbl}>Job Title *</div><Inp value={form.title} onChange={e=>setForm(p=>({...p,title:e.target.value}))} placeholder="Security Officer"/></div>
+            <div><div style={s.lbl}>Department</div><Inp value={form.department} onChange={e=>setForm(p=>({...p,department:e.target.value}))} placeholder="Operations"/></div>
+            <div><div style={s.lbl}>Pay Type</div><select style={{...s.inp,cursor:'pointer'}} value={form.pay_type} onChange={e=>setForm(p=>({...p,pay_type:e.target.value}))} onFocus={foc} onBlur={blr}><option value="hourly">Hourly</option><option value="salary">Salary</option></select></div>
+            <div><div style={s.lbl}>Pay Rate ($/hr or $/yr)</div><Inp value={form.pay_rate} onChange={e=>setForm(p=>({...p,pay_rate:e.target.value}))} type="number" placeholder="0"/></div>
+            <div style={{gridColumn:'1/-1'}}><div style={s.lbl}>Description</div><Inp value={form.description} onChange={e=>setForm(p=>({...p,description:e.target.value}))} placeholder="Role responsibilities..."/></div>
+          </div>
+          <div style={{display:'flex',gap:'8px',marginBottom:'16px'}}>
+            <button style={{...s.btn,height:'36px',fontSize:'12px',padding:'0 14px',opacity:(!form.title.trim()||saving)?0.6:1}} onClick={save} disabled={!form.title.trim()||saving}><Icon name="save" size={13}/>{saving?'SAVING...':editId?'UPDATE':'ADD POSITION'}</button>
+            {editId && <button style={{...s.ghost,height:'36px',fontSize:'12px',padding:'0 12px'}} onClick={()=>{setEditId(null);setForm({title:'',department:'',pay_type:'hourly',pay_rate:'',description:''})}}>CANCEL</button>}
+          </div>
+          {positions.length===0 ? <div style={{fontSize:'13px',color:'var(--text-muted)'}}>No positions defined yet.</div>
+            : <div style={{borderTop:'1px solid var(--border)'}}>
+              {positions.map((p,i)=>(
+                <div key={p.id} style={{display:'flex',alignItems:'center',gap:'12px',padding:'10px 0',borderBottom:i<positions.length-1?'1px solid var(--border)':'none'}}>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-primary)'}}>{p.title}</div>
+                    <div style={{fontSize:'11px',color:'var(--text-muted)'}}>{p.department&&`${p.department} · `}{p.pay_type} {p.pay_rate?`· $${p.pay_rate}/${p.pay_type==='hourly'?'hr':'yr'}`:''}</div>
+                  </div>
+                  <button style={{background:'transparent',border:'none',color:'var(--text-muted)',cursor:'pointer',padding:'4px',display:'flex'}} onClick={()=>startEdit(p)}><Icon name="edit-2" size={14}/></button>
+                  <button style={{background:'transparent',border:'none',color:'var(--color-danger)',cursor:'pointer',padding:'4px',display:'flex'}} onClick={()=>del(p.id)}><Icon name="trash-2" size={14}/></button>
+                </div>
+              ))}
+            </div>
+          }
+        </>
+      )}
+    </div>
   )
 }
