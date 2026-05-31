@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 
 export default function Login() {
@@ -159,11 +159,35 @@ export default function Login() {
           </button>
         </form>
 
+        <div style={{ textAlign: 'center', marginTop: '28px' }}>
+          <a
+            href="/reciprocity"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              color: '#c9a227',
+              fontSize: '12px',
+              textDecoration: 'none',
+              fontFamily: 'Barlow Condensed, sans-serif',
+              letterSpacing: '0.5px',
+              opacity: 0.8,
+              transition: 'opacity 150ms ease',
+            }}
+            onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+            onMouseLeave={e => e.currentTarget.style.opacity = '0.8'}
+          >
+            🗺 View CCW Reciprocity Map — All 50 States (No login required)
+          </a>
+        </div>
+
         <p style={{
           textAlign: 'center',
           color: '#4a5568',
           fontSize: '12px',
-          marginTop: '32px'
+          marginTop: '16px'
         }}>
           © 2026 PostCommand · Powered by Nationwide Police Services LLC
         </p>

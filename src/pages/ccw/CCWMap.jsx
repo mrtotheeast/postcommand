@@ -1,7 +1,28 @@
-import { useState, useMemo } from 'react'
+/*
+ * EMBED ON NATIONWIDEPOLICE.COM:
+ *
+ * <iframe
+ *   src="https://postcommand.app/reciprocity"
+ *   width="100%"
+ *   height="750"
+ *   style="border:none;border-radius:12px;"
+ *   title="CCW Reciprocity Map — All 50 States"
+ *   loading="lazy"
+ *   allowfullscreen>
+ * </iframe>
+ *
+ * Route: /reciprocity — fully public, no login required, no auth wrapper.
+ * When accessed without a session the PostCommand header is hidden so the
+ * map fills the full viewport — ideal for iframes and public embeds.
+ * When accessed by a logged-in user the header is shown.
+ * All useAuth() calls are absent — this file is safe for unauthenticated use.
+ */
+
+import { useState, useMemo, useEffect } from 'react'
 import { ComposableMap, Geographies, Geography, ZoomableGroup } from 'react-simple-maps'
 import { CCW_STATES, CCW_MAP, PERMIT_TYPES, getStateColor } from './ccwData'
 import Icon from '../../components/ui/Icon'
+import { supabase } from '../../lib/supabase'
 
 const GEO_URL = 'https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json'
 
@@ -51,6 +72,15 @@ const s = {
 }
 
 export default function CCWMap() {
+  // Session check — safe for unauthenticated users (no useAuth() context needed).
+  // Default false so iframes render immediately with no header; session found → header appears.
+  const [hasSession, setHasSession] = useState(false)
+  useEffect(() => {
+    supabase.auth.getSession()
+      .then(({ data: { session } }) => setHasSession(!!session))
+      .catch(() => setHasSession(false))
+  }, [])
+
   const [selected, setSelected]       = useState(null)
   const [tab, setTab]                 = useState('map') // map | table
   const [search, setSearch]           = useState('')
@@ -93,19 +123,22 @@ export default function CCWMap() {
         .state-row:hover { background:#1a1d2a !important }
       `}</style>
       <div style={s.shell}>
-        {/* Header */}
-        <header style={s.header}>
-          <div>
-            <div style={s.logo}>POST<span style={{color:'#f0f2f8'}}>COMMAND</span> · CCW RECIPROCITY</div>
-            <div style={s.logoSub}>Concealed Carry Reciprocity Map — All 50 States + DC</div>
-          </div>
-          <div style={{ display:'flex', gap:'10px', alignItems:'center', flexWrap:'wrap' }}>
-            <span style={s.badge}><Icon name="zap" size={11}/>AI-Updated Monthly</span>
-            <span style={{ fontSize:'11px', color:'#3d4460' }}>Always verify with your state AG office</span>
-          </div>
-        </header>
+        {/* Header — hidden in standalone/iframe mode (no session) */}
+        {hasSession && (
+          <header style={s.header}>
+            <div>
+              <div style={s.logo}>POST<span style={{color:'#f0f2f8'}}>COMMAND</span> · CCW RECIPROCITY</div>
+              <div style={s.logoSub}>Concealed Carry Reciprocity Map — All 50 States + DC</div>
+            </div>
+            <div style={{ display:'flex', gap:'10px', alignItems:'center', flexWrap:'wrap' }}>
+              <span style={s.badge}><Icon name="zap" size={11}/>AI-Updated Monthly</span>
+              <span style={{ fontSize:'11px', color:'#3d4460' }}>Always verify with your state AG office</span>
+            </div>
+          </header>
+        )}
 
-        <div style={{ ...s.layout, gridTemplateColumns: tab === 'table' ? '1fr' : '1fr 380px' }}>
+        {/* When no header, the layout fills the full viewport height */}
+        <div style={{ ...s.layout, gridTemplateColumns: tab === 'table' ? '1fr' : '1fr 380px', height: hasSession ? 'calc(100vh - 62px)' : '100vh' }}>
           {/* Map */}
           {tab !== 'table' && (
             <div style={s.mapWrap}>
