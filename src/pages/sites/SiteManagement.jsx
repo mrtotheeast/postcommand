@@ -425,7 +425,7 @@ function SiteFormModal({ site, companyId, onClose, onSaved }) {
           <div style={{ flex:1 }}>
             <div style={s.label}>Clock-In Radius</div>
             <div style={{ display:'flex', alignItems:'center', gap:'12px', marginTop:'6px' }}>
-              <input type="range" min={50} max={500} step={10} value={form.geofence_radius} onChange={e => setF('geofence_radius', Number(e.target.value))} style={s.slider} />
+              <input type="range" min={10} max={500} step={5} value={form.geofence_radius} onChange={e => setF('geofence_radius', Number(e.target.value))} style={s.slider} />
               <span style={s.sliderVal}>{form.geofence_radius}m</span>
             </div>
           </div>

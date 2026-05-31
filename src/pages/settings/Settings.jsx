@@ -247,10 +247,10 @@ export default function Settings() {
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px', minWidth: '200px' }}>
                   <div style={s.sliderRow}>
-                    <input type="range" min={50} max={500} step={10} value={ops.geofenceRadius} onChange={e => updateOps('geofenceRadius', Number(e.target.value))} style={s.slider} />
+                    <input type="range" min={10} max={500} step={5} value={ops.geofenceRadius} onChange={e => updateOps('geofenceRadius', Number(e.target.value))} style={s.slider} />
                     <span style={s.sliderVal}>{ops.geofenceRadius}m</span>
                   </div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>50m — 500m</div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>10m — 500m</div>
                 </div>
               </div>
 
