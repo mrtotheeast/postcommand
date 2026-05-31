@@ -486,10 +486,33 @@ function CourseReadModal({ assignment, onClose, onComplete }) {
 function CourseFormModal({ course, companyId, employeeId, onClose, onSaved }) {
   const [form, setForm] = useState(course ? { title:course.title, description:course.description||'', content:course.content||'', duration_minutes:course.duration_minutes||'', status:course.status||'active' } : { title:'', description:'', content:'', duration_minutes:'', status:'active' })
   const [questions, setQuestions] = useState([])
-  const [saving, setSaving] = useState(false)
+  const [saving, setSaving]       = useState(false)
+  const [aiTopic, setAiTopic]     = useState('')
+  const [aiGenerating, setAiGenerating] = useState(false)
+  const [aiError, setAiError]     = useState(null)
+  const [showAiPanel, setShowAiPanel] = useState(false)
   function setF(k,v) { setForm(prev=>({...prev,[k]:v})) }
   const inputF = e => { e.target.style.borderColor='var(--border-focus)' }
   const inputB = e => { e.target.style.borderColor='var(--border)' }
+
+  async function generateWithAI() {
+    if (!aiTopic.trim()) return
+    setAiGenerating(true); setAiError(null)
+    try {
+      const { data, error } = await supabase.functions.invoke('generate-training', {
+        body: { topic: aiTopic.trim(), duration_minutes: parseInt(form.duration_minutes)||30 }
+      })
+      if (error) throw error
+      if (data.error) throw new Error(data.error)
+      setF('title', data.title)
+      setF('description', data.description)
+      setF('content', data.content)
+      setShowAiPanel(false); setAiTopic('')
+    } catch (e) {
+      setAiError(e.message)
+    }
+    setAiGenerating(false)
+  }
 
   useEffect(() => {
     if (course?.id) supabase.from('training_quiz_question').select('*').eq('course_id', course.id).order('order_index').then(({data})=>setQuestions(data||[]))

@@ -25,7 +25,9 @@ export const NAV_ITEMS = [
     { id:'uniforms', label:'Uniforms', path:'/uniforms', icon:'shield', roles:['super_admin','chief','lieutenant','sergeant','corporal','officer','office_staff'] },
     { id:'reports',  label:'Reports',  path:'/reports',  icon:'bar-chart-2', roles:['super_admin','chief','lieutenant','hr','accounting'] },
     { id:'messaging', label:'Messaging', path:'/messaging', icon:'message-circle', badge:true, roles:['super_admin','chief','lieutenant','sergeant','corporal','officer','hr','accounting','office_staff'] },
+    { id:'archived', label:'Archived',  path:'/archived', icon:'archive',     roles:['super_admin','chief'] },
     { id:'billing',  label:'Billing',  path:'/billing',  icon:'credit-card', roles:['super_admin'] },
+    { id:'admin',    label:'Platform',  path:'/admin',    icon:'globe',       roles:['super_admin'] },
     { id:'settings', label:'Settings', path:'/settings', icon:'settings', roles:['super_admin','chief'] },
   ]},
 ]
