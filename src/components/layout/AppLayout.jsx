@@ -57,7 +57,25 @@ export default function AppLayout({ children }) {
   const [isOnline, setIsOnline] = useState(navigator.onLine)
   const location = useLocation()
   const navigate = useNavigate()
-  const role = profile?.role
+  const actualRole = profile?.role
+  // View As — UI-only role simulation, does not touch auth
+  const VIEW_AS_KEY = `pc-viewas-${profile?.id}`
+  const [viewRole, setViewRole] = useState(() => {
+    const saved = localStorage.getItem(VIEW_AS_KEY)
+    return saved || null
+  })
+  const role = viewRole || actualRole   // used everywhere below
+
+  function exitViewAs() {
+    localStorage.removeItem(VIEW_AS_KEY)
+    setViewRole(null)
+  }
+  function switchViewAs(newRole) {
+    localStorage.setItem(VIEW_AS_KEY, newRole)
+    setViewRole(newRole)
+  }
+
+  const canViewAs = atLeast(actualRole, 'sergeant')
 
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth <= 768)
@@ -127,10 +145,26 @@ export default function AppLayout({ children }) {
           <div style={s.avatar}>{initials}</div>
           <div style={s.userInfo}>
             <div style={s.userName}>{profile?.first_name} {profile?.last_name}</div>
-            <div style={s.userRole}>{ROLE_LABELS[role] ?? role}</div>
+            <div style={s.userRole}>{ROLE_LABELS[actualRole] ?? actualRole}</div>
           </div>
           <button style={s.signOutBtn} onClick={signOut} aria-label="Sign out"><Icon name="log-out" size={16} /></button>
         </div>
+        {canViewAs && (
+          <div style={{ marginTop:'8px', display:'flex', alignItems:'center', gap:'6px' }}>
+            <Icon name="eye" size={12} color="var(--text-muted)"/>
+            <span style={{ fontSize:'10px', color:'var(--text-muted)', fontFamily:'var(--font-condensed)', letterSpacing:'0.5px', flexShrink:0 }}>View As:</span>
+            <select
+              value={viewRole || ''}
+              onChange={e => e.target.value ? switchViewAs(e.target.value) : exitViewAs()}
+              style={{ flex:1, background:'var(--bg-input)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', padding:'4px 6px', fontSize:'11px', color: viewRole ? 'var(--accent)' : 'var(--text-muted)', fontFamily:'var(--font-condensed)', cursor:'pointer', outline:'none' }}
+            >
+              <option value="">— Self ({ROLE_LABELS[actualRole]}) —</option>
+              {['officer','corporal','sergeant','lieutenant','client'].filter(r => r !== actualRole).map(r => (
+                <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
     </>
   )
@@ -189,6 +223,11 @@ export default function AppLayout({ children }) {
           <div style={{ background:'var(--color-warning)', color:'#fff', textAlign:'center', padding:'6px', fontSize:'12px', fontFamily:'var(--font-condensed)', letterSpacing:'1px', fontWeight:700, flexShrink:0 }}>
             OFFLINE — Changes will sync when connection is restored
           </div>
+        )}
+        {viewRole && (
+          <button onClick={exitViewAs} style={{ background:'var(--accent)', color:'var(--text-inverse)', textAlign:'center', padding:'7px 16px', fontSize:'12px', fontFamily:'var(--font-condensed)', letterSpacing:'1px', fontWeight:700, flexShrink:0, border:'none', cursor:'pointer', width:'100%', display:'flex', alignItems:'center', justifyContent:'center', gap:'8px' }}>
+            <Icon name="eye" size={13}/>VIEWING AS {ROLE_LABELS[viewRole]?.toUpperCase() || viewRole.toUpperCase()} — CLICK TO EXIT
+          </button>
         )}
         <main style={s.content} id="main-content">{children}</main>
       </div>

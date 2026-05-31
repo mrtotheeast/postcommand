@@ -28,6 +28,7 @@ export const NAV_ITEMS = [
     { id:'archived', label:'Archived',  path:'/archived', icon:'archive',     roles:['super_admin','chief'] },
     { id:'billing',  label:'Billing',  path:'/billing',  icon:'credit-card', roles:['super_admin'] },
     { id:'admin',    label:'Platform',  path:'/admin',    icon:'globe',       roles:['super_admin'] },
+    { id:'more',     label:'More',     path:'/more',     icon:'grid',    roles:['super_admin','chief'] },
     { id:'settings', label:'Settings', path:'/settings', icon:'settings', roles:['super_admin','chief'] },
   ]},
 ]

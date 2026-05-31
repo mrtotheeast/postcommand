@@ -24,6 +24,7 @@ import CCWMap from './pages/ccw/CCWMap'
 import Billing from './pages/billing/Billing'
 import Archived from './pages/archived/Archived'
 import SuperAdmin from './pages/admin/SuperAdmin'
+import More from './pages/more/More'
 
 function ComingSoon({ name }) {
   return <div style={{padding:'40px 24px',fontFamily:'var(--font-display)',fontSize:'24px',letterSpacing:'2px',color:'var(--accent)'}}>{name.toUpperCase()} — COMING SOON</div>
@@ -69,6 +70,7 @@ export default function App() {
       <Route path="/billing"    element={<ProtectedRoute><Billing /></ProtectedRoute>} />
       <Route path="/archived"   element={<ProtectedRoute><Archived /></ProtectedRoute>} />
       <Route path="/admin"      element={<ProtectedRoute><SuperAdmin /></ProtectedRoute>} />
+      <Route path="/more"       element={<ProtectedRoute><More /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
   )
