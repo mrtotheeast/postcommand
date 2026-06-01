@@ -104,6 +104,7 @@ export default function SiteManagement() {
   const [detail, setDetail]         = useState(null)   // site object for detail panel
   const [detailTab, setDetailTab]   = useState('info')
   const [confirmDelete, setConfirmDelete] = useState(null)
+  const [showImport, setShowImport] = useState(false)
 
   useEffect(() => { if (profile?.company_id) load() }, [profile])
 
@@ -181,9 +182,14 @@ export default function SiteManagement() {
           <option value="inactive">Inactive</option>
         </select>
         {canEdit && (
-          <button style={s.addBtn} onClick={() => setEditing('new')}>
-            <Icon name="plus" size={15} />ADD SITE
-          </button>
+          <>
+            <button style={{ ...s.addBtn, background:'var(--bg-card)', color:'var(--text-secondary)', border:'1px solid var(--border-subtle)' }} onClick={() => setShowImport(true)}>
+              <Icon name="upload" size={15} />IMPORT CSV
+            </button>
+            <button style={s.addBtn} onClick={() => setEditing('new')}>
+              <Icon name="plus" size={15} />ADD SITE
+            </button>
+          </>
         )}
       </div>
 
@@ -266,6 +272,14 @@ export default function SiteManagement() {
       )}
 
       {/* Delete confirm */}
+      {showImport && (
+        <SiteCSVImport
+          companyId={profile.company_id}
+          onClose={() => setShowImport(false)}
+          onImported={() => { setShowImport(false); load() }}
+        />
+      )}
+
       {confirmDelete && (
         <div style={s.overlay} onClick={() => setConfirmDelete(null)}>
           <div style={{ ...s.modal, maxWidth:'400px' }} onClick={e => e.stopPropagation()}>
@@ -346,12 +360,16 @@ function SiteFormModal({ site, companyId, onClose, onSaved }) {
       geofence_radius: Number(form.geofence_radius) || 150,
       is_active: form.is_active,
     }
+    let err
     if (site?.id) {
-      await supabase.from('site').update(payload).eq('id', site.id)
+      const res = await supabase.from('site').update(payload).eq('id', site.id)
+      err = res.error
     } else {
-      await supabase.from('site').insert(payload)
+      const res = await supabase.from('site').insert(payload)
+      err = res.error
     }
     setSaving(false)
+    if (err) { alert('Save failed: ' + err.message); return }
     onSaved()
   }
 
@@ -907,6 +925,143 @@ function SiteInspections({ siteId, companyId, siteName, canEdit }) {
           )
         })
       }
+    </div>
+  )
+}
+
+// ── Site CSV Importer ─────────────────────────────────────────────────────────
+
+const SITE_CSV_HEADERS = 'name,address,city,state,zip_code,contact_name,contact_phone,description,geofence_radius'
+
+function SiteCSVImport({ companyId, onClose, onImported }) {
+  const [rows,    setRows]    = useState(null)
+  const [error,   setError]   = useState(null)
+  const [result,  setResult]  = useState(null)
+  const [importing, setImporting] = useState(false)
+  const fileRef = useRef(null)
+
+  function downloadTemplate() {
+    const blob = new Blob([SITE_CSV_HEADERS + '\n'], { type:'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a'); a.href=url; a.download='site-import-template.csv'; a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  function parseCSV(text) {
+    const lines = text.trim().split('\n').map(l => l.trim()).filter(Boolean)
+    if (lines.length < 2) return { error:'File needs a header row and at least one data row.' }
+    const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/\s+/g,'_').replace(/[^a-z_]/g,''))
+    const parsed = []
+    for (let i = 1; i < lines.length; i++) {
+      const vals = lines[i].split(',').map(v => v.trim().replace(/^"|"$/g,''))
+      const row = {}
+      headers.forEach((h,j) => { row[h] = vals[j] || '' })
+      parsed.push(row)
+    }
+    return { rows: parsed }
+  }
+
+  function handleFile(e) {
+    const file = e.target.files[0]; if (!file) return
+    const reader = new FileReader()
+    reader.onload = ev => {
+      const p = parseCSV(ev.target.result)
+      if (p.error) { setError(p.error); setRows(null) }
+      else { setError(null); setRows(p.rows) }
+    }
+    reader.readAsText(file)
+  }
+
+  async function doImport() {
+    if (!rows?.length) return
+    setImporting(true)
+    let ok = 0, skipped = 0
+    for (const row of rows) {
+      if (!row.name?.trim()) { skipped++; continue }
+      const { error } = await supabase.from('site').insert({
+        company_id: companyId,
+        name: row.name.trim(),
+        address: row.address?.trim() || null,
+        city: row.city?.trim() || null,
+        state: row.state?.trim() || null,
+        zip_code: row.zip_code?.trim() || null,
+        contact_name: row.contact_name?.trim() || null,
+        contact_phone: row.contact_phone?.trim() || null,
+        description: row.description?.trim() || null,
+        geofence_radius: Number(row.geofence_radius) || 150,
+        is_active: true,
+      })
+      if (error) skipped++; else ok++
+    }
+    setImporting(false)
+    setResult({ ok, skipped })
+  }
+
+  const ov  = { position:'fixed',inset:0,background:'rgba(0,0,0,0.65)',zIndex:400,display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'32px 16px',overflowY:'auto' }
+  const mod = { background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-lg)',padding:'28px',width:'100%',maxWidth:'700px',boxShadow:'var(--shadow-modal)',flexShrink:0 }
+  const btn = (v='accent') => ({ display:'inline-flex',alignItems:'center',gap:'8px',background:v==='accent'?'var(--accent)':'var(--bg-surface)',color:v==='accent'?'var(--text-inverse)':'var(--text-secondary)',border:v==='accent'?'none':'1px solid var(--border)',borderRadius:'var(--radius-sm)',padding:'0 18px',height:'42px',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer' })
+
+  return (
+    <div style={ov} onClick={e=>{if(e.target===e.currentTarget)onClose()}}>
+      <div style={mod}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'20px'}}>
+          <div style={{fontFamily:'var(--font-display)',fontSize:'22px',letterSpacing:'1.5px',color:'var(--text-primary)'}}>IMPORT SITES — CSV</div>
+          <button style={{background:'transparent',border:'none',color:'var(--text-muted)',cursor:'pointer',padding:'4px',display:'flex'}} onClick={onClose}><Icon name="x" size={18}/></button>
+        </div>
+
+        {result ? (
+          <div style={{textAlign:'center',padding:'20px 0'}}>
+            <Icon name="check-circle" size={40} color="var(--color-success)"/>
+            <div style={{fontFamily:'var(--font-display)',fontSize:'22px',letterSpacing:'2px',color:'var(--text-primary)',margin:'12px 0 6px'}}>IMPORT COMPLETE</div>
+            <div style={{fontSize:'14px',color:'var(--text-secondary)'}}>{result.ok} site{result.ok!==1?'s':''} imported{result.skipped>0?`, ${result.skipped} skipped (missing name or error)`:''}</div>
+            <button style={{...btn(),marginTop:'20px'}} onClick={onImported}>DONE</button>
+          </div>
+        ) : (
+          <>
+            <div style={{background:'var(--bg-surface)',borderRadius:'var(--radius-sm)',padding:'12px 16px',marginBottom:'16px',fontSize:'12px',color:'var(--text-muted)',lineHeight:1.6}}>
+              CSV headers: <strong style={{color:'var(--text-secondary)'}}>{SITE_CSV_HEADERS}</strong>. Only <strong>name</strong> is required.
+            </div>
+            <div style={{display:'flex',gap:'10px',marginBottom:'16px'}}>
+              <button style={btn('ghost')} onClick={downloadTemplate}><Icon name="download" size={14}/>DOWNLOAD TEMPLATE</button>
+              <button style={{...btn('ghost'),borderStyle:'dashed',flex:1,justifyContent:'center'}} onClick={()=>fileRef.current?.click()}>
+                <Icon name="upload" size={14}/>{rows ? `${rows.length} rows loaded — click to change` : 'CHOOSE CSV FILE'}
+              </button>
+              <input ref={fileRef} type="file" accept=".csv,text/csv" style={{display:'none'}} onChange={handleFile}/>
+            </div>
+
+            {error && <div style={{fontSize:'13px',color:'var(--color-danger)',marginBottom:'12px',padding:'10px 12px',background:'var(--color-danger-bg)',borderRadius:'var(--radius-sm)'}}>{error}</div>}
+
+            {rows && rows.length > 0 && (
+              <div style={{border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',overflow:'auto',maxHeight:'260px',marginBottom:'16px'}}>
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:'12px'}}>
+                  <thead>
+                    <tr>{['name','address','city','state','geofence_radius'].map(h=>(
+                      <th key={h} style={{padding:'7px 10px',textAlign:'left',fontSize:'10px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.5px',fontFamily:'var(--font-condensed)',borderBottom:'1px solid var(--border)',background:'var(--bg-surface)',whiteSpace:'nowrap'}}>{h}</th>
+                    ))}</tr>
+                  </thead>
+                  <tbody>
+                    {rows.slice(0,10).map((row,i)=>(
+                      <tr key={i} style={{borderBottom:'1px solid var(--border)'}}>
+                        {['name','address','city','state','geofence_radius'].map(h=>(
+                          <td key={h} style={{padding:'7px 10px',color:h==='name'&&!row[h]?'var(--color-danger)':'var(--text-secondary)'}}>{row[h]||<span style={{color:'var(--text-muted)'}}>—</span>}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {rows.length>10&&<div style={{padding:'8px 12px',fontSize:'11px',color:'var(--text-muted)',borderTop:'1px solid var(--border)'}}>+{rows.length-10} more rows</div>}
+              </div>
+            )}
+
+            <div style={{display:'flex',gap:'10px'}}>
+              <button style={{...btn(),opacity:(!rows?.length||importing)?0.6:1}} onClick={doImport} disabled={!rows?.length||importing}>
+                <Icon name="upload" size={14}/>{importing?'IMPORTING...': rows?`IMPORT ${rows.length} SITES`:'IMPORT'}
+              </button>
+              <button style={btn('ghost')} onClick={onClose}>CANCEL</button>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   )
 }
