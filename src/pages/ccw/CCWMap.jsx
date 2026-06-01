@@ -21,6 +21,22 @@ import { supabase } from '../../lib/supabase'
 
 const GEO_URL = '/us-states.json'
 
+// Fix 3 — distinct, high-contrast permit type colors
+const TYPE_COLORS = {
+  constitutional: '#2e7d32',  // dark green
+  shall_issue:    '#1565c0',  // dark blue
+  may_issue:      '#e65100',  // dark orange
+  no_issue:       '#b71c1c',  // dark red
+}
+const TYPE_BG = {
+  constitutional: 'rgba(46,125,50,0.12)',
+  shall_issue:    'rgba(21,101,192,0.12)',
+  may_issue:      'rgba(230,81,0,0.12)',
+  no_issue:       'rgba(183,28,28,0.12)',
+}
+function localColor(permitType) { return TYPE_COLORS[permitType] || '#c8d8e8' }
+function localBg(permitType)    { return TYPE_BG[permitType]    || 'rgba(200,216,232,0.2)' }
+
 const FIPS = {
   '01':'AL','02':'AK','04':'AZ','05':'AR','06':'CA','08':'CO','09':'CT','10':'DE',
   '11':'DC','12':'FL','13':'GA','15':'HI','16':'ID','17':'IL','18':'IN','19':'IA',
@@ -31,19 +47,21 @@ const FIPS = {
   '54':'WV','55':'WI','56':'WY',
 }
 
-// Calibrated positions for small northeast states (% of map container)
-// from = state centroid, to = label box
+// Fix 2 — calibrated from pixel coords based on 975×610 AlbersUSA viewBox.
+// Converted to %: x = px/975*100, y = px/610*100
+// from = state centroid on map, to = label box position
+// Labels stack at x≈88.5% with 28px (~4.6%) vertical spacing
 const SMALL_LABELS = [
-  { code:'VT', from:[70.5, 18.5], to:[84.5, 10.5] },
-  { code:'NH', from:[73.0, 16.5], to:[88.5, 14.5] },
-  { code:'MA', from:[74.5, 21.5], to:[92.5, 19.5] },
-  { code:'RI', from:[76.0, 23.5], to:[92.5, 24.5] },
-  { code:'CT', from:[74.0, 25.0], to:[92.5, 29.5] },
-  { code:'NJ', from:[72.5, 29.0], to:[88.5, 34.5] },
-  { code:'DE', from:[72.5, 32.0], to:[84.5, 39.5] },
-  { code:'MD', from:[71.0, 34.0], to:[84.5, 44.5] },
-  { code:'DC', from:[70.5, 35.5], to:[88.5, 49.5] },
-  { code:'HI', from:[28.0, 81.0], to:[17.0, 81.0] },
+  { code:'VT', from:[82.4, 24.9], to:[88.5, 27.0] },
+  { code:'NH', from:[83.9, 26.7], to:[88.5, 31.6] },
+  { code:'MA', from:[83.3, 29.2], to:[88.5, 36.2] },
+  { code:'RI', from:[84.1, 30.8], to:[88.5, 40.8] },
+  { code:'CT', from:[82.9, 31.6], to:[88.5, 45.4] },
+  { code:'NJ', from:[81.3, 34.4], to:[88.5, 50.0] },
+  { code:'DE', from:[81.6, 36.6], to:[88.5, 54.6] },
+  { code:'MD', from:[79.8, 38.2], to:[88.5, 59.2] },
+  { code:'DC', from:[80.4, 39.3], to:[88.5, 63.8] },
+  { code:'HI', from:[22.6, 90.2], to:[17.4, 96.7] },
 ]
 
 const C = {
@@ -187,10 +205,9 @@ Always verify current laws before carrying. This is not legal advice. Consult a 
         <header style={{ background:C.bg, borderBottom:`1px solid ${C.border}`, padding:'12px 20px', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:'10px', flexShrink:0 }}>
           <div>
             <div style={{ display:'flex', alignItems:'baseline', gap:'10px' }}>
-              <span style={{ fontFamily:"'Bebas Neue', sans-serif", fontSize:'22px', letterSpacing:'3px', color:C.gold }}>
-                POST<span style={{color:C.text}}>COMMAND</span>
-              </span>
-              <span style={{ fontSize:'13px', color:C.textMuted, letterSpacing:'0.5px' }}>CCW Reciprocity Map</span>
+              <span style={{ fontFamily:"'Bebas Neue', sans-serif", fontSize:'26px', letterSpacing:'2px', color:C.gold, fontWeight:700 }}>NPS</span>
+              <span style={{ fontFamily:"'Barlow Condensed', sans-serif", fontSize:'15px', fontWeight:600, color:C.text, letterSpacing:'0.5px' }}>Nationwide Police Services</span>
+              <span style={{ fontSize:'13px', color:C.textMuted, letterSpacing:'0.5px' }}>· CCW Reciprocity Map</span>
             </div>
             <div style={{ fontSize:'11px', color:C.textMuted, marginTop:'2px' }}>
               Concealed Carry Weapon laws & state-to-state reciprocity reference
@@ -243,9 +260,9 @@ Always verify current laws before carrying. This is not legal advice. Consult a 
             {homeState && <span style={{ fontSize:'11px', fontWeight:700, color:C.gold, background:C.goldBg, padding:'2px 8px', borderRadius:'10px', border:`1px solid rgba(200,168,75,0.3)` }}>📍 {homeState} selected</span>}
             {Object.entries(PERMIT_TYPES).map(([k,v])=>(
               <button key={k} onClick={()=>setFilterType(filterType===k?'all':k)}
-                style={{ display:'flex', alignItems:'center', gap:'5px', background:'transparent', border:'none', cursor:'pointer', fontSize:'10px', color:C.text, padding:'2px 4px', opacity:filterType!=='all'&&filterType!==k?0.35:1, transition:'opacity 150ms ease' }}>
-                <div style={{ width:'10px', height:'10px', borderRadius:'2px', background:v.mapColor, flexShrink:0 }}/>
-                {v.short}
+                style={{ display:'flex', alignItems:'center', gap:'5px', background:'transparent', border:'none', cursor:'pointer', fontSize:'10px', color:C.text, padding:'2px 4px', opacity:filterType!=='all'&&filterType!==k?0.3:1, transition:'opacity 150ms ease' }}>
+                <div style={{ width:'12px', height:'12px', borderRadius:'2px', background:localColor(k), flexShrink:0 }}/>
+                {v.short} — {v.label}
               </button>
             ))}
           </div>
@@ -260,7 +277,7 @@ Always verify current laws before carrying. This is not legal advice. Consult a 
             {/* Tooltip */}
             {hovering && !modal && (
               <div style={{ position:'absolute', top:'14px', left:'50%', transform:'translateX(-50%)', zIndex:10, background:C.bg, border:`1px solid ${C.border}`, borderRadius:'7px', padding:'6px 14px', pointerEvents:'none', boxShadow:'0 2px 8px rgba(0,0,0,0.08)', fontSize:'13px', fontWeight:600, whiteSpace:'nowrap' }}>
-                <span style={{ color:getStateColor(hovering.permitType) }}>{hovering.name}</span>
+                <span style={{ color:localColor(hovering.permitType) }}>{hovering.name}</span>
                 <span style={{ color:C.textMuted, fontWeight:400, marginLeft:'8px', fontSize:'11px' }}>{PERMIT_TYPES[hovering.permitType]?.label}</span>
                 {homeState && homeSupporters.has(hovering.code) && <span style={{ color:'#2e7d32', marginLeft:'8px', fontSize:'10px' }}>✓ Honors {homeState}</span>}
               </div>
@@ -268,7 +285,7 @@ Always verify current laws before carrying. This is not legal advice. Consult a 
 
             {/* Map */}
             <div style={{ width:'100%', height:'100%', transform:`scale(${zoom})`, transformOrigin:'center center', transition:'transform 200ms ease' }}>
-              <ComposableMap projection="geoAlbersUsa" style={{ width:'100%', height:'100%', display:'block' }}>
+              <ComposableMap projection="geoAlbersUsa" projectionConfig={{ scale:880, center:[-96,38] }} style={{ width:'100%', height:'100%', display:'block' }}>
                 <Geographies geography={GEO_URL} onError={()=>setGeoError(true)}>
                   {({ geographies }) => {
                     if (!geographies?.length) return null
@@ -278,7 +295,7 @@ Always verify current laws before carrying. This is not legal advice. Consult a 
                       const state = code ? CCW_MAP[code] : null
                       if (!state) return null
 
-                      const typeColor   = getStateColor(state.permitType)
+                      const typeColor   = localColor(state.permitType)
                       const isHome      = code === homeState
                       const isSupporter = homeState && homeSupporters.has(code)
                       const isHonored   = homeState && homeHonors.has(code)
@@ -287,16 +304,16 @@ Always verify current laws before carrying. This is not legal advice. Consult a 
                       const isModal     = modal?.code === code
 
                       let fill        = typeColor
-                      let fillOp      = 0.75
+                      let fillOp      = 0.88
                       let stroke      = '#ffffff'
                       let strokeWidth = 0.5
 
-                      if (isFiltered) { fill = '#e2e6ea'; fillOp = 1 }
+                      if (isFiltered) { fill = '#c8d8e8'; fillOp = 1 }
                       else if (isHome) { fill = typeColor; fillOp = 1; stroke = C.gold; strokeWidth = 3 }
                       else if (isSelected || isModal) { fill = typeColor; fillOp = 1; stroke = C.gold; strokeWidth = 2 }
-                      else if (homeState && isSupporter) { fill = '#4caf50'; fillOp = 0.85 }
-                      else if (homeState && isHonored)  { fill = '#81c784'; fillOp = 0.85 }
-                      else if (homeState && !isSupporter && !isHonored) { fill = '#e2e6ea'; fillOp = 1 }
+                      else if (homeState && isSupporter) { fill = '#388e3c'; fillOp = 0.9 }
+                      else if (homeState && isHonored)   { fill = '#1976d2'; fillOp = 0.9 }
+                      else if (homeState && !isSupporter && !isHonored) { fill = '#c8d8e8'; fillOp = 1 }
 
                       return (
                         <Geography key={geo.rsmKey} geography={geo}
@@ -362,7 +379,7 @@ Always verify current laws before carrying. This is not legal advice. Consult a 
                   <div key={state.code} className="ccw-hover"
                     style={{ display:'flex', alignItems:'center', gap:'9px', padding:'9px 14px', borderBottom:`1px solid #f5f5f5`, cursor:'pointer', background:'transparent' }}
                     onClick={() => handleStateClick(state.code)}>
-                    <div style={{ width:'32px', height:'32px', borderRadius:'5px', background:pt?.bg, color:pt?.color, display:'flex', alignItems:'center', justifyContent:'center', fontFamily:FONT, fontSize:'11px', fontWeight:700, flexShrink:0 }}>{state.code}</div>
+                    <div style={{ width:'32px', height:'32px', borderRadius:'5px', background:localBg(state.permitType), color:localColor(state.permitType), display:'flex', alignItems:'center', justifyContent:'center', fontFamily:FONT, fontSize:'11px', fontWeight:700, flexShrink:0 }}>{state.code}</div>
                     <div style={{ flex:1, minWidth:0 }}>
                       <div style={{ fontSize:'12px', fontWeight:600, color:C.text }}>{state.name}</div>
                       <div style={{ fontSize:'10px', color:C.textMuted, marginTop:'1px' }}>{pt?.label} · {state.constitutional?'Permitless':state.permitName?.slice(0,28)}</div>
@@ -401,7 +418,7 @@ function SmallStateLabels({ onSelect, modal, homeState, homeSupporters, filterTy
         {SMALL_LABELS.map(({ code, from, to }) => {
           const state = CCW_MAP[code]
           if (!state) return null
-          const color = getStateColor(state.permitType)
+          const color = localColor(state.permitType)
           const filtered = filterType !== 'all' && state.permitType !== filterType
           return (
             <line key={code}
@@ -416,7 +433,7 @@ function SmallStateLabels({ onSelect, modal, homeState, homeSupporters, filterTy
       {SMALL_LABELS.map(({ code, to }) => {
         const state = CCW_MAP[code]
         if (!state) return null
-        const typeColor  = getStateColor(state.permitType)
+        const typeColor  = localColor(state.permitType)
         const isModal    = modal?.code === code
         const isSelected = selected.includes(code)
         const isFiltered = filterType !== 'all' && state.permitType !== filterType
