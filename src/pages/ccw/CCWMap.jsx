@@ -47,22 +47,6 @@ const FIPS = {
   '54':'WV','55':'WI','56':'WY',
 }
 
-// Fix 2 — calibrated from pixel coords based on 975×610 AlbersUSA viewBox.
-// Converted to %: x = px/975*100, y = px/610*100
-// from = state centroid on map, to = label box position
-// Labels stack at x≈88.5% with 28px (~4.6%) vertical spacing
-const SMALL_LABELS = [
-  { code:'VT', from:[82.4, 24.9], to:[88.5, 27.0] },
-  { code:'NH', from:[83.9, 26.7], to:[88.5, 31.6] },
-  { code:'MA', from:[83.3, 29.2], to:[88.5, 36.2] },
-  { code:'RI', from:[84.1, 30.8], to:[88.5, 40.8] },
-  { code:'CT', from:[82.9, 31.6], to:[88.5, 45.4] },
-  { code:'NJ', from:[81.3, 34.4], to:[88.5, 50.0] },
-  { code:'DE', from:[81.6, 36.6], to:[88.5, 54.6] },
-  { code:'MD', from:[79.8, 38.2], to:[88.5, 59.2] },
-  { code:'DC', from:[80.4, 39.3], to:[88.5, 63.8] },
-  { code:'HI', from:[22.6, 90.2], to:[17.4, 96.7] },
-]
 
 const C = {
   bg:'#ffffff', border:'#e2e6ea', text:'#0d0f14',
@@ -331,7 +315,6 @@ Always verify current laws before carrying. This is not legal advice. Consult a 
                   }}
                 </Geographies>
               </ComposableMap>
-              <SmallStateLabels onSelect={handleStateClick} modal={modal} homeState={homeState} homeSupporters={homeSupporters} filterType={filterType} selected={selected} />
             </div>
 
             {/* Error state */}
@@ -406,51 +389,6 @@ Always verify current laws before carrying. This is not legal advice. Consult a 
       {/* State detail modal */}
       {modal && <StateModal state={modal} onClose={()=>setModal(null)} onSelect={selectByCode} homeState={homeState} />}
     </>
-  )
-}
-
-// ── Small state labels ────────────────────────────────────────────────────────
-
-function SmallStateLabels({ onSelect, modal, homeState, homeSupporters, filterType, selected }) {
-  return (
-    <div style={{ position:'absolute', inset:0, pointerEvents:'none', zIndex:8 }}>
-      <svg width="100%" height="100%" style={{ position:'absolute', inset:0 }} aria-hidden="true">
-        {SMALL_LABELS.map(({ code, from, to }) => {
-          const state = CCW_MAP[code]
-          if (!state) return null
-          const color = localColor(state.permitType)
-          const filtered = filterType !== 'all' && state.permitType !== filterType
-          return (
-            <line key={code}
-              x1={`${from[0]}%`} y1={`${from[1]}%`}
-              x2={`${to[0]}%`}   y2={`${to[1]}%`}
-              stroke={color} strokeWidth="0.9" strokeDasharray="3 2"
-              opacity={filtered ? 0.12 : 0.6}
-            />
-          )
-        })}
-      </svg>
-      {SMALL_LABELS.map(({ code, to }) => {
-        const state = CCW_MAP[code]
-        if (!state) return null
-        const typeColor  = localColor(state.permitType)
-        const isModal    = modal?.code === code
-        const isSelected = selected.includes(code)
-        const isFiltered = filterType !== 'all' && state.permitType !== filterType
-        const isSupport  = homeState && homeSupporters.has(code)
-        let bg = `${typeColor}14`, border = typeColor, color = typeColor, opacity = 1
-        if (isFiltered) { opacity = 0.18 }
-        else if (isModal || isSelected) { bg = typeColor; color = '#fff'; border = '#c8a84b' }
-        else if (isSupport) { bg = '#4caf5018'; border = '#4caf50'; color = '#2e7d32' }
-        return (
-          <button key={code} className="label-btn"
-            onClick={() => onSelect(code)}
-            style={{ position:'absolute', left:`${to[0]}%`, top:`${to[1]}%`, transform:'translate(-50%,-50%)', background:bg, border:`1.5px solid ${border}`, borderRadius:'3px', padding:'1px 4px', fontSize:'9px', fontFamily:"'Barlow Condensed', sans-serif", fontWeight:700, color, cursor:'pointer', pointerEvents:'auto', whiteSpace:'nowrap', boxShadow:'0 1px 3px rgba(0,0,0,0.12)', opacity, transition:'opacity 150ms ease', minHeight:'16px', minWidth:'22px', lineHeight:1.5 }}
-            title={state.name}
-          >{code}</button>
-        )
-      })}
-    </div>
   )
 }
 
