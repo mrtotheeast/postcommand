@@ -297,7 +297,7 @@ Always verify current laws before carrying. This is not legal advice. Consult a 
                       else if (isSelected || isModal) { fill = typeColor; fillOp = 1; stroke = C.gold; strokeWidth = 2 }
                       else if (homeState && isSupporter) { fill = '#388e3c'; fillOp = 0.9 }
                       else if (homeState && isHonored)   { fill = '#1976d2'; fillOp = 0.9 }
-                      else if (homeState && !isSupporter && !isHonored) { fill = '#c8d8e8'; fillOp = 1 }
+                      else if (homeState && !isSupporter && !isHonored) { fill = "#ef5350"; fillOp = 0.75 }
 
                       return (
                         <Geography key={geo.rsmKey} geography={geo}
@@ -336,7 +336,7 @@ Always verify current laws before carrying. This is not legal advice. Consult a 
             {homeState && (
               <div style={{ position:'absolute', bottom:'14px', left:'14px', zIndex:10, background:'rgba(255,255,255,0.96)', border:`1px solid ${C.border}`, borderRadius:'7px', padding:'8px 12px', fontSize:'11px', boxShadow:'0 2px 8px rgba(0,0,0,0.08)' }}>
                 <div style={{ fontWeight:700, color:C.text, marginBottom:'5px', fontFamily:FONT, letterSpacing:'0.5px' }}>From {homeState}:</div>
-                {[['#4caf50','Carry Allowed'],['#81c784','Constitutional Carry States'],['#ff9800','Restricted / Conditions'],['#f44336','Not Honored'],['#e2e6ea','No Reciprocity']].map(([c,l])=>(
+                {[['#388e3c','Carry Allowed (honors your permit)'],['#1976d2','Mutual honoring'],['#ef5350','Not Honored'],['#c8a84b','Your State']].map(([c,l])=>(
                   <div key={l} style={{ display:'flex', alignItems:'center', gap:'6px', marginBottom:'3px' }}>
                     <div style={{ width:'10px', height:'10px', borderRadius:'2px', background:c, flexShrink:0 }}/>
                     <span style={{ color:C.textSecond }}>{l}</span>

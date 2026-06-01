@@ -16,10 +16,11 @@
     <title>PostCommand</title>
     <script>
       // Stamp theme before React hydrates to prevent flash of wrong theme.
-      // Default is always 'dark' unless user explicitly picked 'light'.
+      // Default is 'light' for new users; existing choice is honoured.
       var t = localStorage.getItem('pc-theme');
-      document.documentElement.setAttribute('data-theme', t === 'light' ? 'light' : 'dark');
-      if (!t) localStorage.setItem('pc-theme', 'dark');
+      var theme = (t === 'light' || t === 'dark') ? t : 'light';
+      document.documentElement.setAttribute('data-theme', theme);
+      if (!t) localStorage.setItem('pc-theme', 'light');
     </script>
   </head>
   <body>

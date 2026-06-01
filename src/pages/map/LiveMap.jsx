@@ -58,8 +58,8 @@ const s = {
   refreshBtn:{ position: 'absolute', top: '12px', right: '12px', zIndex: 1000, background: 'var(--bg-card)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)', padding: '0 14px', height: '38px', display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'var(--font-condensed)', fontSize: '12px', color: 'var(--text-secondary)', letterSpacing: '1px', cursor: 'pointer', boxShadow: 'var(--shadow-card)' },
 }
 
-const MAP_TILES  = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-const MAP_TILES_ATTR = '&copy; <a href="https://carto.com/">CARTO</a>'
+const MAP_TILES  = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
+const MAP_TILES_ATTR = '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
 const MAP_CENTER = [38.9, -77.0]
 
 export default function LiveMap() {
@@ -208,7 +208,7 @@ export default function LiveMap() {
         </MapContainer>
 
         <style>{`
-          .leaflet-container { background: #0d0f14; }
+          .leaflet-container { background: #e8f4f8; }
           .leaflet-popup-content-wrapper { background: #1a1d2a; border: 1px solid #252838; border-radius: 8px; box-shadow: 0 8px 32px rgba(0,0,0,0.6); color: #f0f2f8; }
           .leaflet-popup-tip { background: #1a1d2a; }
           .leaflet-popup-close-button { color: #7a8299 !important; }

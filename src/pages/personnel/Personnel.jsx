@@ -32,6 +32,7 @@ export default function Personnel() {
   const [bulkMode, setBulkMode]     = useState(false)
   const [bulkActing, setBulkActing] = useState(false)
   const [mainView, setMainView]     = useState('directory') // 'directory' | 'photo_approvals'
+  const [showAdd, setShowAdd]       = useState(false)
   const canViewSensitive = atLeast(profile?.role, 'lieutenant')
   const canEdit = atLeast(profile?.role, 'chief')
 
@@ -96,7 +97,7 @@ export default function Personnel() {
               <Icon name="check-square" size={15}/>{bulkMode ? 'EXIT BULK' : 'BULK SELECT'}
             </button>
             <button style={{display:'flex',alignItems:'center',gap:'8px',background:'var(--bg-card)',color:'var(--text-secondary)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'0 16px',height:'44px',fontFamily:'var(--font-condensed)',fontSize:'13px',letterSpacing:'1px',cursor:'pointer'}} onClick={() => setShowImport(true)}><Icon name="upload" size={15}/>IMPORT CSV</button>
-            <button style={{display:'flex',alignItems:'center',gap:'8px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-md)',padding:'0 20px',height:'44px',fontFamily:'var(--font-condensed)',fontSize:'14px',fontWeight:700,letterSpacing:'1px',cursor:'pointer'}}><Icon name="plus" size={16}/>ADD EMPLOYEE</button>
+            <button onClick={() => setShowAdd(true)} style={{display:'flex',alignItems:'center',gap:'8px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-md)',padding:'0 20px',height:'44px',fontFamily:'var(--font-condensed)',fontSize:'14px',fontWeight:700,letterSpacing:'1px',cursor:'pointer'}}><Icon name="plus" size={16}/>ADD EMPLOYEE</button>
           </div>
         )}
       </div>
@@ -174,6 +175,7 @@ export default function Personnel() {
       )}
 
       {selected && <EmpDetail emp={selected} canViewSensitive={canViewSensitive} canEdit={canEdit} onClose={()=>setSelected(null)} onRefresh={loadEmployees}/>}
+      {showAdd && <AddEmployeeModal companyId={profile.company_id} onClose={()=>setShowAdd(false)} onSaved={()=>{setShowAdd(false);loadEmployees()}}/>}
       {showImport && <CSVImportModal companyId={profile.company_id} onClose={() => setShowImport(false)} onImported={() => { setShowImport(false); loadEmployees() }} />}
       </>
       )}
@@ -337,6 +339,12 @@ function EmpCard({emp,ini,canViewSensitive,onClick}) {
         <span style={{fontSize:'11px',fontWeight:600,padding:'2px 8px',borderRadius:'10px',background:rc.bg,color:rc.color}}>{ROLE_LABELS[emp.role]??emp.role}</span>
         <span style={{fontSize:'11px',fontWeight:600,padding:'2px 8px',borderRadius:'10px',background:sc.bg,color:sc.color}}>{emp.status??'Unknown'}</span>
         {emp.is_armed&&<span style={{fontSize:'11px',fontWeight:600,padding:'2px 8px',borderRadius:'10px',background:'rgba(201,162,39,0.12)',color:'var(--accent)'}}>Armed</span>}
+        {emp.has_app_access
+          ? <span style={{fontSize:'10px',fontWeight:700,padding:'2px 7px',borderRadius:'10px',background:'var(--color-success-bg)',color:'var(--color-success)'}}>APP ACCESS</span>
+          : emp.invitation_status==='invited'
+            ? <span style={{fontSize:'10px',fontWeight:700,padding:'2px 7px',borderRadius:'10px',background:'var(--color-warning-bg)',color:'var(--color-warning)'}}>INVITED</span>
+            : <span style={{fontSize:'10px',fontWeight:700,padding:'2px 7px',borderRadius:'10px',background:'var(--border)',color:'var(--text-muted)'}}>NOT INVITED</span>
+        }
       </div>
       {canViewSensitive&&emp.email&&<div style={{fontSize:'12px',color:'var(--text-muted)'}}>{emp.email}</div>}
     </button>
@@ -692,6 +700,119 @@ function PhotoApprovalsTab({ companyId }) {
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Add Employee Modal ────────────────────────────────────────────────────────
+
+function AddEmployeeModal({ companyId, onClose, onSaved }) {
+  const ROLES_LIST = ['officer','corporal','sergeant','lieutenant','chief','hr','accounting','office_staff']
+  const [form, setForm] = useState({
+    first_name:'', last_name:'', email:'', phone_number:'',
+    role:'officer', position_title:'', status:'active',
+    employment_type:'full_time', is_armed:false,
+  })
+  const [saving, setSaving]   = useState(false)
+  const [error,  setError]    = useState(null)
+  const [success,setSuccess]  = useState(false)
+  const [sendingInvite, setSendingInvite] = useState(false)
+  const [savedEmp, setSavedEmp] = useState(null)
+
+  function setF(k,v) { setForm(p=>({...p,[k]:v})) }
+  const foc = e => { e.target.style.borderColor='var(--border-focus)' }
+  const blr = e => { e.target.style.borderColor='var(--border)' }
+  const inp = { background:'var(--bg-input)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', padding:'9px 12px', fontSize:'13px', color:'var(--text-primary)', outline:'none', width:'100%', fontFamily:'var(--font-body)', transition:'border-color 150ms ease' }
+  const lbl = { fontSize:'11px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', marginBottom:'5px' }
+
+  async function save() {
+    // Validate required fields
+    if (!form.first_name.trim()) { setError('First name is required.'); return }
+    if (!form.last_name.trim())  { setError('Last name is required.'); return }
+    if (!form.email.trim())      { setError('Email is required.'); return }
+    if (!form.role)              { setError('Role is required.'); return }
+    if (!companyId)              { setError('Company ID missing — please refresh and try again.'); return }
+
+    setSaving(true); setError(null)
+    const { data, error: err } = await supabase.from('employee').insert({
+      company_id:       companyId,
+      first_name:       form.first_name.trim(),
+      last_name:        form.last_name.trim(),
+      email:            form.email.trim(),
+      phone_number:     form.phone_number.trim() || null,
+      role:             form.role,
+      position_title:   form.position_title.trim() || null,
+      status:           form.status,
+      employment_type:  form.employment_type,
+      is_armed:         form.is_armed,
+      has_app_access:   false,
+      invitation_status:'not_invited',
+    }).select().single()
+
+    setSaving(false)
+    if (err) { setError(`Save failed: ${err.message}`); return }
+    setSavedEmp(data)
+    setSuccess(true)
+    setTimeout(() => { onSaved() }, 2500)
+  }
+
+  async function sendInvite() {
+    if (!savedEmp?.email) return
+    setSendingInvite(true)
+    try {
+      await supabase.functions.invoke('send-email', {
+        body: { type:'welcome', to:savedEmp.email, data:{ firstName:savedEmp.first_name, companyName:companyId } }
+      })
+      await supabase.from('employee').update({ invitation_status:'invited' }).eq('id', savedEmp.id)
+    } catch {}
+    setSendingInvite(false)
+  }
+
+  const ov  = { position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:400,display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'32px 16px',overflowY:'auto' }
+  const mod = { background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-lg)',padding:'28px',width:'100%',maxWidth:'540px',boxShadow:'var(--shadow-modal)',flexShrink:0 }
+
+  return (
+    <div style={ov} onClick={e=>{if(e.target===e.currentTarget)onClose()}}>
+      <div style={mod}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'22px'}}>
+          <div style={{fontFamily:'var(--font-display)',fontSize:'22px',letterSpacing:'1.5px',color:'var(--text-primary)'}}>ADD EMPLOYEE</div>
+          <button style={{background:'transparent',border:'none',color:'var(--text-muted)',cursor:'pointer',padding:'4px',display:'flex'}} onClick={onClose}><Icon name="x" size={18}/></button>
+        </div>
+
+        {success ? (
+          <div style={{textAlign:'center',padding:'20px 0'}}>
+            <Icon name="check-circle" size={40} color="var(--color-success)"/>
+            <div style={{fontFamily:'var(--font-display)',fontSize:'20px',letterSpacing:'2px',color:'var(--text-primary)',margin:'12px 0 6px'}}>EMPLOYEE ADDED</div>
+            <div style={{fontSize:'13px',color:'var(--text-secondary)',marginBottom:'20px'}}>{savedEmp?.first_name} {savedEmp?.last_name} has been added successfully.</div>
+            <button onClick={sendInvite} disabled={sendingInvite} style={{display:'inline-flex',alignItems:'center',gap:'8px',background:'var(--color-info-bg)',color:'var(--color-info)',border:'1px solid rgba(91,159,224,0.3)',borderRadius:'var(--radius-sm)',padding:'0 20px',height:'42px',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',opacity:sendingInvite?0.6:1}}>
+              <Icon name="mail" size={14}/>{sendingInvite?'SENDING...':'INVITE TO APP'}
+            </button>
+          </div>
+        ) : (
+          <>
+            {error && <div style={{background:'var(--color-danger-bg)',border:'1px solid rgba(192,57,43,0.3)',borderRadius:'var(--radius-sm)',padding:'10px 14px',fontSize:'13px',color:'var(--color-danger)',marginBottom:'16px'}}>{error}</div>}
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px',marginBottom:'12px'}}>
+              <div><div style={lbl}>First Name *</div><input style={inp} value={form.first_name} onChange={e=>setF('first_name',e.target.value)} onFocus={foc} onBlur={blr} placeholder="Jane"/></div>
+              <div><div style={lbl}>Last Name *</div><input style={inp} value={form.last_name} onChange={e=>setF('last_name',e.target.value)} onFocus={foc} onBlur={blr} placeholder="Smith"/></div>
+              <div><div style={lbl}>Email *</div><input style={inp} type="email" value={form.email} onChange={e=>setF('email',e.target.value)} onFocus={foc} onBlur={blr} placeholder="jane@company.com"/></div>
+              <div><div style={lbl}>Phone</div><input style={inp} value={form.phone_number} onChange={e=>setF('phone_number',e.target.value)} onFocus={foc} onBlur={blr} placeholder="(555) 000-0000"/></div>
+              <div><div style={lbl}>Role *</div><select style={{...inp,cursor:'pointer'}} value={form.role} onChange={e=>setF('role',e.target.value)} onFocus={foc} onBlur={blr}>{ROLES_LIST.map(r=><option key={r} value={r}>{ROLE_LABELS[r]||r}</option>)}</select></div>
+              <div><div style={lbl}>Position Title</div><input style={inp} value={form.position_title} onChange={e=>setF('position_title',e.target.value)} onFocus={foc} onBlur={blr} placeholder="Security Officer"/></div>
+              <div><div style={lbl}>Status</div><select style={{...inp,cursor:'pointer'}} value={form.status} onChange={e=>setF('status',e.target.value)}><option value="active">Active</option><option value="probation">Probation</option><option value="inactive">Inactive</option></select></div>
+              <div><div style={lbl}>Employment Type</div><select style={{...inp,cursor:'pointer'}} value={form.employment_type} onChange={e=>setF('employment_type',e.target.value)}><option value="full_time">Full Time</option><option value="part_time">Part Time</option><option value="contract">Contract</option></select></div>
+            </div>
+            <label style={{display:'flex',alignItems:'center',gap:'8px',fontSize:'13px',color:'var(--text-primary)',cursor:'pointer',marginBottom:'20px'}}>
+              <input type="checkbox" checked={form.is_armed} onChange={e=>setF('is_armed',e.target.checked)} style={{accentColor:'var(--accent)',width:'16px',height:'16px',cursor:'pointer'}}/>Armed Officer
+            </label>
+            <div style={{display:'flex',gap:'10px'}}>
+              <button onClick={save} disabled={saving} style={{display:'inline-flex',alignItems:'center',gap:'8px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-sm)',padding:'0 22px',height:'44px',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',opacity:saving?0.6:1}}>
+                <Icon name="user-plus" size={14}/>{saving?'SAVING...':'ADD EMPLOYEE'}
+              </button>
+              <button onClick={onClose} style={{display:'inline-flex',alignItems:'center',gap:'8px',background:'transparent',color:'var(--text-secondary)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',padding:'0 18px',height:'44px',fontFamily:'var(--font-condensed)',fontSize:'13px',letterSpacing:'1px',cursor:'pointer'}}>CANCEL</button>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   )
 }

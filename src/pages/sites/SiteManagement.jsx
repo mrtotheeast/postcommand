@@ -432,7 +432,7 @@ function SiteFormModal({ site, companyId, onClose, onSaved }) {
         {/* Mini map */}
         <div style={s.mapThumb}>
           <MapContainer center={mapCenter} zoom={mapPos.lat ? 14 : 11} style={{ width:'100%', height:'180px' }} key={`${mapPos.lat}-${mapPos.lng}`}>
-            <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
+            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
             <DraggableMarker position={{ lat: mapPos.lat ? Number(form.latitude) : null, lng: mapPos.lng ? Number(form.longitude) : null }} onChange={handleMapPos} />
           </MapContainer>
         </div>

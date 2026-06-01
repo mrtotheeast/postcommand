@@ -19,47 +19,88 @@ export default function PrivacyBanner() {
   if (!visible) return null
 
   return (
-    <div style={{ position:'fixed', inset:0, zIndex:9999, display:'flex', alignItems:'flex-end', justifyContent:'center', padding:'0 16px 20px', background:'rgba(0,0,0,0.55)', backdropFilter:'blur(3px)' }}>
-      <div style={{ background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-lg)', padding:'24px', width:'100%', maxWidth:'480px', boxShadow:'var(--shadow-modal)', animation:'slideUp 220ms ease' }}>
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 9999,
+      display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+      padding: '0 16px 20px',
+      background: 'rgba(0,0,0,0.6)',
+    }}>
+      <div style={{
+        background: '#ffffff',
+        border: '1px solid #e2e6ea',
+        borderRadius: '12px',
+        padding: '24px',
+        width: '100%',
+        maxWidth: '480px',
+        boxShadow: '0 8px 40px rgba(0,0,0,0.18)',
+        animation: 'slideUp 220ms ease',
+        fontFamily: "'Barlow', Helvetica, sans-serif",
+      }}>
         <style>{`@keyframes slideUp{from{transform:translateY(40px);opacity:0}to{transform:translateY(0);opacity:1}}`}</style>
 
-        <h3 style={{ fontFamily:'var(--font-display)', fontSize:'20px', letterSpacing:'2px', color:'var(--text-primary)', marginBottom:'10px' }}>
+        <h3 style={{
+          fontFamily: "'Bebas Neue', sans-serif",
+          fontSize: '20px',
+          letterSpacing: '2px',
+          color: '#0d0f14',
+          marginBottom: '10px',
+        }}>
           POSTCOMMAND DATA NOTICE
         </h3>
 
-        <p style={{ fontSize:'13px', color:'var(--text-secondary)', lineHeight:1.6, marginBottom:'14px' }}>
+        <p style={{ fontSize: '13px', color: '#495057', lineHeight: 1.6, marginBottom: '14px' }}>
           To provide workforce management services, PostCommand collects:
         </p>
 
-        <ul style={{ listStyle:'none', padding:0, marginBottom:'16px', display:'flex', flexDirection:'column', gap:'6px' }}>
+        <ul style={{ listStyle: 'none', padding: 0, marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
           {[
-            ['map-pin',      'Location data — to verify work site check-ins'],
-            ['camera',       'Photos — for identity verification and incident documentation'],
-            ['clock',        'Work hours and activity — for payroll and compliance'],
-            ['smartphone',   'Device information — for security and performance'],
-          ].map(([icon, text]) => (
-            <li key={icon} style={{ display:'flex', alignItems:'flex-start', gap:'10px', fontSize:'12px', color:'var(--text-secondary)', lineHeight:1.5 }}>
-              <span style={{ fontSize:'14px', flexShrink:0, marginTop:'1px' }}>•</span>
+            'Location data — to verify work site check-ins',
+            'Photos — for identity verification and incident documentation',
+            'Work hours and activity — for payroll and compliance',
+            'Device information — for security and performance',
+          ].map((text, i) => (
+            <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '12px', color: '#495057', lineHeight: 1.5 }}>
+              <span style={{ color: '#c8a84b', fontWeight: 700, flexShrink: 0 }}>•</span>
               {text}
             </li>
           ))}
         </ul>
 
-        <p style={{ fontSize:'12px', color:'var(--text-muted)', marginBottom:'18px', lineHeight:1.5 }}>
+        <p style={{ fontSize: '12px', color: '#868e96', marginBottom: '18px', lineHeight: 1.5 }}>
           This data is accessible to your employer/company administrator.
           By continuing, you agree to our Privacy Policy.
         </p>
 
-        <div style={{ display:'flex', gap:'10px', flexWrap:'wrap' }}>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
           <button
             onClick={() => openBrowser(PRIVACY_URL)}
-            style={{ display:'inline-flex', alignItems:'center', gap:'6px', background:'transparent', color:'var(--accent)', border:'1px solid var(--accent-border)', borderRadius:'var(--radius-sm)', padding:'0 16px', height:'44px', fontFamily:'var(--font-condensed)', fontSize:'13px', letterSpacing:'1px', cursor:'pointer', flex:1 }}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: '6px',
+              background: '#f8f9fa',
+              border: '1px solid #e2e6ea',
+              color: '#0d0f14',
+              borderRadius: '6px',
+              padding: '0 16px', height: '44px',
+              fontFamily: "'Barlow Condensed', sans-serif",
+              fontSize: '13px', letterSpacing: '1px',
+              cursor: 'pointer', flex: 1,
+            }}
           >
             View Privacy Policy
           </button>
           <button
             onClick={accept}
-            style={{ display:'inline-flex', alignItems:'center', justifyContent:'center', gap:'6px', background:'var(--accent)', color:'var(--text-inverse)', border:'none', borderRadius:'var(--radius-sm)', padding:'0 20px', height:'44px', fontFamily:'var(--font-condensed)', fontSize:'13px', fontWeight:700, letterSpacing:'1px', cursor:'pointer', flex:1 }}
+            style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+              background: '#c8a84b',
+              color: '#0d0f14',
+              border: 'none',
+              borderRadius: '6px',
+              padding: '0 20px', height: '44px',
+              fontFamily: "'Barlow Condensed', sans-serif",
+              fontSize: '13px', fontWeight: 700, letterSpacing: '1px',
+              cursor: 'pointer', flex: 1,
+            }}
           >
             Accept &amp; Continue
           </button>
