@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { ROLE_LABELS } from '../../config/roles'
@@ -193,13 +194,22 @@ export default function More() {
   const { profile, signOut } = useAuth()
   const navigate = useNavigate()
   const role = profile?.role
+  const [toast, setToast] = useState(null)
 
   const initials = profile
     ? `${profile.first_name?.[0] || ''}${profile.last_name?.[0] || ''}`.toUpperCase()
     : 'A'
 
+  // Count coming-soon tiles across all sections
+  const comingSoonCount = SECTIONS.reduce((acc, sec) => acc + sec.tiles.filter(t => t.soon).length, 0)
+
+  function showToast(msg) {
+    setToast(msg)
+    setTimeout(() => setToast(null), 2500)
+  }
+
   function go(tile) {
-    if (tile.soon) return
+    if (tile.soon) { showToast('This feature is coming soon. Check back for updates.'); return }
     if (tile.external) { window.open(tile.path, '_blank'); return }
     navigate(tile.path)
   }
@@ -208,9 +218,17 @@ export default function More() {
     <div style={s.page}>
       <style>{`
         @keyframes fadeIn { from { opacity:0; transform:translateY(6px) } to { opacity:1; transform:translateY(0) } }
+        @keyframes toastIn { from { opacity:0; transform:translateX(-50%) translateY(20px) } to { opacity:1; transform:translateX(-50%) translateY(0) } }
         .hub-tile:hover  { border-color:var(--accent-border)!important; background:var(--bg-card-hover)!important; }
         .hub-quick:hover { border-color:var(--accent-border)!important; background:var(--accent-bg)!important; }
       `}</style>
+
+      {/* Coming-soon toast */}
+      {toast && (
+        <div style={{ position:'fixed', bottom:'24px', left:'50%', transform:'translateX(-50%)', zIndex:500, background:'var(--bg-sidebar)', color:'var(--text-primary)', borderRadius:'var(--radius-md)', padding:'12px 20px', fontSize:'13px', boxShadow:'var(--shadow-modal)', whiteSpace:'nowrap', animation:'toastIn 200ms ease', border:'1px solid var(--border-subtle)' }}>
+          {toast}
+        </div>
+      )}
 
       {/* Profile card */}
       <div style={s.profileCard}>
@@ -236,6 +254,11 @@ export default function More() {
             <Icon name="log-out" size={13} />SIGN OUT
           </button>
         </div>
+      </div>
+
+      {/* Features in development count */}
+      <div style={{ fontSize:'12px', color:'var(--text-muted)', marginBottom:'16px', marginTop:'-8px' }}>
+        {comingSoonCount} feature{comingSoonCount !== 1 ? 's' : ''} in development
       </div>
 
       {/* Quick Access */}

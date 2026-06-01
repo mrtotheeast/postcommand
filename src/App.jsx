@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './context/AuthContext'
 import AppLayout from './components/layout/AppLayout'
+import PrivacyBanner from './components/ui/PrivacyBanner'
 import Login from './pages/auth/Login'
 import Dashboard from './pages/dashboard/Dashboard'
 import Personnel from './pages/personnel/Personnel'
@@ -48,6 +49,8 @@ export default function App() {
   const { isAuthenticated, loading, role } = useAuth()
   if (loading) return <div style={{minHeight:'100vh',backgroundColor:'var(--bg-base)',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'var(--font-display)',fontSize:'22px',color:'var(--accent)',letterSpacing:'3px'}}>LOADING...</div>
   return (
+    <>
+    <PrivacyBanner />
     <Routes>
       <Route path="/reciprocity" element={<CCWMap />} />
       <Route path="/login" element={isAuthenticated ? <Navigate to={role === 'client' ? '/portal' : '/dashboard'} replace /> : <Login />} />
@@ -77,5 +80,6 @@ export default function App() {
       <Route path="/clients"    element={<ProtectedRoute><ClientManagement /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
+    </>
   )
 }

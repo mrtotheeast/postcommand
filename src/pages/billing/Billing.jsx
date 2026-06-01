@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
 import Icon from '../../components/ui/Icon'
+import { isNative, openBrowser } from '../../lib/platform'
 
 const PLANS = [
   {
@@ -76,7 +77,36 @@ const s = {
 function fmtMoney(n) { return new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(n||0) }
 function fmtDate(iso) { if (!iso) return '—'; return new Date(iso).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) }
 
+// Native iOS: Apple App Store guidelines prohibit in-app Stripe checkout.
+// Show a web redirect instead — subscriptions are managed at postcommand.app.
+function BillingNativeRedirect() {
+  return (
+    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', minHeight:'60vh', padding:'40px 24px', textAlign:'center', gap:'20px' }}>
+      <div style={{ width:'64px', height:'64px', borderRadius:'50%', background:'var(--accent-bg)', border:'1px solid var(--accent-border)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+        <Icon name="credit-card" size={28} color="var(--accent)" />
+      </div>
+      <div>
+        <h2 style={{ fontFamily:'var(--font-display)', fontSize:'24px', letterSpacing:'2px', color:'var(--text-primary)', marginBottom:'8px' }}>MANAGE YOUR SUBSCRIPTION</h2>
+        <p style={{ fontSize:'14px', color:'var(--text-secondary)', lineHeight:1.7, maxWidth:'320px', margin:'0 auto' }}>
+          PostCommand subscriptions are managed on the web.
+          <br /><br />
+          Visit <strong>postcommand.app</strong> to upgrade, change your plan, or manage billing information.
+        </p>
+      </div>
+      <button
+        onClick={() => openBrowser('https://postcommand.app/billing')}
+        style={{ display:'inline-flex', alignItems:'center', gap:'8px', background:'var(--accent)', color:'var(--text-inverse)', border:'none', borderRadius:'var(--radius-md)', padding:'0 28px', height:'52px', fontFamily:'var(--font-condensed)', fontSize:'15px', fontWeight:700, letterSpacing:'1px', cursor:'pointer' }}
+      >
+        <Icon name="external-link" size={16} />Open postcommand.app
+      </button>
+      <p style={{ fontSize:'11px', color:'var(--text-muted)' }}>Opens in your browser</p>
+    </div>
+  )
+}
+
 export default function Billing() {
+  if (isNative()) return <BillingNativeRedirect />
+
   const { profile, companyId } = useAuth()
   const [subscription, setSubscription] = useState(null)
   const [usage, setUsage]               = useState({})

@@ -2,6 +2,9 @@ import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
 import Icon from '../../components/ui/Icon'
+import { requestLocationPermission, getCurrentPosition } from '../../lib/locationPermission'
+import { isNative } from '../../lib/platform'
+import { takePhoto } from '../../lib/cameraPermission'
 
 const DEFAULT_GEOFENCE_RADIUS = 150
 
@@ -78,31 +81,49 @@ export default function ClockIn() {
     reader.readAsDataURL(file)
   }
 
-  function getGPS(direction) {
-    if (!navigator.geolocation) { setError('GPS not available.'); setStep(direction==='in'?STEPS.READY_IN:STEPS.READY_OUT); return }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy, timestamp: new Date().toISOString() }
-        setLocation(loc)
-        if (site?.latitude && site?.longitude) {
-          const dist = getDistance(loc.lat, loc.lng, Number(site.latitude), Number(site.longitude))
-          const radius = Number(site.geofence_radius) || DEFAULT_GEOFENCE_RADIUS
-          setDistance(Math.round(dist))
-          if (dist > radius) {
-            setStep(STEPS.GEOFENCE_WARN)
-            supabase.from('clockin_violation').insert({ company_id: profile.company_id, employee_id: employeeId, site_id: site?.id ?? null, latitude: loc.lat, longitude: loc.lng, distance_meters: Math.round(dist), overridden: false }).catch(()=>{})
-            return
-          }
+  // Native iOS camera path — calls Capacitor Camera plugin
+  async function handleNativeCamera(type) {
+    const dataUrl = await takePhoto()
+    if (!dataUrl) return // user cancelled or permission denied
+    if (type === 'in') { setPhotoIn(dataUrl); setStep(STEPS.GPS_IN); getGPS('in') }
+    else { setPhotoOut(dataUrl); setStep(STEPS.GPS_OUT); getGPS('out') }
+  }
+
+  async function getGPS(direction) {
+    // On iOS native, request location permission first
+    if (isNative()) {
+      const granted = await requestLocationPermission()
+      if (!granted) {
+        setError('Location permission is required to clock in. Please enable location access in Settings > PostCommand.')
+        setStep(direction==='in' ? STEPS.READY_IN : STEPS.READY_OUT)
+        return
+      }
+    } else if (!navigator.geolocation) {
+      setError('GPS not available on this device.')
+      setStep(direction==='in' ? STEPS.READY_IN : STEPS.READY_OUT)
+      return
+    }
+
+    try {
+      const pos = await getCurrentPosition()
+      const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy, timestamp: new Date().toISOString() }
+      setLocation(loc)
+      if (site?.latitude && site?.longitude) {
+        const dist = getDistance(loc.lat, loc.lng, Number(site.latitude), Number(site.longitude))
+        const radius = Number(site.geofence_radius) || DEFAULT_GEOFENCE_RADIUS
+        setDistance(Math.round(dist))
+        if (dist > radius) {
+          setStep(STEPS.GEOFENCE_WARN)
+          supabase.from('clockin_violation').insert({ company_id: profile.company_id, employee_id: employeeId, site_id: site?.id ?? null, latitude: loc.lat, longitude: loc.lng, distance_meters: Math.round(dist), overridden: false }).catch(()=>{})
+          return
         }
-        direction === 'in' ? clockIn(loc) : clockOut(loc)
-      },
-      (err) => {
-        const loc = { lat: null, lng: null, accuracy: null, timestamp: new Date().toISOString(), gps_error: err.message }
-        setLocation(loc)
-        direction === 'in' ? clockIn(loc) : clockOut(loc)
-      },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-    )
+      }
+      direction === 'in' ? clockIn(loc) : clockOut(loc)
+    } catch (err) {
+      const loc = { lat: null, lng: null, accuracy: null, timestamp: new Date().toISOString(), gps_error: err.message }
+      setLocation(loc)
+      direction === 'in' ? clockIn(loc) : clockOut(loc)
+    }
   }async function uploadPhoto(dataUrl, filename) {
     try {
       const res = await fetch(dataUrl)
@@ -162,7 +183,7 @@ export default function ClockIn() {
 
       {step===STEPS.LOADING&&<Card><div style={{textAlign:'center',padding:'32px',color:'var(--text-muted)',fontSize:'13px'}}><div style={{animation:'pulse 1.5s infinite',marginBottom:'12px'}}><Icon name="clock" size={32} color="var(--accent)"/></div>Checking your schedule...</div></Card>}
       {step===STEPS.NO_SHIFT&&<Card><div style={{textAlign:'center',padding:'32px'}}><Icon name="calendar" size={40} color="var(--border-subtle)"/><div style={{marginTop:'16px',fontSize:'16px',fontFamily:'var(--font-display)',letterSpacing:'1px',color:'var(--text-primary)'}}>NO SHIFT TODAY</div><div style={{marginTop:'8px',fontSize:'13px',color:'var(--text-muted)',lineHeight:1.5}}>No published shift found for today. Contact your supervisor.</div><button onClick={init} style={{marginTop:'20px',...sBtnStyle}}>REFRESH</button></div></Card>}
-      {step===STEPS.READY_IN&&shift&&site&&<Card><SL>YOUR SHIFT</SL><ShiftSum shift={shift} site={site}/><div style={{marginTop:'24px'}}><button onClick={()=>{setStep(STEPS.PHOTO_IN);setTimeout(()=>photoInRef.current?.click(),100)}} style={pBtnStyle}><Icon name="log-in" size={18}/>CLOCK IN</button><p style={{fontSize:'12px',color:'var(--text-muted)',textAlign:'center',marginTop:'10px'}}>Photo required</p></div></Card>}
+      {step===STEPS.READY_IN&&shift&&site&&<Card><SL>YOUR SHIFT</SL><ShiftSum shift={shift} site={site}/><div style={{marginTop:'24px'}}><button onClick={()=>{ if(isNative()){ setStep(STEPS.PHOTO_IN); handleNativeCamera('in') } else { setStep(STEPS.PHOTO_IN); setTimeout(()=>photoInRef.current?.click(),100) } }} style={pBtnStyle}><Icon name="log-in" size={18}/>CLOCK IN</button><p style={{fontSize:'12px',color:'var(--text-muted)',textAlign:'center',marginTop:'10px'}}>Photo required</p></div></Card>}
       {step===STEPS.PHOTO_IN&&<Card><SL>CLOCK-IN PHOTO</SL><div style={{textAlign:'center',padding:'24px 0'}}><Icon name="eye" size={40} color="var(--accent)"/><div style={{marginTop:'12px',fontSize:'14px',color:'var(--text-primary)',fontWeight:600}}>Take your clock-in photo</div></div><input ref={photoInRef} type="file" accept="image/*" capture="environment" style={{display:'none'}} onChange={e=>handlePhotoCapture(e.target.files[0],'in')}/>{photoIn&&<div style={{marginBottom:'16px',borderRadius:'var(--radius-md)',overflow:'hidden',border:'1px solid var(--border-subtle)'}}><img src={photoIn} alt="" style={{width:'100%',maxHeight:'200px',objectFit:'cover',display:'block'}}/></div>}<button onClick={()=>photoInRef.current?.click()} style={pBtnStyle}><Icon name="eye" size={18}/>{photoIn?'RETAKE':'OPEN CAMERA'}</button><button onClick={()=>setStep(STEPS.READY_IN)} style={{...sBtnStyle,marginTop:'8px'}}>CANCEL</button></Card>}
       {(step===STEPS.GPS_IN||step===STEPS.GPS_OUT)&&<Card><div style={{textAlign:'center',padding:'32px'}}><div style={{animation:'pulse 1.5s infinite'}}><Icon name="map-pin" size={40} color="var(--accent)"/></div><div style={{marginTop:'16px',fontSize:'14px',color:'var(--text-primary)',fontWeight:600}}>Getting your location...</div></div></Card>}
       {step===STEPS.GEOFENCE_WARN&&<Card>
@@ -183,7 +204,7 @@ export default function ClockIn() {
         {site&&<ShiftSum shift={shift} site={site}/>}
         <LiveTimer clockIn={timesheet.clock_in}/>
         <div style={{marginTop:'24px'}}>
-          <button onClick={()=>{setStep(STEPS.PHOTO_OUT);setTimeout(()=>photoOutRef.current?.click(),100)}} style={{...pBtnStyle,background:'var(--color-danger)'}}><Icon name="log-out" size={18}/>CLOCK OUT</button>
+          <button onClick={()=>{ if(isNative()){ setStep(STEPS.PHOTO_OUT); handleNativeCamera('out') } else { setStep(STEPS.PHOTO_OUT); setTimeout(()=>photoOutRef.current?.click(),100) } }} style={{...pBtnStyle,background:'var(--color-danger)'}}><Icon name="log-out" size={18}/>CLOCK OUT</button>
           <p style={{fontSize:'12px',color:'var(--text-muted)',textAlign:'center',marginTop:'10px'}}>Photo required</p>
         </div>
       </Card>}

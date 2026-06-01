@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { subscribeToPush, requestNotificationPermission } from '../lib/pushNotifications'
+import { requestPushPermission } from '../lib/pushPermission'
 
 const AuthContext = createContext(null)
 
@@ -53,9 +54,12 @@ export function AuthProvider({ children }) {
     if (error) throw error
     setUser(data.user)
     await loadProfile(data.user.id)
-    // Request push permission and store subscription
+    // Request push permission — web VAPID path + native APNs path
     setTimeout(async () => {
       try {
+        // Native iOS: use Capacitor PushNotifications
+        await requestPushPermission()
+        // Web: use existing VAPID flow
         const perm = await requestNotificationPermission()
         if (perm === 'granted') {
           const sub = await subscribeToPush()

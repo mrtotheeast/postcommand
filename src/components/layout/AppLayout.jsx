@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext'
 import { useTheme } from '../../context/ThemeContext'
 import { useNotifications } from '../../context/NotificationContext'
 import { NAV_ITEMS, ROLE_LABELS, atLeast } from '../../config/roles'
+import { isNative } from '../../lib/platform'
 import Icon from '../ui/Icon'
 import Badge from '../ui/Badge'
 
@@ -98,8 +99,9 @@ export default function AppLayout({ children }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  const native = isNative()
   const visibleSections = NAV_ITEMS
-    .map(sec => ({ ...sec, items: sec.items.filter(item => item.roles.includes(role)) }))
+    .map(sec => ({ ...sec, items: sec.items.filter(item => item.roles.includes(role) && !(native && item.hideOnNative)) }))
     .filter(sec => sec.items.length > 0)
 
   const initials = profile ? `${profile.first_name?.[0]??''}${profile.last_name?.[0]??''}`.toUpperCase() || 'U' : 'U'
