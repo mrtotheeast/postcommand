@@ -58,7 +58,7 @@ https://nationwidepolice.com/support
 https://postcommand.app
 
 ## Privacy Policy URL
-https://nationwidepolice.com/privacy
+https://www.nationwidepolice.com/nps-portal#section-3
 
 ---
 
