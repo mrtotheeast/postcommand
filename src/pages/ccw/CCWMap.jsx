@@ -12,13 +12,11 @@
  * </iframe>
  *
  * Public route — no login required. No useAuth() calls.
- * No session → header hidden (iframe mode). Session → header shown.
  */
 
 import { useState, useMemo, useEffect } from 'react'
 import { ComposableMap, Geographies, Geography } from 'react-simple-maps'
-import { CCW_STATES, CCW_MAP, PERMIT_TYPES, getStateColor } from './ccwData'
-import Icon from '../../components/ui/Icon'
+import { CCW_STATES, CCW_MAP, PERMIT_TYPES, DATA_META, getStateColor } from './ccwData'
 import { supabase } from '../../lib/supabase'
 
 const GEO_URL = '/us-states.json'
@@ -33,70 +31,27 @@ const FIPS = {
   '54':'WV','55':'WI','56':'WY',
 }
 
-// Small-state pointer labels.
-// Positions calibrated for geoAlbersUsa default render:
-//   from = state centroid (% of map container, x/y)
-//   to   = label box center (% of map container, x/y)
-// Stacked in right-side open space for northeast; HI lower-left.
+// Calibrated positions for small northeast states (% of map container)
+// from = state centroid, to = label box
 const SMALL_LABELS = [
-  { code:'VT', from:[70.8, 19.5], to:[84, 11]  },
-  { code:'NH', from:[73.0, 17.5], to:[88, 15.5] },
-  { code:'MA', from:[74.5, 22.0], to:[92, 20.5] },
-  { code:'RI', from:[76.0, 24.0], to:[92, 25.5] },
-  { code:'CT', from:[74.0, 25.5], to:[92, 30.5] },
-  { code:'NJ', from:[72.2, 29.5], to:[88, 35.5] },
-  { code:'DE', from:[72.5, 32.5], to:[84, 40]   },
-  { code:'MD', from:[71.0, 34.5], to:[84, 45]   },
-  { code:'DC', from:[70.5, 36.0], to:[88, 50]   },
-  { code:'HI', from:[28.0, 81.5], to:[17, 81.5] },
+  { code:'VT', from:[70.5, 18.5], to:[84.5, 10.5] },
+  { code:'NH', from:[73.0, 16.5], to:[88.5, 14.5] },
+  { code:'MA', from:[74.5, 21.5], to:[92.5, 19.5] },
+  { code:'RI', from:[76.0, 23.5], to:[92.5, 24.5] },
+  { code:'CT', from:[74.0, 25.0], to:[92.5, 29.5] },
+  { code:'NJ', from:[72.5, 29.0], to:[88.5, 34.5] },
+  { code:'DE', from:[72.5, 32.0], to:[84.5, 39.5] },
+  { code:'MD', from:[71.0, 34.0], to:[84.5, 44.5] },
+  { code:'DC', from:[70.5, 35.5], to:[88.5, 49.5] },
+  { code:'HI', from:[28.0, 81.0], to:[17.0, 81.0] },
 ]
 
 const C = {
-  bg:'#ffffff', mapBg:'#f0f4f8', panelBg:'#ffffff',
-  border:'#e2e6ea', text:'#0d0f14', textSecond:'#4a6080', textMuted:'#8899aa',
-  gold:'#c8a84b', stateFill:'#dce3ea',
+  bg:'#ffffff', border:'#e2e6ea', text:'#0d0f14',
+  textSecond:'#4a6080', textMuted:'#8899aa',
+  gold:'#c8a84b', goldBg:'rgba(200,168,75,0.1)',
+  mapBg:'#f8f9fa',
 }
-
-const s = {
-  shell:    { height:'100vh', background:C.bg, color:C.text, fontFamily:"'Barlow',sans-serif", display:'flex', flexDirection:'column' },
-  header:   { background:C.bg, borderBottom:`1px solid ${C.border}`, padding:'12px 20px', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:'10px', flexShrink:0 },
-  logo:     { fontFamily:"'Bebas Neue',sans-serif", fontSize:'20px', letterSpacing:'3px', color:C.gold },
-  badge:    { display:'inline-flex', alignItems:'center', gap:'5px', background:'rgba(200,168,75,0.1)', border:'1px solid rgba(200,168,75,0.3)', borderRadius:'20px', padding:'3px 10px', fontSize:'11px', color:C.gold, fontFamily:"'Barlow Condensed',sans-serif", letterSpacing:'1px' },
-  headerBtns:{ display:'flex', gap:'8px', alignItems:'center', flexWrap:'wrap' },
-  hBtn:     { display:'inline-flex', alignItems:'center', gap:'6px', background:C.bg, border:`1px solid ${C.border}`, borderRadius:'6px', padding:'0 12px', height:'34px', fontSize:'11px', fontFamily:"'Barlow Condensed',sans-serif", letterSpacing:'1px', cursor:'pointer', color:C.textSecond, transition:'all 150ms ease' },
-  layout:   { display:'grid', gridTemplateColumns:'1fr 360px', flex:1, overflow:'hidden' },
-  mapWrap:  { position:'relative', background:C.mapBg, overflow:'hidden' },
-  panel:    { borderLeft:`1px solid ${C.border}`, background:C.panelBg, display:'flex', flexDirection:'column', overflow:'hidden' },
-  panelHead:{ padding:'12px 18px 8px', borderBottom:`1px solid ${C.border}`, flexShrink:0 },
-  panelBody:{ flex:1, overflowY:'auto' },
-  tabs:     { display:'flex', gap:'2px', padding:'0 18px', borderBottom:`1px solid ${C.border}`, flexShrink:0 },
-  tab:      { padding:'8px 13px', fontSize:'12px', background:'transparent', border:'none', cursor:'pointer', fontFamily:"'Barlow Condensed',sans-serif", letterSpacing:'0.5px', borderBottom:'2px solid transparent', marginBottom:'-1px', transition:'all 150ms ease', color:C.textMuted },
-  legend:   { display:'flex', gap:'8px', flexWrap:'wrap', padding:'8px 18px', borderBottom:`1px solid ${C.border}`, flexShrink:0 },
-  legendItem:{ display:'flex', alignItems:'center', gap:'5px', fontSize:'11px', color:C.textSecond, cursor:'pointer', border:'none', background:'transparent', padding:0 },
-  legendDot:{ width:'8px', height:'8px', borderRadius:'2px', flexShrink:0 },
-  search:   { margin:'8px 18px 5px', background:'#f8f9fa', border:`1px solid ${C.border}`, borderRadius:'5px', padding:'7px 11px', fontSize:'13px', color:C.text, outline:'none', width:'calc(100% - 36px)', fontFamily:"'Barlow',sans-serif", transition:'border-color 150ms ease' },
-  stateRow: { display:'flex', alignItems:'center', gap:'9px', padding:'9px 18px', borderBottom:`1px solid #f0f2f5`, cursor:'pointer', transition:'background 150ms ease' },
-  stateCode:{ width:'32px', height:'32px', borderRadius:'5px', display:'flex', alignItems:'center', justifyContent:'center', fontFamily:"'Barlow Condensed',sans-serif", fontSize:'11px', fontWeight:700, flexShrink:0 },
-  table:    { width:'100%', borderCollapse:'collapse' },
-  th:       { textAlign:'left', fontSize:'10px', color:C.textMuted, textTransform:'uppercase', letterSpacing:'1px', fontFamily:"'Barlow Condensed',sans-serif", padding:'7px 12px', borderBottom:`1px solid ${C.border}`, position:'sticky', top:0, background:C.bg, zIndex:1 },
-  td:       { padding:'8px 12px', fontSize:'12px', color:C.textSecond, borderBottom:`1px solid #f0f2f5`, verticalAlign:'middle' },
-  tdName:   { padding:'8px 12px', fontSize:'12px', color:C.text, fontWeight:500, borderBottom:`1px solid #f0f2f5`, verticalAlign:'middle' },
-  pill:     { display:'inline-flex', alignItems:'center', gap:'4px', padding:'3px 9px', borderRadius:'20px', fontSize:'11px', fontFamily:"'Barlow Condensed',sans-serif", fontWeight:700, letterSpacing:'0.5px' },
-  chip:     { display:'inline-flex', alignItems:'center', padding:'2px 7px', borderRadius:'4px', fontSize:'11px', fontFamily:"'Barlow Condensed',sans-serif", fontWeight:600, letterSpacing:'0.5px', margin:'2px', cursor:'pointer', border:'none' },
-  zoomBtn:  { width:'30px', height:'30px', background:C.bg, border:`1px solid ${C.border}`, borderRadius:'5px', color:C.text, fontSize:'14px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'0 1px 3px rgba(0,0,0,0.1)' },
-  // Modal
-  overlay:  { position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', padding:'20px' },
-  modal:    { background:C.bg, border:`1px solid ${C.border}`, borderRadius:'12px', padding:'0', width:'100%', maxWidth:'560px', maxHeight:'88vh', overflow:'auto', boxShadow:'0 12px 48px rgba(0,0,0,0.18)' },
-  mHead:    { padding:'18px 20px 14px', borderBottom:`1px solid ${C.border}`, position:'sticky', top:0, background:C.bg, zIndex:1, display:'flex', alignItems:'flex-start', justifyContent:'space-between' },
-  mBody:    { padding:'16px 20px 20px' },
-  mSec:     { fontSize:'10px', color:C.textMuted, textTransform:'uppercase', letterSpacing:'1.5px', fontFamily:"'Barlow Condensed',sans-serif", marginBottom:'8px', marginTop:'14px', borderBottom:`1px solid ${C.border}`, paddingBottom:'5px' },
-  closeBtn: { background:'transparent', border:'none', color:C.textMuted, cursor:'pointer', padding:'4px', borderRadius:'4px', display:'flex', flexShrink:0 },
-  // Compare bar
-  compareBar:{ position:'fixed', bottom:0, left:0, right:0, zIndex:150, background:C.bg, borderTop:`2px solid ${C.gold}`, padding:'12px 20px', display:'flex', gap:'12px', alignItems:'center', boxShadow:'0 -4px 20px rgba(0,0,0,0.1)', flexWrap:'wrap' },
-  compareCard:{ background:'#f8f9fa', border:`1px solid ${C.border}`, borderRadius:'8px', padding:'10px 14px', minWidth:'160px', flex:1 },
-}
-
-// ── Main ──────────────────────────────────────────────────────────────────────
 
 export default function CCWMap() {
   const [hasSession, setHasSession] = useState(false)
@@ -106,330 +61,354 @@ export default function CCWMap() {
       .catch(() => setHasSession(false))
   }, [])
 
-  const [tab, setTab]             = useState('map')
-  const [search, setSearch]       = useState('')
-  const [filterType, setFilterType] = useState('all')
-  const [hovering, setHovering]   = useState(null)
-  const [zoom, setZoom]           = useState(1)
-  const [geoError, setGeoError]   = useState(false)
-  // Fix 2 — State modal
-  const [modalState, setModalState] = useState(null)
-  // Fix 3 — Compare mode
-  const [compareMode, setCompareMode] = useState(false)
-  const [compareList, setCompareList] = useState([])
-  // Map highlight (used when modal is open)
-  const [mapSelected, setMapSelected] = useState(null)
+  const [homeState,    setHomeState]    = useState('')
+  const [filterType,   setFilterType]   = useState('all')
+  const [search,       setSearch]       = useState('')
+  const [multiMode,    setMultiMode]    = useState(false)
+  const [selected,     setSelected]     = useState([])   // array of codes
+  const [modal,        setModal]        = useState(null) // state object
+  const [hovering,     setHovering]     = useState(null)
+  const [zoom,         setZoom]         = useState(1)
+  const [geoError,     setGeoError]     = useState(false)
 
-  const filtered = useMemo(() => CCW_STATES.filter(s => {
+  const homeData = homeState ? CCW_MAP[homeState] : null
+
+  // States that honor the home state's permit
+  const homeSupporters = useMemo(() =>
+    homeData ? new Set(homeData.honoredBy || []) : new Set()
+  , [homeData])
+
+  // States the home state honors
+  const homeHonors = useMemo(() =>
+    homeData ? new Set(homeData.honors || []) : new Set()
+  , [homeData])
+
+  const filteredList = useMemo(() => CCW_STATES.filter(s => {
     if (filterType !== 'all' && s.permitType !== filterType) return false
     if (search) {
       const q = search.toLowerCase()
       if (!s.name.toLowerCase().includes(q) && !s.code.toLowerCase().includes(q)) return false
     }
     return true
-  }), [search, filterType])
+  }), [filterType, search])
 
-  function openModal(state) {
+  function handleStateClick(code) {
+    const state = CCW_MAP[code]
     if (!state) return
-    if (compareMode) {
-      setCompareList(prev => {
-        const has = prev.find(s => s.code === state.code)
-        if (has) return prev.filter(s => s.code !== state.code)
-        if (prev.length >= 4) return prev
-        return [...prev, state]
-      })
+    if (multiMode) {
+      setSelected(prev => prev.includes(code) ? prev.filter(c=>c!==code) : prev.length<8?[...prev,code]:prev)
       return
     }
-    setModalState(state)
-    setMapSelected(state)
+    setModal(state)
   }
-
-  function closeModal() { setModalState(null); setMapSelected(null) }
 
   function selectByCode(code) {
     const st = CCW_MAP[code]
-    if (st) openModal(st)
+    if (st) setModal(st)
   }
 
-  const highlightCodes = useMemo(() => {
-    if (!mapSelected) return new Set()
-    return new Set([...mapSelected.honors, ...CCW_STATES.filter(s=>s.honors.includes(mapSelected.code)).map(s=>s.code)])
-  }, [mapSelected])
-
-  // Fix 4 — Print
-  function printMap() {
+  function printPDF() {
     const stateRows = CCW_STATES.map(s => {
       const pt = PERMIT_TYPES[s.permitType]
       return `<tr>
-        <td style="padding:6px 10px;border-bottom:1px solid #eee;font-weight:500">${s.name}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #eee;color:${pt?.color}">${pt?.label}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #eee">${s.constitutional?'No permit req.':s.permitName}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #eee">${s.fee===0?'Free':'$'+s.fee}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #eee">${s.trainingHours===0?'None':s.trainingHours+'h'}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #eee">${s.honoredBy?.length??0}</td>
+        <td>${s.name}</td>
+        <td style="color:${pt?.color||'#666'};font-weight:600">${pt?.short||'—'}</td>
+        <td>${s.constitutional?'✓ YES':'No'}</td>
+        <td>${s.fee===0?'Free':'$'+s.fee}</td>
+        <td>${s.trainingRequired==='None required'||s.trainingRequired==='None'?'None':s.trainingRequired}</td>
+        <td>${s.honoredBy?.length??0}</td>
+        <td>${s.honors?.length??0}</td>
       </tr>`
     }).join('')
     const w = window.open('','_blank','width=1000,height=900')
-    w.document.write(`<!DOCTYPE html><html><head><title>CCW Reciprocity Map — PostCommand</title>
-<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Helvetica,Arial,sans-serif;font-size:12px;color:#1a1a2e;padding:32px}
-h1{font-size:28px;font-weight:900;letter-spacing:3px;color:#c8a84b;margin-bottom:4px}
-h1 span{color:#1a1a2e}.sub{font-size:11px;color:#888;margin-bottom:20px;text-transform:uppercase;letter-spacing:1px}
-table{width:100%;border-collapse:collapse;margin-bottom:24px}
-th{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#888;padding:7px 10px;border-bottom:2px solid #e2e6ea;text-align:left}
-td{font-size:11px}
-.legend{display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap}
-.legend-item{display:flex;align-items:center;gap:6px;font-size:11px}
-.legend-dot{width:12px;height:12px;border-radius:3px}
-.disclaimer{background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:14px 18px;margin-top:24px}
-.disclaimer h4{color:#856404;font-size:12px;margin-bottom:6px}
-.disclaimer p{color:#856404;font-size:11px;line-height:1.6}
-@media print{body{padding:20px}.disclaimer{background:#fff3cd!important;-webkit-print-color-adjust:exact}}
+    w.document.write(`<!DOCTYPE html><html><head><title>CCW Reciprocity Reference — PostCommand</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Helvetica,Arial,sans-serif;font-size:11px;padding:32px;color:#0d0f14}
+h1{font-size:24px;font-weight:900;letter-spacing:3px;color:#c8a84b;margin-bottom:2px}
+h1 span{color:#0d0f14}
+.sub{font-size:11px;color:#666;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px}
+.meta{font-size:10px;color:#888;margin-bottom:20px}
+.legend{display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap}
+.legend-item{display:flex;align-items:center;gap:6px;font-size:10px}
+.legend-dot{width:12px;height:12px;border-radius:2px}
+table{width:100%;border-collapse:collapse;margin-bottom:20px;font-size:10px}
+th{text-align:left;padding:6px 8px;background:#f8f9fa;border-bottom:2px solid #e2e6ea;font-size:9px;text-transform:uppercase;letter-spacing:0.5px;color:#666}
+td{padding:5px 8px;border-bottom:1px solid #f0f2f5}
+tr:nth-child(even){background:#fafafa}
+.disclaimer{background:#fff8e1;border:1px solid #ffc107;border-radius:6px;padding:14px 18px;margin-top:16px}
+.disclaimer h4{color:#e65100;font-size:11px;margin-bottom:6px}
+.disclaimer p{font-size:10px;color:#5d4037;line-height:1.6}
+.footer{margin-top:20px;font-size:9px;color:#999;border-top:1px solid #eee;padding-top:12px;line-height:1.8}
+@media print{body{padding:16px}}
 </style></head><body>
 <h1>POST<span>COMMAND</span></h1>
-<div class="sub">CCW Reciprocity Reference — All 50 States + DC · ${new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'})}</div>
+<div class="sub">CCW Reciprocity Map — All 50 States + DC</div>
+<div class="meta">Data last verified: ${DATA_META.lastUpdated} | Next scheduled AI update: ${DATA_META.nextUpdate}</div>
 <div class="legend">
-  ${Object.entries(PERMIT_TYPES).map(([,pt])=>`<div class="legend-item"><div class="legend-dot" style="background:${pt.color}"></div><span>${pt.label} (${CCW_STATES.filter(s=>s.permitType===Object.keys(PERMIT_TYPES).find(k=>PERMIT_TYPES[k]===pt)).length})</span></div>`).join('')}
+${Object.entries(PERMIT_TYPES).map(([,pt])=>`<div class="legend-item"><div class="legend-dot" style="background:${pt.mapColor}"></div>${pt.label} (${CCW_STATES.filter(s=>PERMIT_TYPES[s.permitType]===pt).length} states)</div>`).join('')}
 </div>
 <table>
-  <thead><tr>
-    <th>State</th><th>Carry Type</th><th>Permit Name</th><th>Fee</th><th>Training</th><th>Honored By</th>
-  </tr></thead>
-  <tbody>${stateRows}</tbody>
+<thead><tr><th>State</th><th>Carry Type</th><th>Constitutional</th><th>Permit Fee</th><th>Training</th><th>Honored By</th><th>Honors</th></tr></thead>
+<tbody>${stateRows}</tbody>
 </table>
 <div class="disclaimer">
-  <h4>⚠ DISCLAIMER</h4>
-  <p>This map is updated monthly using AI-assisted research. Information may not reflect the most current laws. <strong>Always verify with local state authorities and consult a licensed attorney before traveling with a firearm.</strong> Do not rely solely on this map for legal compliance. Laws change frequently and vary by municipality. PostCommand and Nationwide Police Services LLC make no representations or warranties regarding the accuracy or completeness of this information.</p>
+<h4>⚠ DISCLAIMER</h4>
+<p>This map is updated monthly using AI-assisted research. Information may not reflect the most current laws. <strong>Always verify with local state authorities and consult a licensed attorney before traveling with a firearm.</strong> Do not rely solely on this map for legal compliance. Laws change frequently. Nationwide Police Services LLC is not responsible for accuracy. Last updated: ${DATA_META.lastUpdated}</p>
+</div>
+<div class="footer">
+© 2026 Nationwide Police Services LLC. All rights reserved.<br/>
+CCW laws are subject to change without notice. Data compiled from public state statutes and AI-assisted research.<br/>
+Always verify current laws before carrying. This is not legal advice. Consult a licensed attorney.
 </div>
 </body></html>`)
     w.document.close(); w.print()
   }
 
-  const inCompare = (code) => compareList.some(s => s.code === code)
+  const FONT = "'Barlow Condensed', 'Barlow', Helvetica, sans-serif"
 
   return (
     <>
-      <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow+Condensed:wght@400;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet" />
+      <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700&family=Barlow:wght@400;500;600&family=Bebas+Neue&display=swap" rel="stylesheet" />
       <style>{`
-        *{margin:0;padding:0;box-sizing:border-box}html,body{height:100%;background:#fff}
+        *{margin:0;padding:0;box-sizing:border-box}
+        html,body{height:100%;background:#fff}
         ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#dce3ea;border-radius:4px}
-        .ccw-tab-active{color:${C.gold}!important;border-bottom-color:${C.gold}!important;font-weight:700}
-        .ccw-tab:hover,.state-label-btn:hover{opacity:0.8!important}
-        .state-row:hover,.tr-hover:hover{background:#f8f9fa!important}
-        .zoom-btn:hover,.h-btn:hover{background:#f0f4f8!important;border-color:#c8a84b!important}
-        .compare-card{transition:box-shadow 150ms ease}.compare-card:hover{box-shadow:0 2px 12px rgba(200,168,75,0.2)}
+        .ccw-hover:hover{background:#f8f9fa!important}
+        .chip-btn:hover{opacity:0.75!important;transform:scale(0.97)}
+        .zoom-btn:hover{background:#f0f4f8!important}
+        .label-btn:hover{opacity:0.8!important}
+        .print-btn:hover{background:#f0f4f8!important}
       `}</style>
 
-      <div style={{ ...s.shell, paddingBottom: compareList.length > 0 ? '120px' : 0 }}>
+      <div style={{ display:'flex', flexDirection:'column', height:'100vh', background:C.bg, fontFamily:FONT, color:C.text }}>
 
-        {/* Header — shown when logged in OR always for the public map */}
-        <header style={s.header}>
+        {/* Header */}
+        <header style={{ background:C.bg, borderBottom:`1px solid ${C.border}`, padding:'12px 20px', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:'10px', flexShrink:0 }}>
           <div>
-            <div style={s.logo}>POST<span style={{color:C.text}}>COMMAND</span> · CCW RECIPROCITY</div>
-            <div style={{ fontSize:'10px', color:C.textMuted, letterSpacing:'1px', textTransform:'uppercase', marginTop:'2px' }}>
-              Concealed Carry Reciprocity — All 50 States + DC
+            <div style={{ display:'flex', alignItems:'baseline', gap:'10px' }}>
+              <span style={{ fontFamily:"'Bebas Neue', sans-serif", fontSize:'22px', letterSpacing:'3px', color:C.gold }}>
+                POST<span style={{color:C.text}}>COMMAND</span>
+              </span>
+              <span style={{ fontSize:'13px', color:C.textMuted, letterSpacing:'0.5px' }}>CCW Reciprocity Map</span>
+            </div>
+            <div style={{ fontSize:'11px', color:C.textMuted, marginTop:'2px' }}>
+              Concealed Carry Weapon laws & state-to-state reciprocity reference
+              <span style={{ marginLeft:'12px', color:'#aaa' }}>
+                Verified: {DATA_META.lastUpdated} · Next update: {DATA_META.nextUpdate}
+              </span>
             </div>
           </div>
-          <div style={s.headerBtns}>
-            <span style={s.badge}><Icon name="zap" size={11}/>AI-Updated Monthly</span>
-            <button className="h-btn" style={{ ...s.hBtn, background: compareMode ? C.gold : C.bg, color: compareMode ? '#fff' : C.textSecond, borderColor: compareMode ? C.gold : C.border }} onClick={() => { setCompareMode(m => !m); if(compareMode) setCompareList([]) }}>
-              <Icon name="columns" size={13}/>{compareMode ? `COMPARING (${compareList.length}/4)` : 'COMPARE'}
+          <div style={{ display:'flex', gap:'8px', alignItems:'center', flexWrap:'wrap' }}>
+            <button
+              className="print-btn"
+              onClick={() => { setMultiMode(m=>!m); if(!multiMode) setSelected([]) }}
+              style={{ display:'inline-flex', alignItems:'center', gap:'6px', background:multiMode?C.gold:C.bg, color:multiMode?'#fff':C.textSecond, border:`1px solid ${multiMode?C.gold:C.border}`, borderRadius:'6px', padding:'0 12px', height:'34px', fontSize:'11px', fontFamily:FONT, letterSpacing:'1px', cursor:'pointer', fontWeight:600 }}>
+              {multiMode ? `✓ MULTI (${selected.length})` : 'SELECT MULTIPLE'}
             </button>
-            <button className="h-btn" style={s.hBtn} onClick={printMap}>
-              <Icon name="printer" size={13}/>PRINT / PDF
+            <button
+              className="print-btn"
+              onClick={printPDF}
+              style={{ display:'inline-flex', alignItems:'center', gap:'6px', background:C.bg, color:C.textSecond, border:`1px solid ${C.border}`, borderRadius:'6px', padding:'0 12px', height:'34px', fontSize:'11px', fontFamily:FONT, letterSpacing:'1px', cursor:'pointer' }}>
+              🖨 Print / Save PDF
             </button>
           </div>
         </header>
 
-        <div style={{ ...s.layout, gridTemplateColumns: tab === 'table' ? '1fr' : '1fr 360px' }}>
+        {/* Map controls bar */}
+        <div style={{ background:'#f8f9fa', borderBottom:`1px solid ${C.border}`, padding:'8px 16px', display:'flex', gap:'10px', flexWrap:'wrap', alignItems:'center', flexShrink:0 }}>
+          <select
+            value={homeState} onChange={e=>setHomeState(e.target.value)}
+            style={{ background:C.bg, border:`1px solid ${C.border}`, borderRadius:'6px', padding:'6px 10px', fontSize:'12px', color:C.text, outline:'none', cursor:'pointer', fontFamily:FONT, fontWeight:600 }}
+          >
+            <option value="">Select Your Home State</option>
+            {CCW_STATES.map(s=><option key={s.code} value={s.code}>{s.name}</option>)}
+          </select>
+          <select
+            value={filterType} onChange={e=>setFilterType(e.target.value)}
+            style={{ background:C.bg, border:`1px solid ${C.border}`, borderRadius:'6px', padding:'6px 10px', fontSize:'12px', color:C.text, outline:'none', cursor:'pointer', fontFamily:FONT }}
+          >
+            <option value="all">All Permit Types</option>
+            {Object.entries(PERMIT_TYPES).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
+          </select>
+          <input
+            style={{ background:C.bg, border:`1px solid ${C.border}`, borderRadius:'6px', padding:'6px 10px', fontSize:'12px', color:C.text, outline:'none', fontFamily:FONT, width:'160px', transition:'border-color 150ms ease' }}
+            placeholder="Search state..."
+            value={search} onChange={e=>setSearch(e.target.value)}
+            onFocus={e=>e.target.style.borderColor=C.gold}
+            onBlur={e=>e.target.style.borderColor=C.border}
+          />
+          {/* Legend */}
+          <div style={{ marginLeft:'auto', display:'flex', gap:'10px', flexWrap:'wrap', alignItems:'center' }}>
+            {homeState && <span style={{ fontSize:'11px', fontWeight:700, color:C.gold, background:C.goldBg, padding:'2px 8px', borderRadius:'10px', border:`1px solid rgba(200,168,75,0.3)` }}>📍 {homeState} selected</span>}
+            {Object.entries(PERMIT_TYPES).map(([k,v])=>(
+              <button key={k} onClick={()=>setFilterType(filterType===k?'all':k)}
+                style={{ display:'flex', alignItems:'center', gap:'5px', background:'transparent', border:'none', cursor:'pointer', fontSize:'10px', color:C.text, padding:'2px 4px', opacity:filterType!=='all'&&filterType!==k?0.35:1, transition:'opacity 150ms ease' }}>
+                <div style={{ width:'10px', height:'10px', borderRadius:'2px', background:v.mapColor, flexShrink:0 }}/>
+                {v.short}
+              </button>
+            ))}
+          </div>
+        </div>
 
-          {/* ── Map ── */}
-          {tab !== 'table' && (
-            <div style={s.mapWrap}>
+        {/* Main layout */}
+        <div style={{ display:'flex', flex:1, overflow:'hidden' }}>
 
-              {/* Legend */}
-              <div style={{ position:'absolute', bottom:'12px', left:'12px', zIndex:10, background:'rgba(255,255,255,0.96)', border:`1px solid ${C.border}`, borderRadius:'7px', padding:'7px 11px', display:'flex', gap:'9px', flexWrap:'wrap', boxShadow:'0 2px 8px rgba(0,0,0,0.08)' }}>
-                {Object.entries(PERMIT_TYPES).map(([key, val]) => (
-                  <button key={key} onClick={() => setFilterType(filterType===key?'all':key)}
-                    style={{ ...s.legendItem, opacity: filterType!=='all'&&filterType!==key ? 0.3 : 1 }}>
-                    <div style={{ ...s.legendDot, background: val.color }}/>
-                    <span style={{ color:C.text }}>{val.label} ({CCW_STATES.filter(x=>x.permitType===key).length})</span>
-                  </button>
-                ))}
+          {/* Map (70%) */}
+          <div style={{ flex:'0 0 70%', position:'relative', background:C.mapBg, overflow:'hidden' }}>
+
+            {/* Tooltip */}
+            {hovering && !modal && (
+              <div style={{ position:'absolute', top:'14px', left:'50%', transform:'translateX(-50%)', zIndex:10, background:C.bg, border:`1px solid ${C.border}`, borderRadius:'7px', padding:'6px 14px', pointerEvents:'none', boxShadow:'0 2px 8px rgba(0,0,0,0.08)', fontSize:'13px', fontWeight:600, whiteSpace:'nowrap' }}>
+                <span style={{ color:getStateColor(hovering.permitType) }}>{hovering.name}</span>
+                <span style={{ color:C.textMuted, fontWeight:400, marginLeft:'8px', fontSize:'11px' }}>{PERMIT_TYPES[hovering.permitType]?.label}</span>
+                {homeState && homeSupporters.has(hovering.code) && <span style={{ color:'#2e7d32', marginLeft:'8px', fontSize:'10px' }}>✓ Honors {homeState}</span>}
               </div>
+            )}
 
-              {/* Tooltip */}
-              {hovering && !modalState && (
-                <div style={{ position:'absolute', top:'12px', left:'50%', transform:'translateX(-50%)', zIndex:10, background:C.bg, border:`1px solid ${C.border}`, borderRadius:'7px', padding:'6px 12px', pointerEvents:'none', boxShadow:'0 2px 8px rgba(0,0,0,0.08)' }}>
-                  <span style={{ fontFamily:"'Barlow Condensed',sans-serif", fontSize:'13px', color:getStateColor(hovering.permitType), fontWeight:700 }}>{hovering.name}</span>
-                  <span style={{ fontSize:'11px', color:C.textMuted, marginLeft:'7px' }}>{PERMIT_TYPES[hovering.permitType]?.label}</span>
-                  {compareMode && inCompare(hovering.code) && <span style={{ fontSize:'10px', color:C.gold, marginLeft:'7px' }}>✓ selected</span>}
-                </div>
-              )}
+            {/* Map */}
+            <div style={{ width:'100%', height:'100%', transform:`scale(${zoom})`, transformOrigin:'center center', transition:'transform 200ms ease' }}>
+              <ComposableMap projection="geoAlbersUsa" style={{ width:'100%', height:'100%', display:'block' }}>
+                <Geographies geography={GEO_URL} onError={()=>setGeoError(true)}>
+                  {({ geographies }) => {
+                    if (!geographies?.length) return null
+                    return geographies.map(geo => {
+                      const fips  = geo.id?.toString().padStart(2,'0')
+                      const code  = FIPS[fips]
+                      const state = code ? CCW_MAP[code] : null
+                      if (!state) return null
 
-              {/* Map SVG — CSS-transform zoom */}
-              <div style={{ width:'100%', height:'100%', overflow:'hidden', position:'relative' }}>
-                <div style={{ width:'100%', height:'100%', transform:`scale(${zoom})`, transformOrigin:'center center', transition:'transform 220ms ease' }}>
-                  <ComposableMap projection="geoAlbersUsa" style={{ width:'100%', height:'100%', display:'block' }}>
-                    <Geographies geography={GEO_URL} onError={() => setGeoError(true)}>
-                      {({ geographies }) => {
-                        if (!geographies?.length) return null
-                        return geographies.map(geo => {
-                          const fips  = geo.id?.toString().padStart(2,'0')
-                          const code  = FIPS[fips]
-                          const state = code ? CCW_MAP[code] : null
-                          if (!state) return null
+                      const typeColor   = getStateColor(state.permitType)
+                      const isHome      = code === homeState
+                      const isSupporter = homeState && homeSupporters.has(code)
+                      const isHonored   = homeState && homeHonors.has(code)
+                      const isFiltered  = filterType !== 'all' && state.permitType !== filterType
+                      const isSelected  = selected.includes(code)
+                      const isModal     = modal?.code === code
 
-                          const isSelected   = mapSelected?.code === code
-                          const isHighlighted = mapSelected && highlightCodes.has(code)
-                          const isFiltered   = filterType !== 'all' && state.permitType !== filterType
-                          const isCompared   = inCompare(code)
-                          const typeColor    = getStateColor(state.permitType)
+                      let fill        = typeColor
+                      let fillOp      = 0.75
+                      let stroke      = '#ffffff'
+                      let strokeWidth = 0.5
 
-                          let fill = typeColor, fillOpacity = 0.7, stroke = '#ffffff', strokeWidth = 0.5
-                          if (isFiltered)  { fill = C.stateFill; fillOpacity = 1 }
-                          else if (isCompared) { fill = typeColor; fillOpacity = 1; stroke = C.gold; strokeWidth = 2 }
-                          else if (isSelected) { fill = typeColor; fillOpacity = 1; stroke = C.gold; strokeWidth = 2 }
-                          else if (mapSelected && isHighlighted) { fill = typeColor; fillOpacity = 0.85; stroke = `${C.gold}88`; strokeWidth = 1 }
-                          else if (mapSelected && !isHighlighted) { fill = C.stateFill; fillOpacity = 1 }
+                      if (isFiltered) { fill = '#e2e6ea'; fillOp = 1 }
+                      else if (isHome) { fill = typeColor; fillOp = 1; stroke = C.gold; strokeWidth = 3 }
+                      else if (isSelected || isModal) { fill = typeColor; fillOp = 1; stroke = C.gold; strokeWidth = 2 }
+                      else if (homeState && isSupporter) { fill = '#4caf50'; fillOp = 0.85 }
+                      else if (homeState && isHonored)  { fill = '#81c784'; fillOp = 0.85 }
+                      else if (homeState && !isSupporter && !isHonored) { fill = '#e2e6ea'; fillOp = 1 }
 
-                          return (
-                            <Geography key={geo.rsmKey} geography={geo}
-                              onMouseEnter={() => setHovering(state)}
-                              onMouseLeave={() => setHovering(null)}
-                              onClick={() => openModal(state)}
-                              style={{
-                                default: { fill, fillOpacity, stroke, strokeWidth, outline:'none', cursor:'pointer' },
-                                hover:   { fill: typeColor, fillOpacity:1, stroke:C.gold, strokeWidth:1.5, outline:'none', cursor:'pointer' },
-                                pressed: { fill: typeColor, fillOpacity:1, outline:'none' },
-                              }}
-                            />
-                          )
-                        })
-                      }}
-                    </Geographies>
-                  </ComposableMap>
-                </div>
-
-                <SmallStateLabels onSelect={openModal} modalState={modalState} highlightCodes={highlightCodes} filterType={filterType} compareList={compareList} compareMode={compareMode} />
-              </div>
-
-              {geoError && (
-                <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', background:'#f8f9fa' }}>
-                  <div style={{ textAlign:'center', color:C.textMuted }}>
-                    <Icon name="map" size={32} color="#dce3ea" />
-                    <div style={{ marginTop:'10px', fontSize:'13px' }}>Map unavailable — check connection</div>
-                    <button style={{ marginTop:'10px', fontSize:'12px', color:C.gold, background:'none', border:`1px solid ${C.gold}`, borderRadius:'6px', padding:'5px 14px', cursor:'pointer' }} onClick={() => setGeoError(false)}>Retry</button>
-                  </div>
-                </div>
-              )}
-
-              {/* Zoom controls */}
-              <div style={{ position:'absolute', bottom:'12px', right:'12px', zIndex:10, display:'flex', flexDirection:'column', gap:'4px' }}>
-                {[['+', ()=>setZoom(z=>Math.min(z*1.4,6))],['-', ()=>setZoom(z=>Math.max(z/1.4,1))],['⊙', ()=>setZoom(1)]].map(([label,fn])=>(
-                  <button key={label} className="zoom-btn" style={s.zoomBtn} onClick={fn}>{label}</button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* ── Side panel ── */}
-          <div style={s.panel}>
-            <div style={s.panelHead}>
-              <div style={{ display:'flex', gap:'2px' }}>
-                {[['map','Map'],['table','Full Table']].map(([id,label]) => (
-                  <button key={id} className={`ccw-tab${tab===id?' ccw-tab-active':''}`}
-                    style={{ ...s.tab, color:tab===id?C.gold:C.textMuted, borderBottom:`2px solid ${tab===id?C.gold:'transparent'}` }}
-                    onClick={() => { setTab(id); if(id==='table') { setMapSelected(null); setModalState(null) } }}>
-                    {label}
-                  </button>
-                ))}
-              </div>
+                      return (
+                        <Geography key={geo.rsmKey} geography={geo}
+                          onMouseEnter={() => setHovering(state)}
+                          onMouseLeave={() => setHovering(null)}
+                          onClick={() => handleStateClick(code)}
+                          style={{
+                            default: { fill, fillOpacity:fillOp, stroke, strokeWidth, outline:'none', cursor:'pointer' },
+                            hover:   { fill:typeColor, fillOpacity:1, stroke:C.gold, strokeWidth:1.5, outline:'none', cursor:'pointer' },
+                            pressed: { fill:typeColor, fillOpacity:1, outline:'none' },
+                          }}
+                        />
+                      )
+                    })
+                  }}
+                </Geographies>
+              </ComposableMap>
+              <SmallStateLabels onSelect={handleStateClick} modal={modal} homeState={homeState} homeSupporters={homeSupporters} filterType={filterType} selected={selected} />
             </div>
 
-            <div style={s.legend}>
-              {Object.entries(PERMIT_TYPES).map(([key,val]) => (
-                <button key={key} onClick={() => setFilterType(filterType===key?'all':key)}
-                  style={{ ...s.legendItem, opacity: filterType!=='all'&&filterType!==key?0.3:1 }}>
-                  <div style={{ ...s.legendDot, background:val.color }}/>
-                  {val.short} ({CCW_STATES.filter(x=>x.permitType===key).length})
-                </button>
+            {/* Error state */}
+            {geoError && (
+              <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', background:C.mapBg, flexDirection:'column', gap:'10px' }}>
+                <div style={{ fontSize:'13px', color:C.textMuted }}>Map tiles unavailable</div>
+                <button onClick={()=>setGeoError(false)} style={{ fontSize:'12px', color:C.gold, background:'none', border:`1px solid ${C.gold}`, borderRadius:'6px', padding:'6px 14px', cursor:'pointer', fontFamily:FONT }}>Retry</button>
+              </div>
+            )}
+
+            {/* Zoom controls */}
+            <div style={{ position:'absolute', bottom:'14px', right:'14px', zIndex:10, display:'flex', flexDirection:'column', gap:'4px' }}>
+              {[['+',()=>setZoom(z=>Math.min(z*1.4,6))],['-',()=>setZoom(z=>Math.max(z/1.4,1))],['⊙',()=>setZoom(1)]].map(([lbl,fn])=>(
+                <button key={lbl} className="zoom-btn" onClick={fn} style={{ width:'32px', height:'32px', background:C.bg, border:`1px solid ${C.border}`, borderRadius:'5px', color:C.text, fontSize:lbl==='⊙'?'14px':'18px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'0 1px 4px rgba(0,0,0,0.1)' }}>{lbl}</button>
               ))}
             </div>
-            <input style={s.search} placeholder="Search state..." value={search}
-              onChange={e => setSearch(e.target.value)}
-              onFocus={e => e.target.style.borderColor=C.gold}
-              onBlur={e => e.target.style.borderColor=C.border}
-            />
 
-            <div style={s.panelBody}>
-              {tab === 'map'
-                ? <StateList states={filtered} onSelect={openModal} compareList={compareList} compareMode={compareMode} />
-                : <FullTable states={filtered} onSelect={openModal} />
-              }
+            {/* Home state carry legend */}
+            {homeState && (
+              <div style={{ position:'absolute', bottom:'14px', left:'14px', zIndex:10, background:'rgba(255,255,255,0.96)', border:`1px solid ${C.border}`, borderRadius:'7px', padding:'8px 12px', fontSize:'11px', boxShadow:'0 2px 8px rgba(0,0,0,0.08)' }}>
+                <div style={{ fontWeight:700, color:C.text, marginBottom:'5px', fontFamily:FONT, letterSpacing:'0.5px' }}>From {homeState}:</div>
+                {[['#4caf50','Carry Allowed'],['#81c784','Constitutional Carry States'],['#ff9800','Restricted / Conditions'],['#f44336','Not Honored'],['#e2e6ea','No Reciprocity']].map(([c,l])=>(
+                  <div key={l} style={{ display:'flex', alignItems:'center', gap:'6px', marginBottom:'3px' }}>
+                    <div style={{ width:'10px', height:'10px', borderRadius:'2px', background:c, flexShrink:0 }}/>
+                    <span style={{ color:C.textSecond }}>{l}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* State list panel (30%) */}
+          <div style={{ flex:'0 0 30%', borderLeft:`1px solid ${C.border}`, background:C.bg, display:'flex', flexDirection:'column', overflow:'hidden' }}>
+            <div style={{ padding:'10px 14px', borderBottom:`1px solid ${C.border}`, flexShrink:0 }}>
+              <div style={{ fontSize:'12px', fontWeight:700, color:C.text, fontFamily:FONT, letterSpacing:'0.5px' }}>
+                {filteredList.length} State{filteredList.length!==1?'s':''} {filterType!=='all'?`· ${PERMIT_TYPES[filterType]?.short}`:''}
+              </div>
+            </div>
+            <div style={{ flex:1, overflowY:'auto' }}>
+              {filteredList.map(state => {
+                const pt          = PERMIT_TYPES[state.permitType]
+                const isSupporter = homeState && homeSupporters.has(state.code)
+                const isHonored   = homeState && homeHonors.has(state.code)
+                return (
+                  <div key={state.code} className="ccw-hover"
+                    style={{ display:'flex', alignItems:'center', gap:'9px', padding:'9px 14px', borderBottom:`1px solid #f5f5f5`, cursor:'pointer', background:'transparent' }}
+                    onClick={() => handleStateClick(state.code)}>
+                    <div style={{ width:'32px', height:'32px', borderRadius:'5px', background:pt?.bg, color:pt?.color, display:'flex', alignItems:'center', justifyContent:'center', fontFamily:FONT, fontSize:'11px', fontWeight:700, flexShrink:0 }}>{state.code}</div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:'12px', fontWeight:600, color:C.text }}>{state.name}</div>
+                      <div style={{ fontSize:'10px', color:C.textMuted, marginTop:'1px' }}>{pt?.label} · {state.constitutional?'Permitless':state.permitName?.slice(0,28)}</div>
+                    </div>
+                    <div style={{ textAlign:'right', flexShrink:0 }}>
+                      {homeState && isSupporter && <div style={{ fontSize:'10px', color:'#2e7d32', fontWeight:700 }}>✓ Honors {homeState}</div>}
+                      {homeState && isHonored   && <div style={{ fontSize:'10px', color:'#1565c0', fontWeight:700 }}>{homeState} Honors</div>}
+                      <div style={{ fontSize:'11px', color:C.gold, fontFamily:FONT, fontWeight:600 }}>{state.honoredBy?.length??0} honor</div>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </div>
-
         </div>
+
+        {/* Footer */}
+        <footer style={{ background:'#f8f9fa', borderTop:`1px solid ${C.border}`, padding:'8px 20px', fontSize:'10px', color:C.textMuted, display:'flex', justifyContent:'space-between', flexWrap:'wrap', gap:'6px', flexShrink:0 }}>
+          <span>© 2026 Nationwide Police Services LLC. All rights reserved. CCW laws subject to change without notice.</span>
+          <span>Data from public state statutes · AI-assisted research · Not legal advice · Always verify before carrying</span>
+        </footer>
       </div>
 
-      {/* Fix 2 — State detail modal */}
-      {modalState && (
-        <StateModal state={modalState} onClose={closeModal} onSelect={selectByCode} />
-      )}
-
-      {/* Fix 3 — Compare bar */}
-      {compareList.length > 0 && (
-        <div style={s.compareBar}>
-          <div style={{ fontFamily:"'Barlow Condensed',sans-serif", fontSize:'12px', color:C.textMuted, textTransform:'uppercase', letterSpacing:'1px', flexShrink:0 }}>
-            Comparing ({compareList.length}/4)
-          </div>
-          {compareList.map(state => {
-            const pt = PERMIT_TYPES[state.permitType]
-            return (
-              <div key={state.code} className="compare-card" style={s.compareCard}>
-                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:'4px' }}>
-                  <div style={{ fontFamily:"'Bebas Neue',sans-serif", fontSize:'16px', letterSpacing:'1.5px', color:C.text }}>{state.name}</div>
-                  <button style={{ background:'transparent', border:'none', cursor:'pointer', color:C.textMuted, padding:'0', display:'flex' }} onClick={() => setCompareList(p => p.filter(s => s.code !== state.code))}>
-                    <Icon name="x" size={13}/>
-                  </button>
-                </div>
-                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'4px', fontSize:'11px' }}>
-                  <span style={{ color:pt?.color, fontWeight:700, fontFamily:"'Barlow Condensed',sans-serif" }}>{pt?.label}</span>
-                  <span style={{ color:C.textMuted }}>Fee: {state.fee===0?'Free':'$'+state.fee}</span>
-                  <span style={{ color:C.textMuted }}>Training: {state.trainingHours===0?'None':state.trainingHours+'h'}</span>
-                  <span style={{ color:C.gold, fontWeight:600 }}>Honored by {state.honoredBy?.length??0}</span>
-                </div>
-                <button style={{ marginTop:'6px', fontSize:'10px', color:C.gold, background:'none', border:`1px solid ${C.gold}`, borderRadius:'4px', padding:'2px 8px', cursor:'pointer', fontFamily:"'Barlow Condensed',sans-serif" }} onClick={() => { setModalState(state); setMapSelected(state) }}>
-                  DETAILS
-                </button>
-              </div>
-            )
-          })}
-          <button style={{ ...s.hBtn, background:C.gold, color:'#fff', border:`1px solid ${C.gold}`, marginLeft:'auto', flexShrink:0 }} onClick={() => { setCompareList([]); setCompareMode(false) }}>
-            CLEAR
-          </button>
-        </div>
-      )}
+      {/* State detail modal */}
+      {modal && <StateModal state={modal} onClose={()=>setModal(null)} onSelect={selectByCode} homeState={homeState} />}
     </>
   )
 }
 
-// ── Small state pointer labels ────────────────────────────────────────────────
+// ── Small state labels ────────────────────────────────────────────────────────
 
-function SmallStateLabels({ onSelect, modalState, highlightCodes, filterType, compareList, compareMode }) {
+function SmallStateLabels({ onSelect, modal, homeState, homeSupporters, filterType, selected }) {
   return (
     <div style={{ position:'absolute', inset:0, pointerEvents:'none', zIndex:8 }}>
       <svg width="100%" height="100%" style={{ position:'absolute', inset:0 }} aria-hidden="true">
         {SMALL_LABELS.map(({ code, from, to }) => {
           const state = CCW_MAP[code]
-          const color = state ? getStateColor(state.permitType) : '#aaa'
-          const isFiltered = filterType !== 'all' && state?.permitType !== filterType
+          if (!state) return null
+          const color = getStateColor(state.permitType)
+          const filtered = filterType !== 'all' && state.permitType !== filterType
           return (
             <line key={code}
               x1={`${from[0]}%`} y1={`${from[1]}%`}
               x2={`${to[0]}%`}   y2={`${to[1]}%`}
               stroke={color} strokeWidth="0.9" strokeDasharray="3 2"
-              opacity={isFiltered ? 0.15 : 0.65}
+              opacity={filtered ? 0.12 : 0.6}
             />
           )
         })}
@@ -437,160 +416,195 @@ function SmallStateLabels({ onSelect, modalState, highlightCodes, filterType, co
       {SMALL_LABELS.map(({ code, to }) => {
         const state = CCW_MAP[code]
         if (!state) return null
-        const typeColor = getStateColor(state.permitType)
-        const isSelected = modalState?.code === code
-        const isHighlighted = highlightCodes.has(code)
+        const typeColor  = getStateColor(state.permitType)
+        const isModal    = modal?.code === code
+        const isSelected = selected.includes(code)
         const isFiltered = filterType !== 'all' && state.permitType !== filterType
-        const isCompared = compareList.some(s => s.code === code)
-        let opacity = 1, bg = `${typeColor}14`, border = typeColor, textColor = typeColor
-        if (isFiltered) { opacity = 0.2 }
-        else if (isSelected || isCompared) { bg = typeColor; textColor = '#fff'; border = C.gold }
-        else if (modalState && !isHighlighted) { opacity = 0.3 }
+        const isSupport  = homeState && homeSupporters.has(code)
+        let bg = `${typeColor}14`, border = typeColor, color = typeColor, opacity = 1
+        if (isFiltered) { opacity = 0.18 }
+        else if (isModal || isSelected) { bg = typeColor; color = '#fff'; border = '#c8a84b' }
+        else if (isSupport) { bg = '#4caf5018'; border = '#4caf50'; color = '#2e7d32' }
         return (
-          <button key={code} className="state-label-btn" onClick={() => onSelect(state)}
-            style={{ position:'absolute', left:`${to[0]}%`, top:`${to[1]}%`, transform:'translate(-50%,-50%)', background:bg, border:`1.5px solid ${border}`, borderRadius:'3px', padding:'1px 4px', fontSize:'9px', fontFamily:"'Barlow Condensed',sans-serif", fontWeight:700, color:textColor, cursor:'pointer', pointerEvents:'auto', whiteSpace:'nowrap', boxShadow:'0 1px 3px rgba(0,0,0,0.12)', opacity, transition:'opacity 150ms ease', minHeight:'16px', minWidth:'22px', lineHeight:1.4 }}
-            title={state.name}>{code}</button>
+          <button key={code} className="label-btn"
+            onClick={() => onSelect(code)}
+            style={{ position:'absolute', left:`${to[0]}%`, top:`${to[1]}%`, transform:'translate(-50%,-50%)', background:bg, border:`1.5px solid ${border}`, borderRadius:'3px', padding:'1px 4px', fontSize:'9px', fontFamily:"'Barlow Condensed', sans-serif", fontWeight:700, color, cursor:'pointer', pointerEvents:'auto', whiteSpace:'nowrap', boxShadow:'0 1px 3px rgba(0,0,0,0.12)', opacity, transition:'opacity 150ms ease', minHeight:'16px', minWidth:'22px', lineHeight:1.5 }}
+            title={state.name}
+          >{code}</button>
         )
       })}
     </div>
   )
 }
 
-// ── State detail modal (Fix 2) ────────────────────────────────────────────────
+// ── State detail modal ────────────────────────────────────────────────────────
 
-function StateModal({ state, onClose, onSelect }) {
+function StateModal({ state, onClose, onSelect, homeState }) {
   const pt            = PERMIT_TYPES[state.permitType]
   const honorsStates  = CCW_STATES.filter(s => state.honors.includes(s.code))
   const honoredBy     = CCW_STATES.filter(s => s.honors.includes(state.code))
+  const FONT          = "'Barlow Condensed', 'Barlow', Helvetica, sans-serif"
+  const C2            = { text:'#0d0f14', muted:'#8899aa', second:'#4a6080', border:'#e2e6ea', bg:'#ffffff' }
+  const loc           = state.carryLocations || {}
 
   return (
-    <div style={s.overlay} onClick={onClose}>
-      <div style={s.modal} onClick={e => e.stopPropagation()}>
-        <div style={s.mHead}>
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', zIndex:300, display:'flex', alignItems:'flex-start', justifyContent:'center', padding:'24px 16px', overflowY:'auto' }} onClick={onClose}>
+      <div style={{ background:C2.bg, border:`1px solid ${C2.border}`, borderRadius:'12px', width:'100%', maxWidth:'620px', boxShadow:'0 12px 48px rgba(0,0,0,0.15)', flexShrink:0 }} onClick={e=>e.stopPropagation()}>
+
+        {/* Modal header */}
+        <div style={{ padding:'18px 22px 14px', borderBottom:`1px solid ${C2.border}`, display:'flex', alignItems:'flex-start', justifyContent:'space-between', position:'sticky', top:0, background:C2.bg, borderRadius:'12px 12px 0 0', zIndex:1 }}>
           <div>
-            <div style={{ fontFamily:"'Bebas Neue',sans-serif", fontSize:'26px', letterSpacing:'2px', color:C.text, lineHeight:1 }}>{state.name}</div>
+            <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
+              <span style={{ fontFamily:"'Bebas Neue', sans-serif", fontSize:'28px', letterSpacing:'2px', color:C2.text }}>{state.name}</span>
+              <span style={{ fontFamily:FONT, fontSize:'16px', color:C2.muted }}>({state.code})</span>
+            </div>
             <div style={{ display:'flex', gap:'6px', marginTop:'8px', flexWrap:'wrap' }}>
-              <span style={{ ...s.pill, background:pt?.bg, color:pt?.color }}>{pt?.label}</span>
-              {state.constitutional && <span style={{ ...s.pill, background:'rgba(76,175,80,0.12)', color:'#388e3c' }}>No Permit Required</span>}
+              <span style={{ display:'inline-flex', alignItems:'center', padding:'3px 10px', borderRadius:'20px', fontSize:'11px', fontWeight:700, fontFamily:FONT, letterSpacing:'0.5px', background:pt?.bg, color:pt?.color }}>{pt?.label}</span>
+              {state.constitutional && <span style={{ display:'inline-flex', padding:'3px 10px', borderRadius:'20px', fontSize:'11px', fontWeight:700, fontFamily:FONT, letterSpacing:'0.5px', background:'rgba(46,125,50,0.12)', color:'#2e7d32' }}>✓ Permitless Carry</span>}
+              {state.redFlagLaw && <span style={{ display:'inline-flex', padding:'3px 10px', borderRadius:'20px', fontSize:'11px', fontWeight:700, fontFamily:FONT, letterSpacing:'0.5px', background:'rgba(183,28,28,0.1)', color:'#b71c1c' }}>Red Flag Law</span>}
             </div>
           </div>
-          <button style={s.closeBtn} onClick={onClose}><Icon name="x" size={18}/></button>
+          <button onClick={onClose} style={{ background:'transparent', border:'none', cursor:'pointer', fontSize:'20px', color:C2.muted, padding:'4px', lineHeight:1, display:'flex', minHeight:'auto' }}>×</button>
         </div>
-        <div style={s.mBody}>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'12px', marginBottom:'4px' }}>
+
+        <div style={{ padding:'16px 22px', maxHeight:'70vh', overflowY:'auto' }}>
+
+          {/* Key stats row */}
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'10px', marginBottom:'16px' }}>
             {[
-              { label:'Permit',    value: state.constitutional && state.fee===0 ? 'None issued' : state.permitName },
-              { label:'Fee',       value: state.fee===0 ? 'Free' : `$${state.fee}` },
-              { label:'Training',  value: state.trainingHours===0 ? 'None req.' : `${state.trainingHours} hrs` },
-              { label:'Residency', value: state.residencyRequired ? 'Required' : 'Not required' },
-              { label:'Min Age',   value: state.minAge ? `${state.minAge} years` : '—' },
-              { label:'Valid For', value: state.validYears===0 ? 'N/A' : `${state.validYears} years` },
+              { label:'Honored By', value:`${state.honoredBy?.length??0} states` },
+              { label:'Min Carry Age', value:`${state.minAge} years` },
+              { label:'This State Honors', value:`${state.honors?.length??0} states` },
+              { label:'Permit Required', value:state.permitRequired?'Yes':'No' },
+              { label:'Constitutional Carry', value:state.constitutional?'Yes':'No' },
+              { label:'Open Carry', value:state.openCarry===true?'Yes':state.openCarry===false?'No':state.openCarry||'Varies' },
             ].map(item => (
-              <div key={item.label}>
-                <div style={{ fontSize:'10px', color:C.textMuted, textTransform:'uppercase', letterSpacing:'0.5px', fontFamily:"'Barlow Condensed',sans-serif", marginBottom:'2px' }}>{item.label}</div>
-                <div style={{ fontSize:'13px', color:C.text }}>{item.value}</div>
+              <div key={item.label} style={{ background:'#f8f9fa', borderRadius:'6px', padding:'10px 12px' }}>
+                <div style={{ fontSize:'9px', color:C2.muted, textTransform:'uppercase', letterSpacing:'1px', fontFamily:FONT, marginBottom:'3px' }}>{item.label}</div>
+                <div style={{ fontSize:'14px', fontWeight:700, color:C2.text, fontFamily:FONT }}>{item.value}</div>
               </div>
             ))}
           </div>
 
-          {state.notes && (
+          {/* Permit details */}
+          <div style={{ fontSize:'10px', color:C2.muted, textTransform:'uppercase', letterSpacing:'1.5px', fontFamily:FONT, marginBottom:'8px', borderBottom:`1px solid ${C2.border}`, paddingBottom:'5px' }}>Permit Details</div>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'8px', marginBottom:'14px' }}>
+            {[
+              { label:'Permit Type',        value:state.permitName },
+              { label:'Processing Time',    value:state.processingTime },
+              { label:'Permit Fee',         value:state.fee===0?'Free':`$${state.fee}` },
+              { label:'Training Required',  value:state.trainingRequired },
+              { label:'Red Flag Law',       value:state.redFlagLaw?'Yes':'No' },
+            ].map(item => (
+              <div key={item.label}>
+                <div style={{ fontSize:'9px', color:C2.muted, textTransform:'uppercase', letterSpacing:'0.5px', fontFamily:FONT, marginBottom:'1px' }}>{item.label}</div>
+                <div style={{ fontSize:'12px', color:C2.text }}>{item.value}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Gun law summary */}
+          {state.gunLawSummary && (
             <>
-              <div style={s.mSec}>Notes</div>
-              <p style={{ fontSize:'12px', color:C.textSecond, lineHeight:1.7 }}>{state.notes}</p>
+              <div style={{ fontSize:'10px', color:C2.muted, textTransform:'uppercase', letterSpacing:'1.5px', fontFamily:FONT, marginBottom:'6px', borderBottom:`1px solid ${C2.border}`, paddingBottom:'5px' }}>Summary of Gun Laws</div>
+              <p style={{ fontSize:'12px', color:C2.second, lineHeight:1.7, marginBottom:'14px' }}>{state.gunLawSummary}</p>
             </>
           )}
 
-          <div style={s.mSec}>Honors ({honorsStates.length} states) — {state.name} recognizes these permits</div>
-          <div style={{ display:'flex', flexWrap:'wrap', gap:'3px', marginBottom:'6px' }}>
-            {honorsStates.length === 0
-              ? <span style={{ fontSize:'12px', color:C.textMuted }}>Does not honor any out-of-state permits</span>
-              : honorsStates.map(s2 => {
+          {/* Self defense */}
+          {state.selfDefenseLaws && (
+            <div style={{ background:'#f0f9f0', border:'1px solid rgba(46,125,50,0.2)', borderRadius:'6px', padding:'10px 14px', marginBottom:'14px' }}>
+              <div style={{ fontSize:'9px', color:'#2e7d32', textTransform:'uppercase', letterSpacing:'1px', fontFamily:FONT, marginBottom:'4px' }}>Self Defense Laws</div>
+              <div style={{ fontSize:'12px', color:'#1b5e20' }}>{state.selfDefenseLaws}</div>
+            </div>
+          )}
+
+          {/* Carry locations */}
+          {Object.keys(loc).length > 0 && (
+            <>
+              <div style={{ fontSize:'10px', color:C2.muted, textTransform:'uppercase', letterSpacing:'1.5px', fontFamily:FONT, marginBottom:'8px', borderBottom:`1px solid ${C2.border}`, paddingBottom:'5px' }}>Carry Locations</div>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'4px', marginBottom:'14px', fontSize:'11px' }}>
+                {[
+                  ['vehicle',        'In Vehicle'],
+                  ['barsRestaurants','Bars / Restaurants'],
+                  ['stateParks',     'State Parks'],
+                  ['nationalParks',  'National Parks'],
+                  ['roadside',       'Roadside Rest Areas'],
+                  ['hotels',         'Hotels'],
+                  ['worship',        'Places of Worship'],
+                  ['bowHunting',     'Bow Hunting'],
+                  ['gunHunting',     'Gun Hunting'],
+                ].map(([key, label]) => {
+                  const val = loc[key]
+                  const color = val===true?'#2e7d32':val===false?'#b71c1c':'#e65100'
+                  const text  = val===true?'✓ Allowed':val===false?'✗ Prohibited':val||'Check Local Laws'
+                  return (
+                    <div key={key} style={{ display:'flex', justifyContent:'space-between', padding:'5px 8px', background:'#f8f9fa', borderRadius:'4px' }}>
+                      <span style={{ color:C2.second }}>{label}</span>
+                      <span style={{ color, fontWeight:600, fontFamily:FONT }}>{text}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            </>
+          )}
+
+          {/* Honored by chips */}
+          <div style={{ fontSize:'10px', color:C2.muted, textTransform:'uppercase', letterSpacing:'1.5px', fontFamily:FONT, marginBottom:'8px', borderBottom:`1px solid ${C2.border}`, paddingBottom:'5px' }}>
+            States That Honor This Permit ({honoredBy.length})
+          </div>
+          <div style={{ display:'flex', flexWrap:'wrap', gap:'4px', marginBottom:'14px' }}>
+            {honoredBy.length === 0
+              ? <span style={{ fontSize:'12px', color:C2.muted }}>No states honor this permit for reciprocity</span>
+              : honoredBy.map(s2 => {
                   const pt2 = PERMIT_TYPES[s2.permitType]
-                  return <button key={s2.code} style={{ ...s.chip, background:pt2?.bg, color:pt2?.color }} onClick={() => { onClose(); setTimeout(() => onSelect(s2.code), 80) }}>{s2.code}</button>
+                  return (
+                    <button key={s2.code} className="chip-btn"
+                      onClick={()=>{ onClose(); setTimeout(()=>onSelect(s2.code), 80) }}
+                      style={{ display:'inline-flex', padding:'2px 7px', borderRadius:'4px', fontSize:'10px', fontFamily:FONT, fontWeight:700, background:pt2?.bg, color:pt2?.color, border:'none', cursor:'pointer', transition:'all 150ms ease' }}>
+                      {s2.code}
+                    </button>
+                  )
                 })
             }
           </div>
 
-          <div style={s.mSec}>Honored By ({honoredBy.length} states) — these states honor {state.name} permits</div>
-          <div style={{ display:'flex', flexWrap:'wrap', gap:'3px' }}>
-            {honoredBy.length === 0
-              ? <span style={{ fontSize:'12px', color:C.textMuted }}>No states honor this permit for reciprocity</span>
-              : honoredBy.map(s2 => {
+          {/* Honors chips */}
+          <div style={{ fontSize:'10px', color:C2.muted, textTransform:'uppercase', letterSpacing:'1.5px', fontFamily:FONT, marginBottom:'8px', borderBottom:`1px solid ${C2.border}`, paddingBottom:'5px' }}>
+            States This Permit Honors ({honorsStates.length})
+          </div>
+          <div style={{ display:'flex', flexWrap:'wrap', gap:'4px', marginBottom:'14px' }}>
+            {honorsStates.length === 0
+              ? <span style={{ fontSize:'12px', color:C2.muted }}>Does not honor any out-of-state permits</span>
+              : honorsStates.map(s2 => {
                   const pt2 = PERMIT_TYPES[s2.permitType]
-                  return <button key={s2.code} style={{ ...s.chip, background:pt2?.bg, color:pt2?.color }} onClick={() => { onClose(); setTimeout(() => onSelect(s2.code), 80) }}>{s2.code}</button>
+                  return (
+                    <button key={s2.code} className="chip-btn"
+                      onClick={()=>{ onClose(); setTimeout(()=>onSelect(s2.code), 80) }}
+                      style={{ display:'inline-flex', padding:'2px 7px', borderRadius:'4px', fontSize:'10px', fontFamily:FONT, fontWeight:700, background:pt2?.bg, color:pt2?.color, border:'none', cursor:'pointer', transition:'all 150ms ease' }}>
+                      {s2.code}
+                    </button>
+                  )
                 })
             }
+          </div>
+
+          {/* Official source */}
+          {state.officialSource && (
+            <div style={{ marginBottom:'14px' }}>
+              <a href={state.officialSource} target="_blank" rel="noopener noreferrer"
+                style={{ fontSize:'12px', color:'#1565c0', display:'inline-flex', alignItems:'center', gap:'4px' }}>
+                🔗 Official State Source / Licensing Authority
+              </a>
+            </div>
+          )}
+
+          {/* Disclaimer */}
+          <div style={{ background:'#fff8e1', border:'1px solid #ffc107', borderRadius:'6px', padding:'10px 14px', fontSize:'11px', color:'#5d4037', lineHeight:1.6 }}>
+            <strong>⚠ Disclaimer:</strong> This information is for reference only and is not legal advice. Laws change frequently. Always verify with official state sources and consult a licensed attorney before carrying a firearm across state lines.
           </div>
         </div>
       </div>
-    </div>
-  )
-}
-
-// ── State List ────────────────────────────────────────────────────────────────
-
-function StateList({ states, onSelect, compareList, compareMode }) {
-  return (
-    <div>
-      {states.map(state => {
-        const pt = PERMIT_TYPES[state.permitType]
-        const isCompared = compareList.some(s => s.code === state.code)
-        return (
-          <div key={state.code} className="state-row" style={{ ...s.stateRow, background: isCompared ? `${C.gold}0d` : 'transparent' }} onClick={() => onSelect(state)}>
-            <div style={{ ...s.stateCode, background:pt?.bg, color:pt?.color }}>{state.code}</div>
-            <div style={{ flex:1, minWidth:0 }}>
-              <div style={{ fontSize:'13px', color:C.text, fontWeight:500 }}>{state.name}</div>
-              <div style={{ fontSize:'11px', color:C.textMuted, marginTop:'1px' }}>{pt?.label} · {state.constitutional?'No permit req.':state.permitName}</div>
-            </div>
-            <div style={{ textAlign:'right', flexShrink:0 }}>
-              <div style={{ fontSize:'12px', color:C.gold, fontFamily:"'Barlow Condensed',sans-serif" }}>{state.honoredBy?.length??0} states</div>
-              <div style={{ fontSize:'10px', color:C.textMuted }}>honor this</div>
-            </div>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-// ── Full Table ────────────────────────────────────────────────────────────────
-
-function FullTable({ states, onSelect }) {
-  const [sort, setSort] = useState('name')
-  const [dir, setDir]   = useState(1)
-  function toggleSort(col) { if(sort===col) setDir(d=>-d); else { setSort(col); setDir(1) } }
-  const sorted = [...states].sort((a,b) => {
-    const av=a[sort],bv=b[sort]
-    if (typeof av==='string') return av.localeCompare(bv)*dir
-    return ((av??0)-(bv??0))*dir
-  })
-  const TH = ({col,label}) => (
-    <th style={{ ...s.th, cursor:'pointer', userSelect:'none' }} onClick={()=>toggleSort(col)}>
-      {label}{sort===col?(dir===1?' ↑':' ↓'):''}
-    </th>
-  )
-  return (
-    <div style={{ overflowX:'auto' }}>
-      <table style={s.table}>
-        <thead>
-          <tr><TH col="name" label="State"/><TH col="permitType" label="Type"/><TH col="fee" label="Fee"/><TH col="trainingHours" label="Train."/><th style={s.th}>Honors</th><th style={s.th}>Honored By</th></tr>
-        </thead>
-        <tbody>
-          {sorted.map(state => {
-            const pt = PERMIT_TYPES[state.permitType]
-            return (
-              <tr key={state.code} className="tr-hover" style={{ cursor:'pointer' }} onClick={() => onSelect(state)}>
-                <td style={s.tdName}><div style={{ display:'flex', alignItems:'center', gap:'7px' }}><span style={{ width:'24px', height:'19px', background:pt?.bg, color:pt?.color, borderRadius:'3px', display:'flex', alignItems:'center', justifyContent:'center', fontFamily:"'Barlow Condensed',sans-serif", fontSize:'10px', fontWeight:700 }}>{state.code}</span>{state.name}</div></td>
-                <td style={s.td}><span style={{ color:pt?.color, fontFamily:"'Barlow Condensed',sans-serif", fontWeight:700, fontSize:'11px' }}>{pt?.short}</span></td>
-                <td style={s.td}>{state.fee===0?'Free':'$'+state.fee}</td>
-                <td style={s.td}>{state.trainingHours===0?'—':state.trainingHours+'h'}</td>
-                <td style={s.td}>{state.honors.length}</td>
-                <td style={{ ...s.td, color:C.gold, fontWeight:600 }}>{state.honoredBy?.length??0}</td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
     </div>
   )
 }

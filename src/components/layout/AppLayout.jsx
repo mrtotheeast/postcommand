@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useTheme } from '../../context/ThemeContext'
 import { useNotifications } from '../../context/NotificationContext'
-import { NAV_ITEMS, ROLE_LABELS } from '../../config/roles'
+import { NAV_ITEMS, ROLE_LABELS, atLeast } from '../../config/roles'
 import Icon from '../ui/Icon'
 import Badge from '../ui/Badge'
 

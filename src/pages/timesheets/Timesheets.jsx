@@ -138,7 +138,7 @@ export default function Timesheets() {
     URL.revokeObjectURL(url)
   }
 
-  const selStyle = { padding:'0 10px', background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-md)', color:'var(--text-primary)', fontSize:'12px', height:'40px', cursor:'pointer' }
+  // selStyle moved to module scope below
 
   return (
     <div style={{padding:'24px',animation:'fadeIn 200ms ease'}}>
@@ -210,6 +210,8 @@ export default function Timesheets() {
     </div>
   )
 }
+
+const selStyle = { padding:'0 10px', background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-md)', color:'var(--text-primary)', fontSize:'12px', height:'40px', cursor:'pointer' }
 
 function TimesheetRow({ts,isLast,empName,siteName,onClick}) {
   const ss=STATUS_STYLES[ts.status]||STATUS_STYLES.pending
