@@ -1,16 +1,29 @@
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useNotifications } from '../../context/NotificationContext'
+import { supabase } from '../../lib/supabase'
 import { DASHBOARD_TILES, ROLE_LABELS } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
 import Badge from '../../components/ui/Badge'
 
 export default function Dashboard() {
-  const { profile } = useAuth()
+  const { profile, effectiveRole } = useAuth()
   const { badges } = useNotifications()
   const navigate = useNavigate()
-  const role = profile?.role
-  const tiles = DASHBOARD_TILES.filter(t => t.roles.includes(role))
+
+  // Route to role-specific dashboard
+  if (effectiveRole === 'client')   return <ClientDashboard profile={profile} />
+  if (effectiveRole === 'corporal') return <CorporalDashboard profile={profile} badges={badges} navigate={navigate} />
+  if (effectiveRole === 'officer')  return <OfficerDashboard profile={profile} badges={badges} navigate={navigate} />
+
+  return <MainDashboard profile={profile} effectiveRole={effectiveRole} badges={badges} navigate={navigate} />
+}
+
+// ── Main Dashboard (Chief / Lieutenant / Sergeant / HR / Accounting) ──────────
+
+function MainDashboard({ profile, effectiveRole, badges, navigate }) {
+  const tiles = DASHBOARD_TILES.filter(t => t.roles.includes(effectiveRole))
   const now = new Date()
   const hour = now.getHours()
   const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening'
@@ -33,12 +46,12 @@ export default function Dashboard() {
         <div>
           <div style={{fontSize:'12px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)'}}>{greeting},</div>
           <div style={{fontFamily:'var(--font-display)',fontSize:'32px',letterSpacing:'2px',color:'var(--text-primary)',lineHeight:1.1,margin:'2px 0 4px'}}>{profile?.first_name ?? 'Officer'}</div>
-          <div style={{fontSize:'12px',color:'var(--text-muted)'}}>{ROLE_LABELS[role]} · {dateStr}</div>
+          <div style={{fontSize:'12px',color:'var(--text-muted)'}}>{ROLE_LABELS[effectiveRole]} · {dateStr}</div>
         </div>
         <div style={{fontFamily:'var(--font-display)',fontSize:'28px',letterSpacing:'2px',color:'var(--accent)',lineHeight:1,flexShrink:0}}>{timeStr}</div>
       </div>
 
-      <StatCards role={role} badges={badges} />
+      <StatCards role={effectiveRole} badges={badges} />
 
       <div style={{fontSize:'10px',color:'var(--text-muted)',letterSpacing:'1.5px',textTransform:'uppercase',fontFamily:'var(--font-condensed)',marginBottom:'10px'}}>Quick Access</div>
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:'12px'}}>
@@ -101,6 +114,230 @@ function StatCards({ role, badges }) {
             <div style={{fontSize:'11px',color:'var(--text-muted)',marginTop:'4px'}}>{c.sub}</div>
           </div>
         ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Officer Dashboard ─────────────────────────────────────────────────────────
+
+function OfficerDashboard({ profile, badges, navigate }) {
+  const now = new Date()
+  const hour = now.getHours()
+  const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening'
+  const dateStr = now.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})
+
+  return (
+    <div style={{padding:'24px',maxWidth:'800px',animation:'fadeIn 200ms ease'}}>
+      <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}`}</style>
+      <div style={{marginBottom:'28px'}}>
+        <div style={{fontSize:'12px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)'}}>{greeting},</div>
+        <div style={{fontFamily:'var(--font-display)',fontSize:'32px',letterSpacing:'2px',color:'var(--text-primary)',lineHeight:1.1,margin:'2px 0 4px'}}>{profile?.first_name ?? 'Officer'}</div>
+        <div style={{fontSize:'12px',color:'var(--text-muted)'}}>Officer · {dateStr}</div>
+      </div>
+
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(180px,1fr))',gap:'12px'}}>
+        {[
+          {label:'Clock In / Out',desc:'Start or end your shift',path:'/clockin',icon:'log-in',color:'#3aaa6a'},
+          {label:'My Schedule',desc:'View your upcoming shifts',path:'/scheduling',icon:'calendar',color:'#5b9fe0'},
+          {label:'My Timesheets',desc:'Review your hours',path:'/timesheets',icon:'clock',color:'var(--accent)'},
+          {label:'File Incident',desc:'Submit a field report',path:'/incidents',icon:'file-check',color:'#e05555'},
+          {label:'Patrol Log',desc:'Log patrol checkpoints',path:'/patrol',icon:'activity',color:'#5b9fe0'},
+          {label:'SOS',desc:'Emergency alert',path:'/sos',icon:'alert-triangle',color:'#e05555'},
+          {label:'Messaging',desc:'Team communication',path:'/messaging',icon:'message-circle',color:'#a07ae0',badge:badges.unread_messages},
+          {label:'Training',desc:'My assigned courses',path:'/training',icon:'book-open',color:'#3aaa6a'},
+        ].map(t => (
+          <button key={t.path} onClick={() => navigate(t.path)}
+            style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'16px',textAlign:'left',cursor:'pointer',transition:'all 150ms ease',display:'flex',flexDirection:'column',gap:'6px'}}
+            onMouseEnter={e => { e.currentTarget.style.borderColor='var(--accent-border)'; e.currentTarget.style.background='var(--bg-card-hover)' }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor='var(--border-subtle)'; e.currentTarget.style.background='var(--bg-card)' }}
+          >
+            <div style={{width:'34px',height:'34px',borderRadius:'8px',background:`${t.color}22`,display:'flex',alignItems:'center',justifyContent:'center',marginBottom:'2px'}}>
+              <Icon name={t.icon} size={18} color={t.color}/>
+            </div>
+            <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-primary)',display:'flex',alignItems:'center',gap:'6px'}}>
+              {t.label}{t.badge > 0 && <Badge count={t.badge}/>}
+            </div>
+            <div style={{fontSize:'11px',color:'var(--text-muted)'}}>{t.desc}</div>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Corporal Dashboard ────────────────────────────────────────────────────────
+
+function CorporalDashboard({ profile, badges, navigate }) {
+  const [teamStatus, setTeamStatus] = useState([])
+  const [pendingTS, setPendingTS] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const now = new Date()
+  const hour = now.getHours()
+  const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening'
+
+  useEffect(() => {
+    if (!profile?.company_id) return
+    const today = new Date().toISOString().slice(0,10)
+    Promise.all([
+      supabase.from('timesheet').select('id,employee_id,clock_in,clock_out,status').eq('company_id', profile.company_id).eq('date', today),
+      supabase.from('timesheet').select('id').eq('company_id', profile.company_id).eq('status','pending'),
+    ]).then(([{data: ts}, {data: pending}]) => {
+      setTeamStatus(ts||[])
+      setPendingTS(pending?.length||0)
+      setLoading(false)
+    })
+  }, [profile])
+
+  const clockedIn = teamStatus.filter(t => t.clock_in && !t.clock_out).length
+  const clockedOut = teamStatus.filter(t => t.clock_in && t.clock_out).length
+
+  return (
+    <div style={{padding:'24px',maxWidth:'900px',animation:'fadeIn 200ms ease'}}>
+      <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}`}</style>
+      <div style={{marginBottom:'24px'}}>
+        <div style={{fontSize:'12px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)'}}>{greeting},</div>
+        <div style={{fontFamily:'var(--font-display)',fontSize:'32px',letterSpacing:'2px',color:'var(--text-primary)',lineHeight:1.1,margin:'2px 0 4px'}}>{profile?.first_name ?? 'Corporal'}</div>
+        <div style={{fontSize:'12px',color:'var(--text-muted)'}}>Corporal · {new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}</div>
+      </div>
+
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))',gap:'12px',marginBottom:'24px'}}>
+        {[
+          {label:'Clocked In Today',value:clockedIn,color:'var(--color-success)'},
+          {label:'Completed Shifts',value:clockedOut,color:'var(--text-primary)'},
+          {label:'Pending Timesheets',value:pendingTS,color:pendingTS>0?'var(--color-warning)':'var(--text-secondary)'},
+          {label:'Messages',value:badges.unread_messages||0,color:badges.unread_messages>0?'#5b9fe0':'var(--text-secondary)'},
+        ].map((c,i) => (
+          <div key={i} style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'16px'}}>
+            <div style={{fontSize:'10px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',marginBottom:'6px'}}>{c.label}</div>
+            <div style={{fontFamily:'var(--font-display)',fontSize:'28px',color:c.color,lineHeight:1}}>{loading?'—':c.value}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{fontSize:'10px',color:'var(--text-muted)',letterSpacing:'1.5px',textTransform:'uppercase',fontFamily:'var(--font-condensed)',marginBottom:'10px'}}>Quick Access</div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(180px,1fr))',gap:'12px'}}>
+        {[
+          {label:'Clock In / Out',desc:'Start or end your shift',path:'/clockin',icon:'log-in',color:'#3aaa6a'},
+          {label:'Timesheets',desc:'Approve team timesheets',path:'/timesheets',icon:'clock',color:'var(--accent)',badge:pendingTS},
+          {label:'Schedule',desc:'Team schedule view',path:'/scheduling',icon:'calendar',color:'#5b9fe0'},
+          {label:'Incidents',desc:'View and file incidents',path:'/incidents',icon:'file-check',color:'#e05555',badge:badges.open_incidents},
+          {label:'Patrol Logs',desc:'Team patrol activity',path:'/patrol',icon:'activity',color:'#5b9fe0'},
+          {label:'SOS',desc:'Emergency alert',path:'/sos',icon:'alert-triangle',color:'#e05555'},
+          {label:'Messaging',desc:'Team communication',path:'/messaging',icon:'message-circle',color:'#a07ae0',badge:badges.unread_messages},
+          {label:'Training',desc:'Team training progress',path:'/training',icon:'book-open',color:'#3aaa6a'},
+        ].map(t => (
+          <button key={t.path} onClick={() => navigate(t.path)}
+            style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'16px',textAlign:'left',cursor:'pointer',transition:'all 150ms ease',display:'flex',flexDirection:'column',gap:'6px'}}
+            onMouseEnter={e => { e.currentTarget.style.borderColor='var(--accent-border)'; e.currentTarget.style.background='var(--bg-card-hover)' }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor='var(--border-subtle)'; e.currentTarget.style.background='var(--bg-card)' }}
+          >
+            <div style={{width:'34px',height:'34px',borderRadius:'8px',background:`${t.color}22`,display:'flex',alignItems:'center',justifyContent:'center',marginBottom:'2px'}}>
+              <Icon name={t.icon} size={18} color={t.color}/>
+            </div>
+            <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-primary)',display:'flex',alignItems:'center',gap:'6px'}}>
+              {t.label}{t.badge > 0 && <Badge count={t.badge}/>}
+            </div>
+            <div style={{fontSize:'11px',color:'var(--text-muted)'}}>{t.desc}</div>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Client Dashboard ──────────────────────────────────────────────────────────
+
+function ClientDashboard({ profile }) {
+  const navigate = useNavigate()
+  const [data, setData] = useState({ sites:[], incidents:[], patrols:[] })
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!profile?.company_id) return
+    const since = new Date(Date.now() - 30*86400000).toISOString()
+    Promise.all([
+      supabase.from('site').select('id,name,address,status').eq('company_id', profile.company_id).limit(10),
+      supabase.from('incident_report').select('id,incident_type,status,created_at,site_id').eq('company_id', profile.company_id).gte('created_at', since).order('created_at',{ascending:false}).limit(10),
+      supabase.from('patrol_log').select('id,site_id,started_at,ended_at,status').eq('company_id', profile.company_id).gte('started_at', since).order('started_at',{ascending:false}).limit(8),
+    ]).then(([{data:sites},{data:incidents},{data:patrols}]) => {
+      setData({ sites:sites||[], incidents:incidents||[], patrols:patrols||[] })
+      setLoading(false)
+    })
+  }, [profile])
+
+  const fmtDate = d => d ? new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '—'
+
+  return (
+    <div style={{padding:'24px',maxWidth:'1000px',animation:'fadeIn 200ms ease'}}>
+      <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}`}</style>
+      <div style={{marginBottom:'24px'}}>
+        <div style={{fontFamily:'var(--font-display)',fontSize:'28px',letterSpacing:'2px',color:'var(--text-primary)',lineHeight:1}}>CLIENT PORTAL</div>
+        <div style={{fontSize:'12px',color:'var(--text-muted)',marginTop:'4px'}}>Security activity for your account · Last 30 days</div>
+      </div>
+
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px',marginBottom:'20px'}}>
+        <div>
+          <div style={{fontSize:'10px',color:'var(--text-muted)',letterSpacing:'1.5px',textTransform:'uppercase',fontFamily:'var(--font-condensed)',marginBottom:'10px'}}>Your Sites</div>
+          <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+            {loading ? <div style={{color:'var(--text-muted)',fontSize:'12px'}}>Loading...</div> :
+              data.sites.length === 0 ? <div style={{color:'var(--text-muted)',fontSize:'13px',padding:'16px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)'}}>No sites on file.</div> :
+              data.sites.map(site => (
+                <div key={site.id} style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'12px 14px',display:'flex',alignItems:'center',gap:'10px'}}>
+                  <div style={{width:'8px',height:'8px',borderRadius:'50%',background:site.status==='active'?'var(--color-success)':'var(--border)',flexShrink:0}}/>
+                  <div>
+                    <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-primary)'}}>{site.name}</div>
+                    {site.address && <div style={{fontSize:'11px',color:'var(--text-muted)'}}>{site.address}</div>}
+                  </div>
+                </div>
+              ))
+            }
+          </div>
+        </div>
+
+        <div>
+          <div style={{fontSize:'10px',color:'var(--text-muted)',letterSpacing:'1.5px',textTransform:'uppercase',fontFamily:'var(--font-condensed)',marginBottom:'10px'}}>Recent Incidents</div>
+          <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
+            {loading ? <div style={{color:'var(--text-muted)',fontSize:'12px'}}>Loading...</div> :
+              data.incidents.length === 0 ? <div style={{color:'var(--text-muted)',fontSize:'13px',padding:'16px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)'}}>No incidents in the last 30 days.</div> :
+              data.incidents.slice(0,5).map(inc => (
+                <div key={inc.id} style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'10px 14px'}}>
+                  <div style={{fontSize:'12px',fontWeight:600,color:'var(--text-primary)',textTransform:'capitalize'}}>{inc.incident_type?.replace(/_/g,' ') || 'Incident'}</div>
+                  <div style={{fontSize:'11px',color:'var(--text-muted)',marginTop:'2px',display:'flex',gap:'10px'}}>
+                    <span>{fmtDate(inc.created_at)}</span>
+                    <span style={{color:inc.status==='closed'?'var(--color-success)':'var(--color-warning)',fontWeight:600}}>{inc.status}</span>
+                  </div>
+                </div>
+              ))
+            }
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div style={{fontSize:'10px',color:'var(--text-muted)',letterSpacing:'1.5px',textTransform:'uppercase',fontFamily:'var(--font-condensed)',marginBottom:'10px'}}>Recent Patrol Activity</div>
+        <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',overflow:'hidden'}}>
+          {loading ? <div style={{padding:'16px',color:'var(--text-muted)',fontSize:'12px'}}>Loading...</div> :
+            data.patrols.length === 0 ? <div style={{padding:'16px',color:'var(--text-muted)',fontSize:'13px'}}>No patrol activity in the last 30 days.</div> :
+            data.patrols.map((p,i) => (
+              <div key={p.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 14px',borderBottom:i<data.patrols.length-1?'1px solid var(--border)':'none'}}>
+                <div style={{fontSize:'12px',color:'var(--text-primary)',fontWeight:500}}>Patrol Session</div>
+                <div style={{fontSize:'11px',color:'var(--text-muted)',display:'flex',gap:'12px'}}>
+                  <span>{fmtDate(p.started_at)}</span>
+                  <span style={{color:p.status==='completed'?'var(--color-success)':'var(--color-info)',fontWeight:600,fontFamily:'var(--font-condensed)',fontSize:'10px'}}>{p.status?.toUpperCase()}</span>
+                </div>
+              </div>
+            ))
+          }
+        </div>
+      </div>
+
+      <div style={{marginTop:'20px',padding:'16px 20px',background:'var(--accent-bg)',border:'1px solid var(--accent-border)',borderRadius:'var(--radius-md)',display:'flex',gap:'16px',alignItems:'center',flexWrap:'wrap'}}>
+        <Icon name="phone" size={20} color="var(--accent)"/>
+        <div>
+          <div style={{fontSize:'13px',fontWeight:600,color:'var(--accent)',fontFamily:'var(--font-condensed)',letterSpacing:'1px'}}>CONTACT YOUR ACCOUNT MANAGER</div>
+          <div style={{fontSize:'12px',color:'var(--text-muted)',marginTop:'2px'}}>Nationwide Police Services · nationwide.police.services@gmail.com</div>
+        </div>
       </div>
     </div>
   )

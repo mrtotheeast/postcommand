@@ -222,8 +222,8 @@ export default function Reports() {
       <p style={s.sub}>Operational summary for your organization.</p>
 
       <div style={s.toolbar}>
-        <div style={{ display:'flex', gap:'2px', background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-sm)', padding:'3px' }}>
-          {[['ops','Operations'],['financial','Financial'],['performance','Performance']].map(([v,l]) => (
+        <div style={{ display:'flex', gap:'2px', background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-sm)', padding:'3px', flexWrap:'wrap' }}>
+          {[['ops','Operations'],['financial','Financial'],['performance','Performance'],['ai','AI Summary'],['automation','Automation'],['site','Site Reports']].map(([v,l]) => (
             <button key={v} onClick={() => setMainSection(v)} style={{ padding:'0 14px', height:'34px', border:'none', borderRadius:'4px', background:mainSection===v?'var(--accent-bg)':'transparent', color:mainSection===v?'var(--accent)':'var(--text-muted)', cursor:'pointer', fontSize:'11px', fontFamily:'var(--font-condensed)', fontWeight:mainSection===v?700:400, letterSpacing:'1px' }}>{l.toUpperCase()}</button>
           ))}
         </div>
@@ -244,6 +244,9 @@ export default function Reports() {
 
       {mainSection === 'financial'   && <FinancialTab companyId={profile?.company_id} period={period} />}
       {mainSection === 'performance' && <PerformanceTab companyId={profile?.company_id} period={period} />}
+      {mainSection === 'ai'          && <AIReportTab companyId={profile?.company_id} computed={computed} period={period} periodLabel={periodLabel} />}
+      {mainSection === 'automation'  && <ReportAutomationTab companyId={profile?.company_id} />}
+      {mainSection === 'site'        && <SiteReportsTab companyId={profile?.company_id} />}
       {mainSection === 'ops' && <>
 
 
@@ -625,6 +628,302 @@ function SheetsBtn({ rows, title, type }) {
       {err && (
         <div style={{ position:'absolute', top:'calc(100% + 6px)', right:0, background:'var(--bg-card)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', padding:'10px 14px', fontSize:'11px', color:'var(--color-warning)', maxWidth:'320px', zIndex:10, boxShadow:'var(--shadow-card)' }}>
           {err}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── AI Report Tab ─────────────────────────────────────────────────────────────
+
+function AIReportTab({ companyId, computed, period, periodLabel }) {
+  const [report, setReport]   = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError]     = useState(null)
+
+  async function generate() {
+    if (!computed) return
+    setLoading(true); setError(null)
+    try {
+      const { incidents, timesheets, patrols, totalHours, activeEmployees, incTypeChart, topHours } = computed
+      const prompt = `You are a security operations analyst. Generate an executive summary report for ${periodLabel} with this data:
+- Total incidents: ${incidents.length}
+- Top incident types: ${incTypeChart.slice(0,3).map(d=>d.label+' ('+d.value+')').join(', ')}
+- Total hours worked: ${Math.round(totalHours)}h across ${timesheets.filter(t=>t.clock_out).length} shifts
+- Total patrols: ${patrols.length}
+- Active officers: ${activeEmployees}
+- Top officers by hours: ${topHours.slice(0,3).map(d=>d.label+' ('+d.value+'h)').join(', ')}
+
+Provide a structured executive report with sections:
+1. Executive Summary (2-3 sentences)
+2. Key Metrics highlights
+3. Incident Analysis (trends and concerns)
+4. Staffing & Operations
+5. Recommendations (3 specific, actionable items)
+
+Return as JSON: {"summary":"...","metrics":"...","incidents":"...","staffing":"...","recommendations":["...","...","..."]}`
+
+      const { data, error: fnErr } = await supabase.functions.invoke('ai-assistant', {
+        body: { messages: [{ role:'user', content: prompt }], model:'claude-sonnet-4-6' }
+      })
+      if (fnErr) throw new Error(fnErr.message)
+      const text = data?.content?.[0]?.text || data?.text || ''
+      const match = text.match(/\{[\s\S]*\}/)
+      if (!match) throw new Error('Unexpected response format')
+      setReport(JSON.parse(match[0]))
+    } catch(e) {
+      setError(`${e.message} — deploy the ai-assistant edge function to enable this.`)
+    }
+    setLoading(false)
+  }
+
+  return (
+    <div>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'16px', flexWrap:'wrap', gap:'10px' }}>
+        <div>
+          <div style={{ fontFamily:'var(--font-display)', fontSize:'20px', letterSpacing:'2px', color:'var(--text-primary)' }}>AI EXECUTIVE SUMMARY</div>
+          <div style={{ fontSize:'12px', color:'var(--text-muted)', marginTop:'3px' }}>{periodLabel} · Powered by Claude</div>
+        </div>
+        <button onClick={generate} disabled={loading||!computed}
+          style={{ display:'inline-flex', alignItems:'center', gap:'8px', background:'var(--accent)', color:'var(--text-inverse)', border:'none', borderRadius:'var(--radius-sm)', padding:'0 18px', height:'42px', fontFamily:'var(--font-condensed)', fontSize:'13px', fontWeight:700, letterSpacing:'1px', cursor:'pointer', opacity:(loading||!computed)?0.6:1 }}>
+          <Icon name="zap" size={15}/>{loading?'GENERATING...':'GENERATE AI REPORT'}
+        </button>
+      </div>
+      {error && <div style={{ padding:'10px 14px', borderRadius:'var(--radius-sm)', marginBottom:'14px', fontSize:'12px', background:'var(--color-danger-bg)', color:'var(--color-danger)', border:'1px solid rgba(192,57,43,0.3)' }}>{error}</div>}
+      {!report && !loading && <div style={{ ...s.chartCard, color:'var(--text-muted)', fontSize:'13px', textAlign:'center', padding:'40px' }}>Click "Generate AI Report" to create an executive summary based on your {periodLabel} data.</div>}
+      {report && (
+        <div style={{ display:'flex', flexDirection:'column', gap:'12px' }}>
+          {[
+            { title:'Executive Summary', content:report.summary },
+            { title:'Key Metrics', content:report.metrics },
+            { title:'Incident Analysis', content:report.incidents },
+            { title:'Staffing & Operations', content:report.staffing },
+          ].filter(s => s.content).map(section => (
+            <div key={section.title} style={{ ...s.chartCard }}>
+              <div style={s.chartTitle}>{section.title}</div>
+              <div style={{ fontSize:'13px', color:'var(--text-secondary)', lineHeight:1.7 }}>{section.content}</div>
+            </div>
+          ))}
+          {report.recommendations?.length > 0 && (
+            <div style={{ ...s.chartCard }}>
+              <div style={s.chartTitle}>Recommendations</div>
+              <ol style={{ margin:0, paddingLeft:'20px', display:'flex', flexDirection:'column', gap:'8px' }}>
+                {report.recommendations.map((r, i) => (
+                  <li key={i} style={{ fontSize:'13px', color:'var(--text-secondary)', lineHeight:1.6 }}>{r}</li>
+                ))}
+              </ol>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Report Automation Tab ─────────────────────────────────────────────────────
+
+function ReportAutomationTab({ companyId }) {
+  const KEY = `pc-report-auto-${companyId}`
+  const [automations, setAutomations] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [showAdd, setShowAdd] = useState(false)
+  const [saving, setSaving]   = useState(false)
+  const [form, setForm] = useState({ report_type:'Weekly Summary', recipients:'', schedule:'weekly_monday', format:'PDF', enabled:true })
+  const foc = e=>{e.target.style.borderColor='var(--border-focus)'}
+  const blr = e=>{e.target.style.borderColor='var(--border)'}
+  const inp = { background:'var(--bg-input)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', padding:'9px 12px', fontSize:'13px', color:'var(--text-primary)', outline:'none', width:'100%', fontFamily:'var(--font-body)' }
+
+  useEffect(() => { if (companyId) load() }, [companyId])
+
+  async function load() {
+    setLoading(true)
+    const { data } = await supabase.from('report_automation').select('*').eq('company_id', companyId).order('created_at', {ascending:false})
+    setAutomations(data||[])
+    setLoading(false)
+  }
+
+  async function save() {
+    if (!form.recipients.trim()) return
+    setSaving(true)
+    const { error } = await supabase.from('report_automation').insert({ company_id:companyId, ...form })
+    setSaving(false)
+    if (error) { alert(error.message); return }
+    setShowAdd(false); setForm({ report_type:'Weekly Summary', recipients:'', schedule:'weekly_monday', format:'PDF', enabled:true }); load()
+  }
+
+  async function toggle(id, enabled) {
+    await supabase.from('report_automation').update({ enabled }).eq('id', id)
+    load()
+  }
+
+  async function del(id) {
+    if (!window.confirm('Delete this automation?')) return
+    await supabase.from('report_automation').delete().eq('id', id)
+    load()
+  }
+
+  if (loading) return <div style={{ color:'var(--text-muted)', fontSize:'12px' }}>Loading...</div>
+
+  return (
+    <div>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'16px', flexWrap:'wrap', gap:'10px' }}>
+        <div>
+          <div style={{ fontFamily:'var(--font-display)', fontSize:'20px', letterSpacing:'2px', color:'var(--text-primary)' }}>REPORT AUTOMATION</div>
+          <div style={{ fontSize:'12px', color:'var(--text-muted)', marginTop:'3px' }}>Schedule automatic report delivery</div>
+        </div>
+        <button onClick={()=>setShowAdd(true)} style={{ display:'inline-flex', alignItems:'center', gap:'8px', background:'var(--accent)', color:'var(--text-inverse)', border:'none', borderRadius:'var(--radius-sm)', padding:'0 16px', height:'40px', fontFamily:'var(--font-condensed)', fontSize:'12px', fontWeight:700, letterSpacing:'1px', cursor:'pointer' }}>
+          <Icon name="plus" size={13}/>ADD AUTOMATION
+        </button>
+      </div>
+
+      {showAdd && (
+        <div style={{ ...s.chartCard, marginBottom:'16px' }}>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', marginBottom:'10px' }}>
+            <div>
+              <div style={{ fontSize:'11px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', marginBottom:'4px' }}>Report Type</div>
+              <select style={{...inp,cursor:'pointer'}} value={form.report_type} onChange={e=>setForm(p=>({...p,report_type:e.target.value}))} onFocus={foc} onBlur={blr}>
+                {['Weekly Summary','Monthly Summary','Incident Report','Payroll Summary'].map(t=><option key={t}>{t}</option>)}
+              </select>
+            </div>
+            <div>
+              <div style={{ fontSize:'11px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', marginBottom:'4px' }}>Schedule</div>
+              <select style={{...inp,cursor:'pointer'}} value={form.schedule} onChange={e=>setForm(p=>({...p,schedule:e.target.value}))} onFocus={foc} onBlur={blr}>
+                <option value="weekly_monday">Every Monday</option>
+                <option value="weekly_friday">Every Friday</option>
+                <option value="monthly_1">1st of Month</option>
+                <option value="monthly_15">15th of Month</option>
+              </select>
+            </div>
+            <div>
+              <div style={{ fontSize:'11px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', marginBottom:'4px' }}>Recipients (emails, comma-separated)</div>
+              <input style={inp} value={form.recipients} onChange={e=>setForm(p=>({...p,recipients:e.target.value}))} placeholder="admin@company.com, ops@company.com" onFocus={foc} onBlur={blr}/>
+            </div>
+            <div>
+              <div style={{ fontSize:'11px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', marginBottom:'4px' }}>Format</div>
+              <select style={{...inp,cursor:'pointer'}} value={form.format} onChange={e=>setForm(p=>({...p,format:e.target.value}))} onFocus={foc} onBlur={blr}>
+                <option>PDF</option><option>CSV</option>
+              </select>
+            </div>
+          </div>
+          <div style={{ display:'flex', gap:'8px' }}>
+            <button onClick={save} disabled={saving} style={{ display:'inline-flex', alignItems:'center', gap:'6px', background:'var(--accent)', color:'var(--text-inverse)', border:'none', borderRadius:'var(--radius-sm)', padding:'0 14px', height:'36px', fontFamily:'var(--font-condensed)', fontSize:'12px', fontWeight:700, cursor:'pointer', opacity:saving?0.6:1 }}><Icon name="save" size={13}/>{saving?'SAVING...':'SAVE'}</button>
+            <button onClick={()=>setShowAdd(false)} style={{ display:'inline-flex', alignItems:'center', gap:'6px', background:'transparent', color:'var(--text-secondary)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', padding:'0 12px', height:'36px', fontFamily:'var(--font-condensed)', fontSize:'12px', cursor:'pointer' }}>CANCEL</button>
+          </div>
+        </div>
+      )}
+
+      {automations.length === 0 ? (
+        <div style={{ ...s.chartCard, textAlign:'center', color:'var(--text-muted)', fontSize:'13px', padding:'40px' }}>No automations configured. Add one above.</div>
+      ) : (
+        <div style={{ display:'flex', flexDirection:'column', gap:'8px' }}>
+          {automations.map(a => (
+            <div key={a.id} style={{ ...s.chartCard, display:'flex', alignItems:'center', gap:'14px', flexWrap:'wrap' }}>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:'13px', fontWeight:600, color:'var(--text-primary)', marginBottom:'2px' }}>{a.report_type}</div>
+                <div style={{ fontSize:'12px', color:'var(--text-muted)' }}>{a.schedule?.replace(/_/g,' ')} · {a.format} · {a.recipients}</div>
+              </div>
+              <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
+                <span style={{ fontSize:'11px', fontWeight:700, padding:'2px 8px', borderRadius:'10px', background:a.enabled?'var(--color-success-bg)':'var(--border)', color:a.enabled?'var(--color-success)':'var(--text-muted)', fontFamily:'var(--font-condensed)' }}>{a.enabled?'ACTIVE':'PAUSED'}</span>
+                <button onClick={()=>toggle(a.id,!a.enabled)} style={{ background:'transparent', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', color:'var(--text-secondary)', cursor:'pointer', padding:'0 10px', height:'30px', fontFamily:'var(--font-condensed)', fontSize:'11px' }}>{a.enabled?'PAUSE':'RESUME'}</button>
+                <button onClick={()=>del(a.id)} style={{ background:'transparent', border:'none', color:'var(--text-muted)', cursor:'pointer', padding:'4px', display:'flex' }}><Icon name="trash-2" size={13}/></button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{ marginTop:'12px', fontSize:'11px', color:'var(--text-muted)', lineHeight:1.6 }}>
+        SQL: <code>CREATE TABLE report_automation (id UUID DEFAULT gen_random_uuid() PRIMARY KEY, company_id UUID NOT NULL, report_type TEXT, recipients TEXT, schedule TEXT, format TEXT DEFAULT 'PDF', enabled BOOLEAN DEFAULT true, created_at TIMESTAMPTZ DEFAULT NOW()); ALTER TABLE report_automation ENABLE ROW LEVEL SECURITY;</code>
+      </div>
+    </div>
+  )
+}
+
+// ── Site Reports Tab ──────────────────────────────────────────────────────────
+
+function SiteReportsTab({ companyId }) {
+  const [sites, setSites]     = useState([])
+  const [selectedSite, setSelectedSite] = useState('')
+  const [period, setPeriod]   = useState('7d')
+  const [report, setReport]   = useState(null)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (!companyId) return
+    supabase.from('site').select('id,name').eq('company_id', companyId).then(({ data }) => setSites(data||[]))
+  }, [companyId])
+
+  async function generate() {
+    if (!selectedSite || !companyId) return
+    setLoading(true)
+    const days = period === '7d' ? 7 : period === '30d' ? 30 : 90
+    const since = new Date(Date.now() - days*86400000).toISOString()
+    const [{ data:ts },{ data:inc },{ data:pat }] = await Promise.all([
+      supabase.from('timesheet').select('id,employee_id,clock_in,clock_out').eq('company_id',companyId).eq('site_id',selectedSite).gte('clock_in',since),
+      supabase.from('incident_report').select('id,incident_type,status,created_at').eq('company_id',companyId).eq('site_id',selectedSite).gte('created_at',since),
+      supabase.from('patrol_log').select('id,status,started_at,ended_at').eq('company_id',companyId).eq('site_id',selectedSite).gte('started_at',since),
+    ])
+    const totalHours = (ts||[]).filter(t=>t.clock_out).reduce((a,t)=>a+(new Date(t.clock_out)-new Date(t.clock_in))/3600000,0)
+    const completedPatrols = (pat||[]).filter(p=>p.status==='completed').length
+    setReport({ timesheets:ts||[], incidents:inc||[], patrols:pat||[], totalHours, completedPatrols })
+    setLoading(false)
+  }
+
+  const siteName = sites.find(s=>s.id===selectedSite)?.name || 'Site'
+
+  return (
+    <div>
+      <div style={{ fontFamily:'var(--font-display)', fontSize:'20px', letterSpacing:'2px', color:'var(--text-primary)', marginBottom:'4px' }}>WEEKLY SITE REPORTS</div>
+      <div style={{ fontSize:'12px', color:'var(--text-muted)', marginBottom:'16px' }}>Per-site activity summary</div>
+
+      <div style={{ display:'flex', gap:'10px', marginBottom:'16px', flexWrap:'wrap', alignItems:'flex-end' }}>
+        <div>
+          <div style={{ fontSize:'10px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', marginBottom:'5px' }}>Site</div>
+          <select style={s.sel} value={selectedSite} onChange={e=>setSelectedSite(e.target.value)}>
+            <option value="">Select a site...</option>
+            {sites.map(site=><option key={site.id} value={site.id}>{site.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <div style={{ fontSize:'10px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', marginBottom:'5px' }}>Period</div>
+          <select style={s.sel} value={period} onChange={e=>setPeriod(e.target.value)}>
+            <option value="7d">Last 7 Days</option>
+            <option value="30d">Last 30 Days</option>
+            <option value="90d">Last 90 Days</option>
+          </select>
+        </div>
+        <button onClick={generate} disabled={!selectedSite||loading}
+          style={{ display:'inline-flex', alignItems:'center', gap:'8px', background:'var(--accent)', color:'var(--text-inverse)', border:'none', borderRadius:'var(--radius-sm)', padding:'0 18px', height:'42px', fontFamily:'var(--font-condensed)', fontSize:'13px', fontWeight:700, letterSpacing:'1px', cursor:'pointer', opacity:(!selectedSite||loading)?0.6:1 }}>
+          <Icon name="bar-chart-2" size={15}/>{loading?'LOADING...':'GENERATE REPORT'}
+        </button>
+      </div>
+
+      {report && (
+        <div>
+          <div style={{ fontFamily:'var(--font-display)', fontSize:'16px', letterSpacing:'1px', color:'var(--accent)', marginBottom:'12px' }}>{siteName.toUpperCase()}</div>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))', gap:'10px', marginBottom:'16px' }}>
+            {[
+              { label:'Officer Hours', value:`${Math.round(report.totalHours)}h`, color:'var(--accent)' },
+              { label:'Shifts Worked', value:report.timesheets.length, color:'var(--text-primary)' },
+              { label:'Incidents', value:report.incidents.length, color:report.incidents.length>0?'var(--color-danger)':'var(--text-secondary)' },
+              { label:'Patrols Completed', value:report.completedPatrols, color:'var(--color-success)' },
+            ].map(k=>(
+              <div key={k.label} style={s.kpiCard}>
+                <div style={s.kpiLbl}>{k.label}</div>
+                <div style={{ ...s.kpiVal, fontSize:'26px', color:k.color }}>{k.value}</div>
+              </div>
+            ))}
+          </div>
+          {report.incidents.length > 0 && (
+            <div style={{ ...s.chartCard, marginBottom:'12px' }}>
+              <div style={s.chartTitle}>Incidents at this site</div>
+              {report.incidents.map((inc,i)=>(
+                <div key={inc.id} style={{ display:'flex', justifyContent:'space-between', padding:'7px 0', borderBottom:i<report.incidents.length-1?'1px solid var(--border)':'none', fontSize:'12px' }}>
+                  <span style={{ color:'var(--text-primary)', textTransform:'capitalize' }}>{inc.incident_type?.replace(/_/g,' ')}</span>
+                  <span style={{ color:'var(--text-muted)' }}>{new Date(inc.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric'})}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

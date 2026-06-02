@@ -49,7 +49,7 @@ const s = {
 }
 
 export default function AppLayout({ children }) {
-  const { profile, signOut } = useAuth()
+  const { profile, signOut, viewRole, switchViewAs, exitViewAs, effectiveRole } = useAuth()
   const { isDark, toggleTheme } = useTheme()
   const { badges, totalUnread, notifications, markAllRead } = useNotifications()
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -64,22 +64,7 @@ export default function AppLayout({ children }) {
   const location = useLocation()
   const navigate = useNavigate()
   const actualRole = profile?.role
-  // View As — UI-only role simulation, does not touch auth
-  const VIEW_AS_KEY = `pc-viewas-${profile?.id}`
-  const [viewRole, setViewRole] = useState(() => {
-    const saved = localStorage.getItem(VIEW_AS_KEY)
-    return saved || null
-  })
-  const role = viewRole || actualRole   // used everywhere below
-
-  function exitViewAs() {
-    localStorage.removeItem(VIEW_AS_KEY)
-    setViewRole(null)
-  }
-  function switchViewAs(newRole) {
-    localStorage.setItem(VIEW_AS_KEY, newRole)
-    setViewRole(newRole)
-  }
+  const role = effectiveRole   // used everywhere below for nav filtering
 
   const canViewAs = atLeast(actualRole, 'sergeant')
 
@@ -124,8 +109,15 @@ export default function AppLayout({ children }) {
         <div style={s.logo}>POST<span style={{color:'var(--text-primary)'}}>COMMAND</span></div>
         <div style={s.logoSub}>Security Workforce Management</div>
         {profile?.company_slug && (
-          <div style={{display:'inline-block',marginTop:'6px',fontSize:'10px',fontFamily:'var(--font-condensed)',letterSpacing:'1.5px',color:'var(--accent)',background:'var(--accent-bg)',border:'1px solid var(--accent-border)',borderRadius:'var(--radius-sm)',padding:'2px 8px'}}>
-            {profile.company_slug.toUpperCase()}
+          <div style={{display:'flex',alignItems:'center',gap:'6px',marginTop:'6px',flexWrap:'wrap'}}>
+            <div style={{display:'inline-block',fontSize:'10px',fontFamily:'var(--font-condensed)',letterSpacing:'1.5px',color:'var(--accent)',background:'var(--accent-bg)',border:'1px solid var(--accent-border)',borderRadius:'var(--radius-sm)',padding:'2px 8px'}}>
+              {profile.company_slug.toUpperCase()}
+            </div>
+            {profile?.company_id && (
+              <span style={{fontSize:'9px',color:'var(--text-muted)',fontFamily:'monospace',letterSpacing:'0.5px',opacity:0.7}}>
+                {profile.company_id.slice(0,8)}…
+              </span>
+            )}
           </div>
         )}
       </div>

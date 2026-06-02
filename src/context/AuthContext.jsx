@@ -9,6 +9,27 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [viewRole, setViewRoleState] = useState(null)
+
+  // Load persisted viewAs when profile is set
+  function loadViewAs(profileId) {
+    const saved = localStorage.getItem(`pc-viewas-${profileId}`)
+    setViewRoleState(saved || null)
+  }
+
+  function switchViewAs(newRole) {
+    if (!profile?.id) return
+    localStorage.setItem(`pc-viewas-${profile.id}`, newRole)
+    setViewRoleState(newRole)
+  }
+
+  function exitViewAs() {
+    if (!profile?.id) return
+    localStorage.removeItem(`pc-viewas-${profile.id}`)
+    setViewRoleState(null)
+  }
+
+  const effectiveRole = viewRole || profile?.role
 
   function loadProfile(userId) {
     return supabase
@@ -18,6 +39,7 @@ export function AuthProvider({ children }) {
       .single()
       .then(({ data }) => {
         setProfile(data)
+        if (data?.id) loadViewAs(data.id)
         setLoading(false)
       })
       .catch(() => {
@@ -82,9 +104,11 @@ export function AuthProvider({ children }) {
   }
 
   async function signOut() {
+    if (profile?.id) localStorage.removeItem(`pc-viewas-${profile.id}`)
     await supabase.auth.signOut()
     setUser(null)
     setProfile(null)
+    setViewRoleState(null)
   }
 
   return (
@@ -92,6 +116,10 @@ export function AuthProvider({ children }) {
       user, profile, loading,
       signIn, signOut,
       role: profile?.role,
+      effectiveRole,
+      viewRole,
+      switchViewAs,
+      exitViewAs,
       companyId: profile?.company_id,
       isAuthenticated: !!user
     }}>

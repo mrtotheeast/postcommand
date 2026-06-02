@@ -138,7 +138,7 @@ export default function Training() {
   if (loading) return <div style={{ padding:'24px' }}>{[...Array(4)].map((_,i) => <div key={i} className="skeleton" style={{ height:'120px', borderRadius:'10px', marginBottom:'12px' }} />)}</div>
 
   const TABS = [
-    ...(isAdmin ? [{ id:'library', label:'Course Library' }, { id:'assignments', label:`Assignments (${totalAssigned})` }, { id:'leaderboard', label:'Leaderboard' }, { id:'badges', label:'Badges' }, { id:'certificates', label:'Certificates' }] : []),
+    ...(isAdmin ? [{ id:'library', label:'Course Library' }, { id:'assignments', label:`Assignments (${totalAssigned})` }, { id:'leaderboard', label:'Leaderboard' }, { id:'badges', label:'Badges' }, { id:'certificates', label:'Certificates' }, { id:'ai', label:'AI Suggestions' }] : []),
     { id:'my', label:`My Training${myPending > 0 ? ` (${myPending})` : ''}` },
   ]
 
@@ -224,6 +224,7 @@ export default function Training() {
 
       {tab === 'badges' && <BadgesTab companyId={profile?.company_id} employees={employees} employee={employee} />}
       {tab === 'certificates' && <CertificatesTab companyId={profile?.company_id} courses={courses} employees={employees} assignments={assignments} />}
+      {tab === 'ai' && <AISuggestionsTab companyId={profile?.company_id} assignments={assignments} courses={courses} />}
 
       {tab === 'leaderboard' && (
         <Leaderboard assignments={assignments} employees={Object.values(empMap).length > 0 ? null : null} empMap={empMap} courses={courses} />
@@ -964,6 +965,85 @@ function CertificatesTab({ companyId, courses, employees, assignments }) {
           })}
         </div>
       }
+    </div>
+  )
+}
+
+
+// ── AI Suggestions Tab ────────────────────────────────────────────────────────
+
+function AISuggestionsTab({ companyId, assignments, courses }) {
+  const [suggestions, setSuggestions] = useState([])
+  const [loading, setLoading]         = useState(false)
+  const [error, setError]             = useState(null)
+  const [generated, setGenerated]     = useState(false)
+
+  const completedPct = assignments.length
+    ? Math.round((assignments.filter(a=>a.status==='completed').length / assignments.length) * 100)
+    : 0
+  const overdue = assignments.filter(a=>a.status==='overdue').length
+
+  async function generate() {
+    setLoading(true); setError(null); setSuggestions([])
+    try {
+      const prompt = `You are a security workforce training advisor. Suggest 4 training courses for a security company with: ${assignments.length} total assignments, ${completedPct}% completion rate, ${overdue} overdue, active courses: ${courses.filter(c=>c.status==='active').map(c=>c.title).join(', ')||'none'}. Return ONLY a JSON array: [{"title":"...","reason":"...","priority":"High|Medium|Low"}]`
+      const { data, error: fnErr } = await supabase.functions.invoke('ai-assistant', {
+        body: { messages: [{ role:'user', content: prompt }], model:'claude-sonnet-4-6' }
+      })
+      if (fnErr) throw new Error(fnErr.message || 'Edge function error')
+      const text = data?.content?.[0]?.text || data?.text || ''
+      const match = text.match(/\[[\s\S]*?\]/)
+      if (!match) throw new Error('Unexpected response format')
+      setSuggestions(JSON.parse(match[0]))
+      setGenerated(true)
+    } catch(e) {
+      setError(`${e.message} — deploy the ai-assistant Supabase edge function to enable this.`)
+    }
+    setLoading(false)
+  }
+
+  const pColors = { High:'var(--color-danger)', Medium:'var(--color-warning)', Low:'var(--color-info)' }
+
+  return (
+    <div style={{ padding:'0 0 24px' }}>
+      <div style={{ background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-md)', padding:'20px', marginBottom:'16px' }}>
+        <div style={{ fontFamily:'var(--font-condensed)', fontSize:'11px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1.5px', marginBottom:'12px' }}>Training Data Summary</div>
+        <div style={{ display:'flex', gap:'20px', flexWrap:'wrap', marginBottom:'16px' }}>
+          {[
+            { label:'Total Assigned', value:assignments.length },
+            { label:'Completion Rate', value:`${completedPct}%`, color:completedPct>=70?'var(--color-success)':'var(--color-warning)' },
+            { label:'Overdue', value:overdue, color:overdue>0?'var(--color-danger)':'var(--text-secondary)' },
+            { label:'Active Courses', value:courses.filter(c=>c.status==='active').length },
+          ].map(c => (
+            <div key={c.label}>
+              <div style={{ fontSize:'10px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', marginBottom:'4px' }}>{c.label}</div>
+              <div style={{ fontFamily:'var(--font-display)', fontSize:'22px', color:c.color||'var(--text-primary)' }}>{c.value}</div>
+            </div>
+          ))}
+        </div>
+        <button onClick={generate} disabled={loading}
+          style={{ display:'inline-flex', alignItems:'center', gap:'8px', background:'var(--accent)', color:'var(--text-inverse)', border:'none', borderRadius:'var(--radius-sm)', padding:'0 20px', height:'42px', fontFamily:'var(--font-condensed)', fontSize:'13px', fontWeight:700, letterSpacing:'1px', cursor:'pointer', opacity:loading?0.6:1 }}>
+          <Icon name="zap" size={15}/>{loading?'GENERATING...':'GENERATE AI SUGGESTIONS'}
+        </button>
+        {error && <div style={{ marginTop:'10px', fontSize:'12px', color:'var(--color-danger)', padding:'8px 12px', background:'var(--color-danger-bg)', borderRadius:'var(--radius-sm)', border:'1px solid rgba(192,57,43,0.3)' }}>{error}</div>}
+      </div>
+      {generated && suggestions.length > 0 && (
+        <div style={{ display:'flex', flexDirection:'column', gap:'10px' }}>
+          {suggestions.map((sg, i) => (
+            <div key={i} style={{ background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-md)', padding:'18px 20px' }}>
+              <div style={{ display:'flex', alignItems:'flex-start', gap:'12px', flexWrap:'wrap' }}>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontFamily:'var(--font-display)', fontSize:'16px', letterSpacing:'1px', color:'var(--text-primary)', marginBottom:'6px' }}>{sg.title}</div>
+                  <div style={{ fontSize:'13px', color:'var(--text-secondary)', lineHeight:1.6 }}>{sg.reason}</div>
+                </div>
+                <span style={{ fontSize:'11px', fontWeight:700, padding:'3px 10px', borderRadius:'10px', background:`${pColors[sg.priority]||'var(--color-info)'}22`, color:pColors[sg.priority]||'var(--color-info)', fontFamily:'var(--font-condensed)', flexShrink:0 }}>
+                  {(sg.priority||'Medium').toUpperCase()} PRIORITY
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

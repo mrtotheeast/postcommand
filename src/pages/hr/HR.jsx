@@ -177,6 +177,7 @@ export default function HR() {
           { id: 'violations',  label: 'Geofence Violations' },
           { id: 'recognition', label: 'Recognition' },
           { id: 'esignature',  label: 'E-Signature' },
+          { id: 'policies',   label: 'Policy Management' },
         ].map(t => (
           <button key={t.id} style={{ ...s.tab, ...(tab === t.id ? s.tabActive : {}) }} onClick={() => setTab(t.id)}>{t.label}</button>
         ))}
@@ -265,6 +266,10 @@ export default function HR() {
 
       {tab === 'esignature' && (
         <ESignatureTab employees={employees} companyId={profile.company_id} />
+      )}
+
+      {tab === 'policies' && (
+        <PolicyManagementTab companyId={profile.company_id} />
       )}
 
       {wuModal && (
@@ -849,6 +854,129 @@ function RecognitionTab({ companyId, profile, employees }) {
           )
         })
       }
+    </div>
+  )
+}
+
+// ── Policy Management Tab ─────────────────────────────────────────────────────
+
+const POLICY_CATEGORIES = ['Use of Force','Conduct','Emergency','Firearms','Uniforms','General','Compliance']
+
+function PolicyManagementTab({ companyId }) {
+  const [policies, setPolicies] = useState([])
+  const [loading, setLoading]   = useState(true)
+  const [showAdd, setShowAdd]   = useState(false)
+  const [saving, setSaving]     = useState(false)
+  const [summarizing, setSummarizing] = useState(null)
+  const [error, setError]       = useState(null)
+  const [form, setForm] = useState({ title:'', category:'General', content:'', file_url:'' })
+
+  useEffect(() => { if (companyId) load() }, [companyId])
+
+  async function load() {
+    setLoading(true)
+    const { data } = await supabase.from('company_policy').select('*').eq('company_id', companyId).order('category')
+    setPolicies(data||[])
+    setLoading(false)
+  }
+
+  async function save() {
+    if (!form.title.trim()) return
+    setSaving(true)
+    const { error: err } = await supabase.from('company_policy').insert({ company_id:companyId, title:form.title.trim(), category:form.category, content:form.content.trim()||null, file_url:form.file_url.trim()||null, updated_at:new Date().toISOString() })
+    setSaving(false)
+    if (err) { setError(err.message); return }
+    setShowAdd(false); setForm({ title:'', category:'General', content:'', file_url:'' }); load()
+  }
+
+  async function summarize(policy) {
+    if (!policy.content) return
+    setSummarizing(policy.id)
+    try {
+      const { data, error: fnErr } = await supabase.functions.invoke('ai-assistant', {
+        body: { messages: [{ role:'user', content:`Summarize this company policy in 2-3 sentences:\n\n${policy.content}` }], model:'claude-sonnet-4-6' }
+      })
+      if (fnErr) throw new Error(fnErr.message)
+      const summary = data?.content?.[0]?.text || data?.text || ''
+      await supabase.from('company_policy').update({ ai_summary:summary }).eq('id', policy.id)
+      load()
+    } catch(e) {
+      setError(`AI summary failed: ${e.message}`)
+    }
+    setSummarizing(null)
+  }
+
+  async function del(id) {
+    if (!window.confirm('Delete this policy?')) return
+    await supabase.from('company_policy').delete().eq('id', id)
+    load()
+  }
+
+  const inp = { background:'var(--bg-input)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', padding:'9px 12px', fontSize:'13px', color:'var(--text-primary)', outline:'none', width:'100%', fontFamily:'var(--font-body)', transition:'border-color 150ms ease' }
+  const lbl = { fontSize:'11px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', marginBottom:'4px' }
+
+  if (loading) return <div style={{padding:'20px',color:'var(--text-muted)',fontSize:'12px'}}>Loading...</div>
+
+  const grouped = POLICY_CATEGORIES.map(cat => ({ cat, items: policies.filter(p=>p.category===cat) })).filter(g=>g.items.length>0)
+
+  return (
+    <div>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'16px', flexWrap:'wrap', gap:'10px' }}>
+        <div style={{ fontSize:'12px', color:'var(--text-muted)' }}>{policies.length} polic{policies.length!==1?'ies':'y'} on file</div>
+        <button onClick={()=>setShowAdd(true)} style={{ display:'inline-flex', alignItems:'center', gap:'6px', background:'var(--accent)', color:'var(--text-inverse)', border:'none', borderRadius:'var(--radius-sm)', padding:'0 14px', height:'36px', fontFamily:'var(--font-condensed)', fontSize:'12px', fontWeight:700, letterSpacing:'1px', cursor:'pointer' }}>
+          <Icon name="plus" size={13}/>ADD POLICY
+        </button>
+      </div>
+
+      {error && <div style={{ padding:'8px 12px', borderRadius:'var(--radius-sm)', marginBottom:'12px', fontSize:'12px', background:'var(--color-danger-bg)', color:'var(--color-danger)', border:'1px solid rgba(192,57,43,0.3)' }}>{error}</div>}
+
+      {showAdd && (
+        <div style={{ background:'var(--bg-surface)', border:'1px solid var(--border)', borderRadius:'var(--radius-md)', padding:'16px', marginBottom:'16px' }}>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', marginBottom:'10px' }}>
+            <div><div style={lbl}>Title *</div><input style={inp} value={form.title} onChange={e=>setForm(p=>({...p,title:e.target.value}))} placeholder="Use of Force Policy"/></div>
+            <div><div style={lbl}>Category</div><select style={{...inp,cursor:'pointer'}} value={form.category} onChange={e=>setForm(p=>({...p,category:e.target.value}))}>{POLICY_CATEGORIES.map(c=><option key={c}>{c}</option>)}</select></div>
+            <div style={{gridColumn:'1/-1'}}><div style={lbl}>Content / Full Text (optional)</div><textarea style={{...inp,minHeight:'80px',resize:'vertical',lineHeight:1.5}} value={form.content} onChange={e=>setForm(p=>({...p,content:e.target.value}))}/></div>
+            <div style={{gridColumn:'1/-1'}}><div style={lbl}>File URL (optional)</div><input style={inp} value={form.file_url} onChange={e=>setForm(p=>({...p,file_url:e.target.value}))} placeholder="https://..."/></div>
+          </div>
+          <div style={{ display:'flex', gap:'8px' }}>
+            <button onClick={save} disabled={saving} style={{ display:'inline-flex', alignItems:'center', gap:'6px', background:'var(--accent)', color:'var(--text-inverse)', border:'none', borderRadius:'var(--radius-sm)', padding:'0 14px', height:'36px', fontFamily:'var(--font-condensed)', fontSize:'12px', fontWeight:700, cursor:'pointer', opacity:saving?0.6:1 }}><Icon name="save" size={13}/>{saving?'SAVING...':'SAVE'}</button>
+            <button onClick={()=>setShowAdd(false)} style={{ display:'inline-flex', alignItems:'center', gap:'6px', background:'transparent', color:'var(--text-secondary)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', padding:'0 12px', height:'36px', fontFamily:'var(--font-condensed)', fontSize:'12px', cursor:'pointer' }}>CANCEL</button>
+          </div>
+        </div>
+      )}
+
+      {policies.length === 0 ? (
+        <div style={{ textAlign:'center', padding:'40px', background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-md)', color:'var(--text-muted)', fontSize:'13px' }}>No policies on file. Add your first policy above.</div>
+      ) : (
+        grouped.map(({ cat, items }) => (
+          <div key={cat} style={{ marginBottom:'16px' }}>
+            <div style={{ fontSize:'10px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1.5px', fontFamily:'var(--font-condensed)', marginBottom:'8px', padding:'6px 0', borderBottom:'1px solid var(--border)' }}>{cat}</div>
+            {items.map(policy => (
+              <div key={policy.id} style={{ background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-md)', padding:'14px 16px', marginBottom:'6px' }}>
+                <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:'12px' }}>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontSize:'13px', fontWeight:600, color:'var(--text-primary)', marginBottom:'4px' }}>{policy.title}</div>
+                    {policy.ai_summary && <div style={{ fontSize:'12px', color:'var(--text-secondary)', lineHeight:1.5, marginBottom:'4px' }}>{policy.ai_summary}</div>}
+                    <div style={{ fontSize:'11px', color:'var(--text-muted)' }}>Updated {policy.updated_at ? new Date(policy.updated_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—'}</div>
+                    {policy.file_url && <a href={policy.file_url} target="_blank" rel="noreferrer" style={{ fontSize:'11px', color:'var(--accent)', display:'inline-flex', alignItems:'center', gap:'4px', marginTop:'4px' }}><Icon name="download" size={11}/>View Document</a>}
+                  </div>
+                  <div style={{ display:'flex', gap:'6px', flexShrink:0 }}>
+                    {policy.content && (
+                      <button onClick={()=>summarize(policy)} disabled={!!summarizing} style={{ display:'inline-flex', alignItems:'center', gap:'4px', background:'var(--accent-bg)', color:'var(--accent)', border:'1px solid var(--accent-border)', borderRadius:'var(--radius-sm)', padding:'0 10px', height:'30px', fontFamily:'var(--font-condensed)', fontSize:'11px', cursor:'pointer', opacity:summarizing===policy.id?0.6:1 }}>
+                        <Icon name="zap" size={11}/>{summarizing===policy.id?'THINKING...':'AI SUMMARY'}
+                      </button>
+                    )}
+                    <button onClick={()=>del(policy.id)} style={{ background:'transparent', border:'none', color:'var(--text-muted)', cursor:'pointer', padding:'4px', display:'flex' }}><Icon name="trash-2" size={13}/></button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ))
+      )}
+      <div style={{ marginTop:'16px', padding:'12px 14px', background:'var(--bg-surface)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', fontSize:'11px', color:'var(--text-muted)', lineHeight:1.6 }}>
+        SQL: <code>CREATE TABLE company_policy (id UUID DEFAULT gen_random_uuid() PRIMARY KEY, company_id UUID NOT NULL, title TEXT NOT NULL, category TEXT, content TEXT, file_url TEXT, ai_summary TEXT, updated_at TIMESTAMPTZ DEFAULT NOW()); ALTER TABLE company_policy ENABLE ROW LEVEL SECURITY;</code>
+      </div>
     </div>
   )
 }

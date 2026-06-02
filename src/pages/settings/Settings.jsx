@@ -70,6 +70,7 @@ const TABS = [
   { id:'integrations',  label:'Integrations',      icon:'link' },
   { id:'security',      label:'Security',          icon:'lock' },
   { id:'ai',            label:'AI Settings',       icon:'zap' },
+  { id:'licensing',     label:'State Licensing',   icon:'map-pin' },
 ]
 
 // ── Main export ───────────────────────────────────────────────────────────────
@@ -106,6 +107,7 @@ export default function Settings() {
           {tab === 'integrations'  && <IntegrationsTab  companyId={companyId} />}
           {tab === 'security'      && <SecurityTab      profile={profile} companyId={companyId} />}
           {tab === 'ai'            && <AITab            companyId={companyId} />}
+          {tab === 'licensing'     && <StateLicensingTab companyId={companyId} />}
         </div>
       </div>
     </div>
@@ -314,46 +316,7 @@ function TeamTab({ profile, companyId, theme, toggleTheme }) {
         </div>
       )}
 
-      <div style={s.card}>
-        <div style={s.cardTitle}>Roles & Permissions</div>
-        <div style={{ display:'flex', gap:'16px', marginBottom:'16px', flexWrap:'wrap' }}>
-          <div><div style={s.lbl}>Your Role</div><div style={{ fontSize:'14px', color:'var(--accent)', fontFamily:'var(--font-condensed)', fontWeight:700, letterSpacing:'0.5px', marginTop:'4px' }}>{ROLE_LABELS[profile?.role]||profile?.role}</div></div>
-          <div><div style={s.lbl}>Access Level</div><div style={{ fontSize:'14px', color:'var(--accent)', fontFamily:'var(--font-condensed)', fontWeight:700, letterSpacing:'0.5px', marginTop:'4px' }}>Level {ROLE_LEVELS[profile?.role]||0}</div></div>
-        </div>
-        <div style={{ overflowX:'auto' }}>
-          <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'12px' }}>
-            <thead>
-              <tr style={{ borderBottom:'2px solid var(--border)' }}>
-                {['Role','Level','Access'].map(h => <th key={h} style={{ textAlign:'left', padding:'8px 10px', fontSize:'10px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', fontWeight:600 }}>{h}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {[
-                { role:'Officer',     level:1, access:'Clock in/out, view own schedule, submit incidents and patrol logs' },
-                { role:'Corporal',    level:2, access:'Officer + approve timesheets, view team members' },
-                { role:'Sergeant',    level:3, access:'Corporal + manage schedules, edit employee records, view reports' },
-                { role:'Lieutenant',  level:4, access:'Sergeant + access training, view sensitive employee data, manage sites' },
-                { role:'Chief',       level:5, access:'Lieutenant + billing, invoices, all settings, hire/terminate' },
-                { role:'Super Admin', level:6, access:'Full platform access including company management and audit logs' },
-                { role:'HR',          level:2, access:'Employee records, onboarding, PTO, HR documents' },
-                { role:'Accounting',  level:2, access:'Invoices, billing, payroll export, financial reports' },
-                { role:'Client',      level:1, access:'Client portal only — incident reports, site activity for their contract' },
-              ].map((row, i) => (
-                <tr key={row.role} style={{ borderBottom:'1px solid var(--border)', background: profile?.role && ROLE_LABELS[profile.role]===row.role ? 'var(--accent-bg)' : 'transparent' }}>
-                  <td style={{ padding:'9px 10px', fontWeight:600, color: profile?.role && ROLE_LABELS[profile.role]===row.role ? 'var(--accent)' : 'var(--text-primary)', whiteSpace:'nowrap' }}>
-                    {row.role}{profile?.role && ROLE_LABELS[profile.role]===row.role && <span style={{ fontSize:'10px', marginLeft:'6px', fontFamily:'var(--font-condensed)', opacity:0.7 }}>← you</span>}
-                  </td>
-                  <td style={{ padding:'9px 10px', color:'var(--text-muted)', fontFamily:'var(--font-condensed)', fontWeight:700, fontSize:'11px' }}>{row.level}</td>
-                  <td style={{ padding:'9px 10px', color:'var(--text-secondary)', lineHeight:1.4 }}>{row.access}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div style={{ fontSize:'11px', color:'var(--text-muted)', marginTop:'12px', lineHeight:1.6 }}>
-          Role assignments are managed per-employee in the Employee Directory. Contact your Super Admin to change your own role.
-        </div>
-      </div>
+      <RolePermissionsMatrix companyId={companyId} profile={profile} />
     </>
   )
 }
@@ -807,5 +770,297 @@ function PositionsSection({ companyId }) {
         </>
       )}
     </div>
+  )
+}
+
+// ── Role Permissions Matrix ───────────────────────────────────────────────────
+
+const PERM_GROUPS = [
+  { group:'Operations', perms:[
+    { id:'view_dashboard',     label:'View Dashboard' },
+    { id:'manage_schedule',    label:'Manage Schedule' },
+    { id:'approve_timesheets', label:'Approve Timesheets' },
+    { id:'view_timesheets',    label:'View Timesheets' },
+    { id:'clock_in_out',       label:'Clock In / Out' },
+    { id:'view_incidents',     label:'View Incidents' },
+    { id:'create_incidents',   label:'Create Incidents' },
+    { id:'approve_incidents',  label:'Approve Incidents' },
+    { id:'view_patrol',        label:'View Patrol' },
+    { id:'create_patrol',      label:'Create Patrol' },
+  ]},
+  { group:'Personnel', perms:[
+    { id:'view_personnel',        label:'View Personnel' },
+    { id:'edit_personnel',        label:'Edit Personnel' },
+    { id:'invite_employees',      label:'Invite Employees' },
+    { id:'view_employee_profiles',label:'View Full Profiles' },
+  ]},
+  { group:'Admin', perms:[
+    { id:'view_invoices',    label:'View Invoices' },
+    { id:'create_invoices',  label:'Create Invoices' },
+    { id:'view_reports',     label:'View Reports' },
+    { id:'manage_sites',     label:'Manage Sites' },
+    { id:'manage_clients',   label:'Manage Clients' },
+    { id:'view_hr',          label:'View HR Docs' },
+    { id:'manage_hr',        label:'Manage HR' },
+    { id:'manage_settings',  label:'Manage Settings' },
+    { id:'manage_billing',   label:'Manage Billing' },
+  ]},
+  { group:'Field', perms:[
+    { id:'use_live_map', label:'Use Live Map' },
+    { id:'use_sos',      label:'Use SOS' },
+    { id:'view_ccw_map', label:'View CCW Map' },
+  ]},
+]
+const PERM_ROLES = ['officer','corporal','sergeant','lieutenant','chief']
+const PERM_ROLE_LABELS = { officer:'Officer', corporal:'Corporal', sergeant:'Sergeant', lieutenant:'Lieutenant', chief:'Chief' }
+
+const DEFAULT_PERMS = {
+  officer:    new Set(['view_dashboard','clock_in_out','view_timesheets','create_incidents','view_patrol','use_sos','view_ccw_map']),
+  corporal:   new Set(['view_dashboard','clock_in_out','view_timesheets','approve_timesheets','create_incidents','view_incidents','view_patrol','use_sos','view_personnel','view_ccw_map']),
+  sergeant:   new Set(['view_dashboard','clock_in_out','view_timesheets','approve_timesheets','manage_schedule','create_incidents','view_incidents','approve_incidents','view_patrol','create_patrol','use_sos','use_live_map','view_personnel','edit_personnel','invite_employees','view_employee_profiles','view_ccw_map']),
+  lieutenant: new Set(['view_dashboard','view_timesheets','approve_timesheets','manage_schedule','view_incidents','approve_incidents','view_patrol','create_patrol','use_sos','use_live_map','view_personnel','edit_personnel','invite_employees','view_employee_profiles','view_invoices','view_reports','manage_sites','manage_clients','view_hr','view_ccw_map']),
+  chief:      new Set(['view_dashboard','clock_in_out','view_timesheets','approve_timesheets','manage_schedule','view_incidents','create_incidents','approve_incidents','view_patrol','create_patrol','view_personnel','edit_personnel','invite_employees','view_employee_profiles','view_invoices','create_invoices','view_reports','manage_sites','manage_clients','view_hr','manage_hr','manage_settings','manage_billing','use_live_map','use_sos','view_ccw_map']),
+}
+
+function RolePermissionsMatrix({ companyId, profile }) {
+  const [matrix, setMatrix] = useState(() => {
+    const m = {}
+    PERM_ROLES.forEach(r => { m[r] = new Set(DEFAULT_PERMS[r]) })
+    return m
+  })
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg]       = useState(null)
+
+  useEffect(() => {
+    if (!companyId) return
+    supabase.from('role_permission').select('role,permission,enabled').eq('company_id', companyId).then(({ data }) => {
+      if (!data?.length) return
+      const m = {}
+      PERM_ROLES.forEach(r => { m[r] = new Set(DEFAULT_PERMS[r]) })
+      for (const row of data) {
+        if (!m[row.role]) m[row.role] = new Set()
+        if (row.enabled) m[row.role].add(row.permission)
+        else m[row.role].delete(row.permission)
+      }
+      setMatrix(m)
+    })
+  }, [companyId])
+
+  function toggle(role, perm) {
+    setMatrix(prev => {
+      const m = { ...prev, [role]: new Set(prev[role]) }
+      if (m[role].has(perm)) m[role].delete(perm)
+      else m[role].add(perm)
+      return m
+    })
+  }
+
+  async function save() {
+    setSaving(true); setMsg(null)
+    const rows = []
+    for (const role of PERM_ROLES) {
+      const allPerms = PERM_GROUPS.flatMap(g => g.perms.map(p => p.id))
+      for (const perm of allPerms) {
+        rows.push({ company_id:companyId, role, permission:perm, enabled:matrix[role].has(perm), updated_at:new Date().toISOString() })
+      }
+    }
+    const { error } = await supabase.from('role_permission').upsert(rows, { onConflict:'company_id,role,permission' })
+    setSaving(false)
+    setMsg(error ? { type:'err', text:error.message } : { type:'ok', text:'Permissions saved.' })
+    setTimeout(() => setMsg(null), 3000)
+  }
+
+  function reset() {
+    const m = {}
+    PERM_ROLES.forEach(r => { m[r] = new Set(DEFAULT_PERMS[r]) })
+    setMatrix(m)
+    setMsg({ type:'ok', text:'Reset to defaults. Click SAVE to persist.' })
+    setTimeout(() => setMsg(null), 3000)
+  }
+
+  return (
+    <div style={s.card}>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'14px', flexWrap:'wrap', gap:'10px' }}>
+        <div style={s.cardTitle}>Roles & Permissions</div>
+        <div style={{ display:'flex', gap:'8px' }}>
+          <button style={{ ...s.ghost, height:'34px', padding:'0 12px', fontSize:'11px' }} onClick={reset}>RESET TO DEFAULTS</button>
+          <button style={{ ...s.btn, height:'34px', padding:'0 14px', fontSize:'11px', opacity:saving?0.6:1 }} onClick={save} disabled={saving}>
+            <Icon name="save" size={12}/>{saving?'SAVING...':'SAVE PERMISSIONS'}
+          </button>
+        </div>
+      </div>
+      {msg && <Toast msg={msg.text} type={msg.type} />}
+      <div style={{ fontSize:'11px', color:'var(--text-muted)', marginBottom:'12px', lineHeight:1.5 }}>
+        Your role is <strong style={{color:'var(--accent)'}}>{ROLE_LABELS[profile?.role]||profile?.role}</strong>. Changes here affect UI gating — Supabase RLS policies are the authoritative security layer.
+      </div>
+      <div style={{ overflowX:'auto' }}>
+        <table style={{ borderCollapse:'collapse', fontSize:'12px', minWidth:'560px', width:'100%' }}>
+          <thead>
+            <tr style={{ borderBottom:'2px solid var(--border)' }}>
+              <th style={{ textAlign:'left', padding:'8px 10px', fontSize:'10px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', minWidth:'160px' }}>Permission</th>
+              {PERM_ROLES.map(r => (
+                <th key={r} style={{ textAlign:'center', padding:'8px 10px', fontSize:'10px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', minWidth:'76px' }}>{PERM_ROLE_LABELS[r]}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {PERM_GROUPS.map(group => (
+              <>
+                <tr key={`g-${group.group}`}>
+                  <td colSpan={PERM_ROLES.length+1} style={{ padding:'10px 10px 4px', fontSize:'9px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'2px', fontFamily:'var(--font-condensed)', fontWeight:700, background:'var(--bg-surface)' }}>{group.group}</td>
+                </tr>
+                {group.perms.map(perm => (
+                  <tr key={perm.id} style={{ borderBottom:'1px solid var(--border)' }}>
+                    <td style={{ padding:'7px 10px', color:'var(--text-secondary)', fontSize:'12px' }}>{perm.label}</td>
+                    {PERM_ROLES.map(role => (
+                      <td key={role} style={{ textAlign:'center', padding:'7px 10px' }}>
+                        <input type="checkbox" checked={matrix[role]?.has(perm.id)||false} onChange={() => toggle(role, perm.id)}
+                          style={{ width:'15px', height:'15px', accentColor:'var(--accent)', cursor:'pointer' }} />
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ fontSize:'10px', color:'var(--text-muted)', marginTop:'10px' }}>
+        SQL to create table: <code>CREATE TABLE role_permission (id UUID DEFAULT gen_random_uuid() PRIMARY KEY, company_id UUID NOT NULL, role TEXT NOT NULL, permission TEXT NOT NULL, enabled BOOLEAN DEFAULT true, updated_at TIMESTAMPTZ DEFAULT NOW(), UNIQUE(company_id,role,permission)); ALTER TABLE role_permission ENABLE ROW LEVEL SECURITY;</code>
+      </div>
+    </div>
+  )
+}
+
+// ── State Licensing Tab ───────────────────────────────────────────────────────
+
+const LICENSE_STATUSES = ['active','expired','pending','suspended']
+
+function StateLicensingTab({ companyId }) {
+  const [licenses, setLicenses] = useState([])
+  const [loading, setLoading]   = useState(true)
+  const [showAdd, setShowAdd]   = useState(false)
+  const [saving, setSaving]     = useState(false)
+  const [msg, setMsg]           = useState(null)
+  const [form, setForm] = useState({ state:'', license_type:'Security Services', license_number:'', issue_date:'', expiry_date:'', status:'active' })
+  const foc = e=>{e.target.style.borderColor='var(--border-focus)'}
+  const blr = e=>{e.target.style.borderColor='var(--border)'}
+
+  useEffect(() => { if (companyId) load() }, [companyId])
+
+  async function load() {
+    setLoading(true)
+    const { data } = await supabase.from('state_license').select('*').eq('company_id', companyId).order('state')
+    setLicenses(data||[])
+    setLoading(false)
+  }
+
+  async function save() {
+    if (!form.state.trim()) return
+    setSaving(true)
+    const { error } = await supabase.from('state_license').insert({ company_id:companyId, ...form, state:form.state.toUpperCase().slice(0,2), issue_date:form.issue_date||null, expiry_date:form.expiry_date||null })
+    setSaving(false)
+    if (error) { setMsg({ type:'err', text:error.message }); return }
+    setShowAdd(false); setForm({ state:'', license_type:'Security Services', license_number:'', issue_date:'', expiry_date:'', status:'active' }); load()
+  }
+
+  async function del(id) {
+    if (!window.confirm('Remove this license?')) return
+    await supabase.from('state_license').delete().eq('id', id)
+    load()
+  }
+
+  function isExpired(date) { return date && new Date(date) < new Date() }
+  function isExpiringSoon(date) {
+    if (!date) return false
+    const diff = (new Date(date) - new Date()) / 86400000
+    return diff >= 0 && diff <= 60
+  }
+
+  if (loading) return <div style={{...s.card,color:'var(--text-muted)',fontSize:'12px'}}>Loading...</div>
+
+  return (
+    <>
+      <div style={s.card}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'14px', flexWrap:'wrap', gap:'10px' }}>
+          <div style={s.cardTitle}>State Licenses ({licenses.length})</div>
+          <button style={{ ...s.btn, height:'34px', padding:'0 14px', fontSize:'12px' }} onClick={() => setShowAdd(true)}>
+            <Icon name="plus" size={13}/>ADD LICENSE
+          </button>
+        </div>
+        {msg && <Toast msg={msg.text} type={msg.type} />}
+
+        {showAdd && (
+          <div style={{ background:'var(--bg-surface)', border:'1px solid var(--border)', borderRadius:'var(--radius-md)', padding:'16px', marginBottom:'16px' }}>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', marginBottom:'10px' }}>
+              <div><div style={s.lbl}>State (2-letter) *</div><input style={s.inp} maxLength={2} value={form.state} onChange={e=>setForm(p=>({...p,state:e.target.value.toUpperCase()}))} onFocus={foc} onBlur={blr} placeholder="MD"/></div>
+              <div><div style={s.lbl}>License Type</div><input style={s.inp} value={form.license_type} onChange={e=>setForm(p=>({...p,license_type:e.target.value}))} onFocus={foc} onBlur={blr}/></div>
+              <div><div style={s.lbl}>License Number</div><input style={s.inp} value={form.license_number} onChange={e=>setForm(p=>({...p,license_number:e.target.value}))} onFocus={foc} onBlur={blr} placeholder="MD-SEC-12345"/></div>
+              <div><div style={s.lbl}>Status</div><select style={{...s.inp,cursor:'pointer'}} value={form.status} onChange={e=>setForm(p=>({...p,status:e.target.value}))}>{LICENSE_STATUSES.map(st=><option key={st} value={st}>{st}</option>)}</select></div>
+              <div><div style={s.lbl}>Issue Date</div><input style={s.inp} type="date" value={form.issue_date} onChange={e=>setForm(p=>({...p,issue_date:e.target.value}))} onFocus={foc} onBlur={blr}/></div>
+              <div><div style={s.lbl}>Expiry Date</div><input style={s.inp} type="date" value={form.expiry_date} onChange={e=>setForm(p=>({...p,expiry_date:e.target.value}))} onFocus={foc} onBlur={blr}/></div>
+            </div>
+            <div style={{ display:'flex', gap:'8px' }}>
+              <button style={{ ...s.btn, height:'36px', fontSize:'12px', padding:'0 14px', opacity:saving?0.6:1 }} onClick={save} disabled={saving}><Icon name="save" size={13}/>{saving?'SAVING...':'SAVE'}</button>
+              <button style={{ ...s.ghost, height:'36px', fontSize:'12px', padding:'0 12px' }} onClick={()=>setShowAdd(false)}>CANCEL</button>
+            </div>
+          </div>
+        )}
+
+        {licenses.length === 0 ? (
+          <div style={{ fontSize:'13px', color:'var(--text-muted)', padding:'20px 0' }}>No state licenses on file. Add your first license above.</div>
+        ) : (
+          <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'12px' }}>
+            <thead>
+              <tr style={{ borderBottom:'1px solid var(--border)' }}>
+                {['State','Type','License #','Issue Date','Expiry Date','Status',''].map(h=><th key={h} style={{ textAlign:'left', padding:'7px 10px', fontSize:'10px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)' }}>{h}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {licenses.map(lic => {
+                const expired = isExpired(lic.expiry_date)
+                const soon = !expired && isExpiringSoon(lic.expiry_date)
+                const statusColor = lic.status==='active'&&!expired ? 'var(--color-success)' : expired ? 'var(--color-danger)' : soon ? 'var(--color-warning)' : 'var(--text-muted)'
+                const fmt = d => d ? new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—'
+                return (
+                  <tr key={lic.id} style={{ borderBottom:'1px solid var(--border)' }}>
+                    <td style={{ padding:'8px 10px', fontWeight:700, color:'var(--accent)', fontFamily:'var(--font-condensed)', letterSpacing:'1px' }}>{lic.state}</td>
+                    <td style={{ padding:'8px 10px', color:'var(--text-secondary)' }}>{lic.license_type}</td>
+                    <td style={{ padding:'8px 10px', color:'var(--text-primary)', fontFamily:'monospace', fontSize:'11px' }}>{lic.license_number||'—'}</td>
+                    <td style={{ padding:'8px 10px', color:'var(--text-muted)' }}>{fmt(lic.issue_date)}</td>
+                    <td style={{ padding:'8px 10px', color:expired?'var(--color-danger)':soon?'var(--color-warning)':'var(--text-muted)' }}>{fmt(lic.expiry_date)}</td>
+                    <td style={{ padding:'8px 10px' }}>
+                      <span style={{ fontSize:'10px', fontWeight:700, padding:'2px 7px', borderRadius:'10px', background:`${statusColor}22`, color:statusColor, fontFamily:'var(--font-condensed)', textTransform:'uppercase' }}>
+                        {expired?'EXPIRED':soon?'EXPIRING':lic.status}
+                      </span>
+                    </td>
+                    <td style={{ padding:'8px 10px' }}>
+                      <button onClick={()=>del(lic.id)} style={{ background:'transparent', border:'none', color:'var(--text-muted)', cursor:'pointer', padding:'2px', display:'flex' }}><Icon name="trash-2" size={13}/></button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+      <div style={{ ...s.card, background:'var(--bg-surface)', border:'1px solid var(--border)' }}>
+        <div style={s.cardTitle}>SQL — Create state_license table</div>
+        <pre style={{ fontSize:'11px', color:'var(--text-muted)', lineHeight:1.6, whiteSpace:'pre-wrap', wordBreak:'break-all', margin:0 }}>{`CREATE TABLE IF NOT EXISTS state_license (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  company_id UUID NOT NULL,
+  state TEXT NOT NULL,
+  license_type TEXT,
+  license_number TEXT,
+  issue_date DATE,
+  expiry_date DATE,
+  status TEXT DEFAULT 'active',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE state_license ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "company scope" ON state_license
+  USING (company_id = (SELECT company_id FROM user_profile WHERE id = auth.uid()));`}</pre>
+      </div>
+    </>
   )
 }
