@@ -6,41 +6,44 @@ import { isNative, openBrowser } from '../../lib/platform'
 
 const PLANS = [
   {
-    id: 'starter',
-    name: 'Starter',
-    price: 99,
+    id: 'free_trial',
+    name: 'Free Trial',
+    price: 0,
+    priceUnit: null,
+    period: '14 days',
+    stripePriceId: null,
+    officers: 10,
+    sites: null,
+    features: ['Up to 10 users', 'Core features only', 'Scheduling & timesheets', 'Incident reports', 'Email support'],
+    color: 'var(--text-muted)',
+    bg: 'var(--border)',
+  },
+  {
+    id: 'standard',
+    name: 'Standard',
+    price: 2.50,
+    priceUnit: 'user',
     period: 'mo',
-    stripePriceId: 'price_starter_monthly', // replace with real Stripe price ID
-    officers: 25,
-    sites: 5,
-    features: ['Up to 25 officers', 'Up to 5 sites', 'Scheduling & timesheets', 'Incident reports', 'Basic HR & documents', 'Email support'],
+    stripePriceId: 'price_standard_per_user', // set in Supabase secrets
+    officers: null,
+    sites: 1,
+    features: ['Single location', '$2.50 / user / month', 'Scheduling & timesheets', 'Incident reports + HR', 'Payroll export (ADP/Paychex)', 'Invoicing', 'Advanced reports'],
     color: 'var(--color-info)',
     bg: 'var(--color-info-bg)',
   },
   {
-    id: 'growth',
-    name: 'Growth',
-    price: 249,
+    id: 'professional',
+    name: 'Professional',
+    price: 5.00,
+    priceUnit: 'user',
     period: 'mo',
-    stripePriceId: 'price_growth_monthly',
-    officers: 100,
-    sites: 20,
-    features: ['Up to 100 officers', 'Up to 20 sites', 'Everything in Starter', 'Live map & patrol logs', 'Client portal', 'Training module', 'Priority support'],
+    stripePriceId: 'price_professional_per_user', // set in Supabase secrets
+    officers: null,
+    sites: null,
+    features: ['Multi-location', '$5.00 / user / month', 'Everything in Standard', 'AI features (incident + training)', 'Client portal', 'API access', 'Priority support'],
     color: 'var(--accent)',
     bg: 'var(--accent-bg)',
     popular: true,
-  },
-  {
-    id: 'enterprise',
-    name: 'Enterprise',
-    price: null,
-    period: 'mo',
-    stripePriceId: null,
-    officers: null,
-    sites: null,
-    features: ['Unlimited officers', 'Unlimited sites', 'Everything in Growth', 'CCW reciprocity map', 'Custom integrations', 'Dedicated account manager', 'SLA guarantee'],
-    color: 'var(--color-success)',
-    bg: 'var(--color-success-bg)',
   },
 ]
 
@@ -176,6 +179,25 @@ export default function Billing() {
       <h2 style={s.heading}>BILLING & SUBSCRIPTION</h2>
       <p style={s.sub}>Manage your PostCommand plan, usage, and payment details.</p>
 
+      {/* Trial countdown banner */}
+      {isTrialing && (
+        <div style={{ background:'var(--color-warning-bg)', border:'1px solid rgba(232,148,58,0.4)', borderRadius:'var(--radius-md)', padding:'14px 20px', marginBottom:'20px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:'16px', flexWrap:'wrap' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
+            <Icon name="clock" size={18} color="var(--color-warning)"/>
+            <div>
+              <div style={{ fontSize:'14px', fontWeight:700, color:'var(--color-warning)', fontFamily:'var(--font-condensed)', letterSpacing:'0.5px' }}>FREE TRIAL</div>
+              <div style={{ fontSize:'12px', color:'var(--text-secondary)', marginTop:'2px' }}>
+                {subscription?.trial_end ? `${Math.max(0, Math.ceil((new Date(subscription.trial_end)-Date.now())/86400000))} days left` : '14 days included'} · Upgrade to keep full access
+              </div>
+            </div>
+          </div>
+          <button style={{ display:'inline-flex', alignItems:'center', gap:'8px', background:'var(--color-warning)', color:'#fff', border:'none', borderRadius:'var(--radius-sm)', padding:'0 18px', height:'40px', fontFamily:'var(--font-condensed)', fontSize:'13px', fontWeight:700, letterSpacing:'1px', cursor:'pointer' }}
+            onClick={() => document.querySelector('[data-upgrade-btn]')?.scrollIntoView({ behavior:'smooth' })}>
+            UPGRADE NOW →
+          </button>
+        </div>
+      )}
+
       {/* Current plan */}
       <div style={s.curCard}>
         <div style={s.curTitle}>Current Plan</div>
@@ -242,11 +264,13 @@ export default function Billing() {
               </div>
 
               <div style={s.planPrice}>
-                {plan.price ? (
+                {plan.price > 0 ? (
                   <>
                     <div style={{ ...s.price, color:plan.color }}>${plan.price}</div>
-                    <div style={s.pricePer}>/mo</div>
+                    <div style={s.pricePer}>{plan.priceUnit ? `/${plan.priceUnit}/mo` : `/${plan.period}`}</div>
                   </>
+                ) : plan.price === 0 ? (
+                  <div style={{ ...s.price, fontSize:'24px', color:plan.color }}>Free · {plan.period}</div>
                 ) : (
                   <div style={{ ...s.price, fontSize:'24px', color:plan.color }}>Custom</div>
                 )}

@@ -51,7 +51,7 @@ const s = {
 export default function AppLayout({ children }) {
   const { profile, signOut, viewRole, switchViewAs, exitViewAs, effectiveRole } = useAuth()
   const { isDark, toggleTheme } = useTheme()
-  const { badges, totalUnread, notifications, markAllRead } = useNotifications()
+  const { badges, totalUnread, notifications, markAllRead, markRead } = useNotifications()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768)
@@ -210,23 +210,46 @@ export default function AppLayout({ children }) {
             <div style={{position:'relative'}}>
               <button style={s.iconBtn} onClick={() => setNotifOpen(o => !o)} aria-label={`${totalUnread} notifications`}>
                 <Icon name="bell" size={18} />
-                {totalUnread > 0 && <span style={s.notifDot} />}
+                {totalUnread > 0 && (
+                  <span style={{...s.notifDot, display:'flex', alignItems:'center', justifyContent:'center', width:totalUnread>9?'16px':'12px', height:totalUnread>9?'16px':'12px', top:'5px', right:'5px', fontSize:'8px', color:'#fff', fontFamily:'var(--font-condensed)', fontWeight:700}}>
+                    {totalUnread > 9 ? '9+' : totalUnread}
+                  </span>
+                )}
               </button>
               {notifOpen && (
                 <div style={s.notifPanel}>
                   <div style={s.notifHeader}>
-                    <span>Notifications</span>
+                    <span>Notifications {totalUnread > 0 && <span style={{fontSize:'11px',background:'var(--badge-bg)',color:'#fff',padding:'1px 6px',borderRadius:'10px',marginLeft:'4px'}}>{totalUnread}</span>}</span>
                     <button style={s.notifClear} onClick={markAllRead}>Mark all read</button>
                   </div>
                   <div style={s.notifList}>
                     {notifications.length === 0
                       ? <div style={s.notifEmpty}>No notifications</div>
-                      : notifications.slice(0,10).map(n => (
-                          <div key={n.id} style={{...s.notifItem,...(!n.read?{borderLeft:'3px solid var(--accent)'}:{})}}>
-                            <div style={s.notifTitle}>{n.title}</div>
-                            <div style={s.notifMsg}>{n.message}</div>
-                          </div>
-                        ))
+                      : notifications.slice(0,20).map(n => {
+                          const iconMap = { sos_alert:'alert-circle', timesheet_pending:'clock', incident_new:'flag', credential_expiring:'shield', geofence_override:'map-pin', general:'bell' }
+                          const timeAgo = n.created_at ? (() => {
+                            const diff = (Date.now() - new Date(n.created_at)) / 1000
+                            if (diff < 60) return 'just now'
+                            if (diff < 3600) return `${Math.floor(diff/60)}m ago`
+                            if (diff < 86400) return `${Math.floor(diff/3600)}h ago`
+                            return `${Math.floor(diff/86400)}d ago`
+                          })() : ''
+                          return (
+                            <div key={n.id}
+                              style={{...s.notifItem,...(!n.read?{borderLeft:'3px solid var(--accent)'}:{}),cursor:n.target_url?'pointer':'default'}}
+                              onClick={() => { if (n.target_url) { navigate(n.target_url); setNotifOpen(false) } markRead(n.id) }}
+                            >
+                              <div style={{display:'flex',alignItems:'flex-start',gap:'8px'}}>
+                                <div style={{flexShrink:0,marginTop:'2px'}}><Icon name={iconMap[n.type]||'bell'} size={13} color={n.read?'var(--text-muted)':'var(--accent)'}/></div>
+                                <div style={{flex:1,minWidth:0}}>
+                                  <div style={{...s.notifTitle,color:n.read?'var(--text-muted)':'var(--text-primary)'}}>{n.title}</div>
+                                  {n.message && <div style={s.notifMsg}>{n.message}</div>}
+                                  <div style={{fontSize:'10px',color:'var(--text-muted)',marginTop:'3px',fontFamily:'var(--font-condensed)'}}>{timeAgo}</div>
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })
                     }
                   </div>
                 </div>

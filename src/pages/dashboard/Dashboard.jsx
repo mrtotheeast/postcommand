@@ -189,8 +189,8 @@ function CorporalDashboard({ profile, badges, navigate }) {
     })
   }, [profile])
 
-  const clockedIn = teamStatus.filter(t => t.clock_in && !t.clock_out).length
-  const clockedOut = teamStatus.filter(t => t.clock_in && t.clock_out).length
+  const clockedIn = (teamStatus || []).filter(t => t.clock_in && !t.clock_out).length
+  const clockedOut = (teamStatus || []).filter(t => t.clock_in && t.clock_out).length
 
   return (
     <div style={{padding:'24px',maxWidth:'900px',animation:'fadeIn 200ms ease'}}>

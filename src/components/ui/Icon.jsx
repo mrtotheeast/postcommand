@@ -61,6 +61,9 @@ const paths = {
   "dollar-sign":"M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6",
   "help-circle":"M12 22a10 10 0 100-20 10 10 0 000 20zM9.09 9a3 3 0 015.83 1c0 2-3 3-3 3M12 17h.01",
   archive:"M21 8V21H3V8M1 3h22v5H1zM10 12h4",
+  "refresh-cw":"M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15",
+  "play-circle":"M12 22a10 10 0 100-20 10 10 0 000 20zM10 8l6 4-6 4V8z",
+  "external-link":"M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3",
 }
 export default function Icon({ name, size=20, color, className, style, strokeWidth=1.8 }) {
   const d = paths[name]

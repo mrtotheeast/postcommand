@@ -62,13 +62,20 @@ const MAP_TILES  = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
 const MAP_TILES_ATTR = '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
 const MAP_CENTER = [38.9, -77.0]
 
+function makeOfficerIcon(initials, recencyColor) {
+  const bg = recencyColor === 'green' ? '#2e7d32' : recencyColor === 'amber' ? '#e65100' : '#555'
+  const html = `<div style="width:34px;height:34px;border-radius:50%;background:${bg};border:2px solid rgba(255,255,255,0.8);display:flex;align-items:center;justify-content:center;font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;color:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.5);">${initials}</div>`
+  return L.divIcon({ html, className:'', iconSize:[34,34], iconAnchor:[17,17], popupAnchor:[0,-17] })
+}
+
 export default function LiveMap() {
   const { profile } = useAuth()
-  const [sites, setSites]         = useState([])
-  const [active, setActive]       = useState([])  // timesheets with clock_out = null
-  const [employees, setEmployees] = useState([])
-  const [loading, setLoading]     = useState(true)
-  const [selected, setSelected]   = useState(null)
+  const [sites, setSites]               = useState([])
+  const [active, setActive]             = useState([])
+  const [employees, setEmployees]       = useState([])
+  const [empLocations, setEmpLocations] = useState([])
+  const [loading, setLoading]           = useState(true)
+  const [selected, setSelected]         = useState(null)
   const mapRef = useRef(null)
 
   useEffect(() => { if (profile?.company_id) load() }, [profile])
@@ -76,14 +83,23 @@ export default function LiveMap() {
   async function load() {
     setLoading(true)
     const today = new Date().toISOString().slice(0, 10)
-    const [{ data: siteData }, { data: tsData }, { data: empData }] = await Promise.all([
+    const since5min = new Date(Date.now() - 5*60000).toISOString()
+    const since30min = new Date(Date.now() - 30*60000).toISOString()
+    const [{ data: siteData }, { data: tsData }, { data: empData }, { data: locData }] = await Promise.all([
       supabase.from('site').select('id,name,city,state,latitude,longitude,address').eq('company_id', profile.company_id),
       supabase.from('timesheet').select('id,employee_id,site_id,clock_in').eq('company_id', profile.company_id).is('clock_out', null).eq('date', today),
       supabase.from('employee').select('id,first_name,last_name,role,position_title').eq('company_id', profile.company_id).eq('status', 'active'),
+      supabase.from('employee_location').select('*').eq('company_id', profile.company_id).gte('recorded_at', since30min).order('recorded_at', {ascending:false}),
     ])
     setSites(siteData || [])
     setActive(tsData || [])
     setEmployees(empData || [])
+    // Keep only the most recent location per employee
+    const latestByEmp = {}
+    for (const loc of (locData||[])) {
+      if (!latestByEmp[loc.employee_id]) latestByEmp[loc.employee_id] = loc
+    }
+    setEmpLocations(Object.values(latestByEmp))
     setLoading(false)
   }
 
@@ -178,6 +194,27 @@ export default function LiveMap() {
           zoomControl={true}
         >
           <TileLayer url={MAP_TILES} attribution={MAP_TILES_ATTR} />
+          {/* Individual officer GPS markers from employee_location */}
+          {empLocations.filter(loc => loc.latitude && loc.longitude).map(loc => {
+            const emp = empMap[loc.employee_id]
+            if (!emp) return null
+            const minsOld = (Date.now() - new Date(loc.recorded_at)) / 60000
+            const color = minsOld < 5 ? 'green' : minsOld < 15 ? 'amber' : 'gray'
+            const initials = `${emp.first_name?.[0]||''}${emp.last_name?.[0]||''}`.toUpperCase()
+            return (
+              <Marker key={`loc-${loc.employee_id}`} position={[loc.latitude, loc.longitude]} icon={makeOfficerIcon(initials, color)}>
+                <Popup>
+                  <div style={{ fontFamily:'Barlow, sans-serif', minWidth:'160px' }}>
+                    <div style={{ fontWeight:700, marginBottom:'4px' }}>{emp.first_name} {emp.last_name}</div>
+                    <div style={{ fontSize:'12px', color:'#888' }}>{emp.position_title || emp.role}</div>
+                    <div style={{ fontSize:'11px', color: color==='green'?'#2e7d32':color==='amber'?'#e65100':'#888', marginTop:'4px' }}>
+                      GPS updated {Math.round(minsOld)}m ago
+                    </div>
+                  </div>
+                </Popup>
+              </Marker>
+            )
+          })}
           {sitesWithOfficers.filter(s => s.latitude && s.longitude).map(site => (
             <Marker
               key={site.id}

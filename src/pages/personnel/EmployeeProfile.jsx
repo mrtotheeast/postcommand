@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { ROLE_LABELS, atLeast } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
@@ -458,14 +458,447 @@ export default function EmployeeProfile({ emp, allEmployees, activeTab, onTabCha
         <div style={{flex:1,overflowY:'auto'}}>
           {activeTab === 'overview'    && <OverviewTab emp={emp} canViewSensitive={canViewSensitive} canEdit={canEdit} onRefresh={onRefresh} onEdit={()=>setEditing(true)}/>}
           {activeTab === 'credentials' && <CredentialsTab emp={emp} canEdit={canEdit}/>}
-          {activeTab === 'training'    && <ComingSoonTab name="Training"/>}
-          {activeTab === 'documents'   && <ComingSoonTab name="Documents"/>}
-          {activeTab === 'pto'         && <ComingSoonTab name="PTO"/>}
-          {activeTab === 'uniforms'    && <ComingSoonTab name="Uniforms"/>}
-          {activeTab === 'reviews'     && <ComingSoonTab name="Reviews"/>}
+          {activeTab === 'training'    && <TrainingTab emp={emp} canEdit={canEdit}/>}
+          {activeTab === 'documents'   && <DocumentsTab emp={emp} canEdit={canEdit}/>}
+          {activeTab === 'pto'         && <PTOTab emp={emp} canEdit={canEdit}/>}
+          {activeTab === 'uniforms'    && <UniformsTab emp={emp} canEdit={canEdit}/>}
+          {activeTab === 'reviews'     && <ReviewsTab emp={emp}/>}
           {activeTab === 'notes'       && <NotesTab emp={emp} canEdit={canEdit}/>}
         </div>
       </div>
     </>
+  )
+}
+
+// ── Training Tab ──────────────────────────────────────────────────────────────
+
+const ASSIGN_STATUS_META = {
+  not_started:  { bg:'var(--border)',              color:'var(--text-muted)',    label:'Not Started' },
+  in_progress:  { bg:'var(--color-info-bg)',       color:'var(--color-info)',    label:'In Progress' },
+  completed:    { bg:'var(--color-success-bg)',    color:'var(--color-success)', label:'Completed' },
+  overdue:      { bg:'var(--color-danger-bg)',     color:'var(--color-danger)',  label:'Overdue' },
+  pending:      { bg:'var(--border)',              color:'var(--text-muted)',    label:'Pending' },
+}
+
+function TrainingTab({ emp, canEdit }) {
+  const [assignments, setAssignments] = useState([])
+  const [courses, setCourses]         = useState([])
+  const [loading, setLoading]         = useState(true)
+  const [showAssign, setShowAssign]   = useState(false)
+  const [form, setForm]               = useState({ course_id:'', due_date:'' })
+  const [assigning, setAssigning]     = useState(false)
+
+  useEffect(() => { load() }, [emp.id])
+
+  async function load() {
+    setLoading(true)
+    const [{ data: aData }, { data: cData }] = await Promise.all([
+      supabase.from('training_assignment').select('*, training_course(title,description)').eq('employee_id', emp.id).order('created_at', {ascending:false}),
+      supabase.from('training_course').select('id,title').eq('company_id', emp.company_id).eq('status','active').order('title'),
+    ])
+    setAssignments(aData||[])
+    setCourses(cData||[])
+    setLoading(false)
+  }
+
+  async function assign() {
+    if (!form.course_id) return
+    setAssigning(true)
+    await supabase.from('training_assignment').insert({ company_id:emp.company_id, employee_id:emp.id, course_id:form.course_id, status:'not_started', assigned_at:new Date().toISOString(), due_date:form.due_date||null })
+    setAssigning(false); setShowAssign(false); setForm({ course_id:'', due_date:'' }); load()
+  }
+
+  const completed = assignments.filter(a=>a.status==='completed').length
+  const pct = assignments.length ? Math.round((completed/assignments.length)*100) : 0
+  const fmtD = d => d ? new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—'
+
+  if (loading) return <div style={{padding:'24px',color:'var(--text-muted)',fontSize:'12px'}}>Loading...</div>
+
+  return (
+    <div style={{padding:'24px'}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'12px',flexWrap:'wrap',gap:'8px'}}>
+        <div>
+          <div style={{fontSize:'12px',color:'var(--text-muted)'}}>{assignments.length} course{assignments.length!==1?'s':''} assigned</div>
+          {assignments.length>0 && (
+            <div style={{display:'flex',alignItems:'center',gap:'8px',marginTop:'6px'}}>
+              <div style={{flex:1,height:'6px',background:'var(--border)',borderRadius:'3px',overflow:'hidden',minWidth:'100px'}}>
+                <div style={{height:'100%',background:'var(--color-success)',borderRadius:'3px',width:`${pct}%`,transition:'width 400ms ease'}}/>
+              </div>
+              <span style={{fontSize:'11px',color:'var(--text-muted)',whiteSpace:'nowrap'}}>{completed}/{assignments.length} complete</span>
+            </div>
+          )}
+        </div>
+        {canEdit && <button onClick={()=>setShowAssign(true)} style={{display:'inline-flex',alignItems:'center',gap:'6px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-sm)',padding:'0 14px',height:'36px',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,letterSpacing:'1px',cursor:'pointer'}}><Icon name="plus" size={13}/>ASSIGN TRAINING</button>}
+      </div>
+
+      {showAssign && (
+        <div style={{background:'var(--bg-surface)',border:'1px solid var(--border)',borderRadius:'var(--radius-md)',padding:'14px',marginBottom:'14px'}}>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'10px'}}>
+            <div>
+              <div style={{fontSize:'11px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',marginBottom:'4px'}}>Course</div>
+              <select style={{background:'var(--bg-input)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',padding:'8px 10px',fontSize:'13px',color:'var(--text-primary)',outline:'none',width:'100%',cursor:'pointer'}} value={form.course_id} onChange={e=>setForm(p=>({...p,course_id:e.target.value}))}>
+                <option value="">Select course...</option>{courses.map(c=><option key={c.id} value={c.id}>{c.title}</option>)}
+              </select>
+            </div>
+            <div>
+              <div style={{fontSize:'11px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',marginBottom:'4px'}}>Due Date (optional)</div>
+              <input type="date" value={form.due_date} onChange={e=>setForm(p=>({...p,due_date:e.target.value}))} style={{background:'var(--bg-input)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',padding:'8px 10px',fontSize:'13px',color:'var(--text-primary)',outline:'none',width:'100%'}}/>
+            </div>
+          </div>
+          <div style={{display:'flex',gap:'8px'}}>
+            <button onClick={assign} disabled={!form.course_id||assigning} style={{display:'inline-flex',alignItems:'center',gap:'6px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-sm)',padding:'0 14px',height:'34px',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,cursor:'pointer',opacity:(!form.course_id||assigning)?0.6:1}}><Icon name="save" size={13}/>{assigning?'ASSIGNING...':'ASSIGN'}</button>
+            <button onClick={()=>setShowAssign(false)} style={{display:'inline-flex',alignItems:'center',gap:'6px',background:'transparent',color:'var(--text-secondary)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',padding:'0 12px',height:'34px',fontFamily:'var(--font-condensed)',fontSize:'12px',cursor:'pointer'}}>CANCEL</button>
+          </div>
+        </div>
+      )}
+
+      {assignments.length === 0 ? (
+        <div style={{textAlign:'center',padding:'40px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:'var(--text-muted)',fontSize:'13px'}}>No training assigned yet.</div>
+      ) : (
+        <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+          {assignments.map(a => {
+            const meta = ASSIGN_STATUS_META[a.status] || ASSIGN_STATUS_META.pending
+            const course = a.training_course
+            return (
+              <div key={a.id} style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'12px 16px',display:'flex',alignItems:'flex-start',gap:'12px'}}>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-primary)',marginBottom:'2px'}}>{course?.title||'Unknown Course'}</div>
+                  <div style={{fontSize:'11px',color:'var(--text-muted)',display:'flex',gap:'10px',flexWrap:'wrap'}}>
+                    <span>Assigned {fmtD(a.assigned_at)}</span>
+                    {a.due_date && <span style={{color:new Date(a.due_date)<new Date()&&a.status!=='completed'?'var(--color-danger)':undefined}}>Due {fmtD(a.due_date)}</span>}
+                    {a.completed_at && <span style={{color:'var(--color-success)'}}>Completed {fmtD(a.completed_at)}</span>}
+                  </div>
+                </div>
+                <span style={{fontSize:'11px',fontWeight:700,padding:'2px 8px',borderRadius:'10px',background:meta.bg,color:meta.color,fontFamily:'var(--font-condensed)',whiteSpace:'nowrap'}}>{meta.label}</span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Documents Tab ─────────────────────────────────────────────────────────────
+
+const DOC_TYPES_LIST = ['I-9','Handbook Acknowledgment','Write-Up','Doctor Note','Contract','Guard License','Background Check','Other']
+
+function DocumentsTab({ emp, canEdit }) {
+  const [docs, setDocs]       = useState([])
+  const [loading, setLoading] = useState(true)
+  const [showAdd, setShowAdd] = useState(false)
+  const [form, setForm]       = useState({ doc_type:'I-9', file_name:'' })
+  const [uploading, setUploading] = useState(false)
+  const [error, setError]     = useState(null)
+  const fileRef               = useRef(null)
+
+  useEffect(() => { load() }, [emp.id])
+
+  async function load() {
+    setLoading(true)
+    const { data } = await supabase.from('employee_document').select('*').eq('employee_id', emp.id).order('created_at', {ascending:false})
+    setDocs(data||[])
+    setLoading(false)
+  }
+
+  async function upload(file) {
+    if (!file) return
+    setUploading(true); setError(null)
+    const ext = file.name.split('.').pop()
+    const fname = form.file_name.trim() || file.name
+    const path = `${emp.company_id}/${emp.id}/${Date.now()}-${fname}.${ext}`
+    const { data: upData, error: upErr } = await supabase.storage.from('employee-documents').upload(path, file, { upsert:true, contentType:file.type })
+    if (upErr) { setError(upErr.message); setUploading(false); return }
+    const { data:{ publicUrl } } = supabase.storage.from('employee-documents').getPublicUrl(upData.path)
+    const { error: insErr } = await supabase.from('employee_document').insert({ company_id:emp.company_id, employee_id:emp.id, doc_type:form.doc_type, file_name:fname, file_url:publicUrl, uploaded_at:new Date().toISOString() })
+    if (insErr) setError(insErr.message)
+    else { setShowAdd(false); setForm({ doc_type:'I-9', file_name:'' }) }
+    setUploading(false); load()
+  }
+
+  async function del(id) {
+    if (!window.confirm('Delete this document?')) return
+    await supabase.from('employee_document').delete().eq('id', id); load()
+  }
+
+  if (loading) return <div style={{padding:'24px',color:'var(--text-muted)',fontSize:'12px'}}>Loading...</div>
+
+  return (
+    <div style={{padding:'24px'}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'14px'}}>
+        <div style={{fontSize:'12px',color:'var(--text-muted)'}}>{docs.length} document{docs.length!==1?'s':''} on file</div>
+        {canEdit && <button onClick={()=>setShowAdd(true)} style={{display:'inline-flex',alignItems:'center',gap:'6px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-sm)',padding:'0 14px',height:'36px',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,letterSpacing:'1px',cursor:'pointer'}}><Icon name="upload" size={13}/>UPLOAD</button>}
+      </div>
+      {error && <div style={{padding:'8px 12px',borderRadius:'var(--radius-sm)',marginBottom:'12px',fontSize:'12px',background:'var(--color-danger-bg)',color:'var(--color-danger)',border:'1px solid rgba(192,57,43,0.3)'}}>{error}</div>}
+      {showAdd && (
+        <div style={{background:'var(--bg-surface)',border:'1px solid var(--border)',borderRadius:'var(--radius-md)',padding:'14px',marginBottom:'14px'}}>
+          <input ref={fileRef} type="file" style={{display:'none'}} onChange={e=>upload(e.target.files[0])}/>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'10px'}}>
+            <div>
+              <div style={{fontSize:'11px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',marginBottom:'4px'}}>Document Type</div>
+              <select style={{background:'var(--bg-input)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',padding:'8px 10px',fontSize:'13px',color:'var(--text-primary)',outline:'none',width:'100%',cursor:'pointer'}} value={form.doc_type} onChange={e=>setForm(p=>({...p,doc_type:e.target.value}))}>
+                {DOC_TYPES_LIST.map(t=><option key={t}>{t}</option>)}
+              </select>
+            </div>
+            <div>
+              <div style={{fontSize:'11px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',marginBottom:'4px'}}>File Label (optional)</div>
+              <input style={{background:'var(--bg-input)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',padding:'8px 10px',fontSize:'13px',color:'var(--text-primary)',outline:'none',width:'100%'}} value={form.file_name} onChange={e=>setForm(p=>({...p,file_name:e.target.value}))} placeholder="e.g. I9 Completed 2026"/>
+            </div>
+          </div>
+          <div style={{display:'flex',gap:'8px'}}>
+            <button onClick={()=>fileRef.current?.click()} disabled={uploading} style={{display:'inline-flex',alignItems:'center',gap:'6px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-sm)',padding:'0 14px',height:'34px',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,cursor:'pointer',opacity:uploading?0.6:1}}><Icon name="upload" size={13}/>{uploading?'UPLOADING...':'CHOOSE FILE'}</button>
+            <button onClick={()=>setShowAdd(false)} style={{display:'inline-flex',alignItems:'center',gap:'6px',background:'transparent',color:'var(--text-secondary)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',padding:'0 12px',height:'34px',fontFamily:'var(--font-condensed)',fontSize:'12px',cursor:'pointer'}}>CANCEL</button>
+          </div>
+        </div>
+      )}
+      {docs.length === 0 ? (
+        <div style={{textAlign:'center',padding:'40px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:'var(--text-muted)',fontSize:'13px'}}>No documents on file.</div>
+      ) : (
+        <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+          {docs.map(doc => (
+            <div key={doc.id} style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'12px 16px',display:'flex',alignItems:'center',gap:'12px'}}>
+              <Icon name="file-text" size={18} color="var(--text-muted)"/>
+              <div style={{flex:1}}>
+                <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-primary)'}}>{doc.file_name||doc.doc_type}</div>
+                <div style={{fontSize:'11px',color:'var(--text-muted)'}}>{doc.doc_type} · {doc.uploaded_at?new Date(doc.uploaded_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):''}</div>
+              </div>
+              <div style={{display:'flex',gap:'6px'}}>
+                {doc.file_url && <a href={doc.file_url} target="_blank" rel="noreferrer" style={{display:'inline-flex',alignItems:'center',gap:'5px',background:'var(--accent-bg)',border:'1px solid var(--accent-border)',borderRadius:'var(--radius-sm)',color:'var(--accent)',fontFamily:'var(--font-condensed)',fontSize:'11px',fontWeight:700,cursor:'pointer',padding:'0 10px',height:'30px',textDecoration:'none'}}><Icon name="eye" size={11}/>VIEW</a>}
+                {canEdit && <button onClick={()=>del(doc.id)} style={{background:'transparent',border:'none',color:'var(--text-muted)',cursor:'pointer',padding:'4px',display:'flex'}}><Icon name="trash-2" size={13}/></button>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── PTO Tab ───────────────────────────────────────────────────────────────────
+
+const PTO_TYPES = ['Vacation','Sick','Personal','Bereavement','Unpaid','Holiday']
+const PTO_STATUS = {
+  pending:  { bg:'var(--color-warning-bg)', color:'var(--color-warning)', label:'Pending' },
+  approved: { bg:'var(--color-success-bg)', color:'var(--color-success)', label:'Approved' },
+  denied:   { bg:'var(--color-danger-bg)',  color:'var(--color-danger)',  label:'Denied' },
+}
+
+function PTOTab({ emp, canEdit }) {
+  const [requests, setRequests] = useState([])
+  const [loading, setLoading]   = useState(true)
+  const [showReq, setShowReq]   = useState(false)
+  const [acting, setActing]     = useState(null)
+  const [form, setForm]         = useState({ pto_type:'Vacation', start_date:'', end_date:'', notes:'' })
+  const [saving, setSaving]     = useState(false)
+  const [error, setError]       = useState(null)
+
+  useEffect(() => { load() }, [emp.id])
+
+  async function load() {
+    setLoading(true)
+    const { data } = await supabase.from('pto_request').select('*').eq('employee_id', emp.id).order('created_at', {ascending:false})
+    setRequests(data||[])
+    setLoading(false)
+  }
+
+  async function submit() {
+    if (!form.start_date || !form.end_date) { setError('Start and end date required.'); return }
+    setSaving(true); setError(null)
+    const { error: err } = await supabase.from('pto_request').insert({ company_id:emp.company_id, employee_id:emp.id, pto_type:form.pto_type, start_date:form.start_date, end_date:form.end_date, notes:form.notes||null, status:'pending', requested_at:new Date().toISOString() })
+    if (err) setError(err.message)
+    else { setShowReq(false); setForm({ pto_type:'Vacation', start_date:'', end_date:'', notes:'' }) }
+    setSaving(false); load()
+  }
+
+  async function decide(id, status) {
+    setActing(id)
+    await supabase.from('pto_request').update({ status, reviewed_at:new Date().toISOString() }).eq('id', id)
+    setActing(null); load()
+  }
+
+  const approvedDaysThisYear = requests.filter(r => r.status==='approved' && new Date(r.start_date).getFullYear()===new Date().getFullYear()).reduce((a,r) => {
+    const days = (new Date(r.end_date)-new Date(r.start_date))/86400000 + 1
+    return a + Math.max(0, days)
+  }, 0)
+
+  const fmtD = d => d ? new Date(d+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—'
+  const inp = {background:'var(--bg-input)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',padding:'8px 10px',fontSize:'13px',color:'var(--text-primary)',outline:'none',width:'100%'}
+
+  if (loading) return <div style={{padding:'24px',color:'var(--text-muted)',fontSize:'12px'}}>Loading...</div>
+
+  return (
+    <div style={{padding:'24px'}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'14px',flexWrap:'wrap',gap:'8px'}}>
+        <div>
+          <div style={{fontSize:'12px',color:'var(--text-muted)'}}>{requests.length} request{requests.length!==1?'s':''} total</div>
+          <div style={{fontSize:'11px',color:'var(--text-muted)',marginTop:'2px'}}>{approvedDaysThisYear} approved days used this year</div>
+        </div>
+        {canEdit && <button onClick={()=>setShowReq(true)} style={{display:'inline-flex',alignItems:'center',gap:'6px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-sm)',padding:'0 14px',height:'36px',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,letterSpacing:'1px',cursor:'pointer'}}><Icon name="plus" size={13}/>SUBMIT REQUEST</button>}
+      </div>
+      {error && <div style={{padding:'8px 12px',borderRadius:'var(--radius-sm)',marginBottom:'12px',fontSize:'12px',background:'var(--color-danger-bg)',color:'var(--color-danger)',border:'1px solid rgba(192,57,43,0.3)'}}>{error}</div>}
+      {showReq && (
+        <div style={{background:'var(--bg-surface)',border:'1px solid var(--border)',borderRadius:'var(--radius-md)',padding:'14px',marginBottom:'14px'}}>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'10px'}}>
+            <div><div style={{fontSize:'11px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',marginBottom:'4px'}}>Type</div><select style={{...inp,cursor:'pointer'}} value={form.pto_type} onChange={e=>setForm(p=>({...p,pto_type:e.target.value}))}>{PTO_TYPES.map(t=><option key={t}>{t}</option>)}</select></div>
+            <div><div style={{fontSize:'11px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',marginBottom:'4px'}}>Start Date *</div><input type="date" style={inp} value={form.start_date} onChange={e=>setForm(p=>({...p,start_date:e.target.value}))}/></div>
+            <div><div style={{fontSize:'11px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',marginBottom:'4px'}}>End Date *</div><input type="date" style={inp} value={form.end_date} onChange={e=>setForm(p=>({...p,end_date:e.target.value}))}/></div>
+            <div><div style={{fontSize:'11px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',marginBottom:'4px'}}>Notes</div><input style={inp} value={form.notes} onChange={e=>setForm(p=>({...p,notes:e.target.value}))} placeholder="Optional reason..."/></div>
+          </div>
+          <div style={{display:'flex',gap:'8px'}}>
+            <button onClick={submit} disabled={saving} style={{display:'inline-flex',alignItems:'center',gap:'6px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-sm)',padding:'0 14px',height:'34px',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,cursor:'pointer',opacity:saving?0.6:1}}><Icon name="save" size={13}/>{saving?'SAVING...':'SUBMIT'}</button>
+            <button onClick={()=>{setShowReq(false);setError(null)}} style={{display:'inline-flex',alignItems:'center',gap:'6px',background:'transparent',color:'var(--text-secondary)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',padding:'0 12px',height:'34px',fontFamily:'var(--font-condensed)',fontSize:'12px',cursor:'pointer'}}>CANCEL</button>
+          </div>
+        </div>
+      )}
+      {requests.length === 0 ? (
+        <div style={{textAlign:'center',padding:'40px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:'var(--text-muted)',fontSize:'13px'}}>No PTO requests on file.</div>
+      ) : (
+        <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+          {requests.map(req => {
+            const meta = PTO_STATUS[req.status] || PTO_STATUS.pending
+            return (
+              <div key={req.id} style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'12px 16px',display:'flex',alignItems:'flex-start',gap:'12px'}}>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-primary)',marginBottom:'2px'}}>{req.pto_type}</div>
+                  <div style={{fontSize:'11px',color:'var(--text-muted)'}}>{fmtD(req.start_date)} – {fmtD(req.end_date)}{req.notes?` · "${req.notes}"`:''}</div>
+                </div>
+                <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:'6px'}}>
+                  <span style={{fontSize:'11px',fontWeight:700,padding:'2px 8px',borderRadius:'10px',background:meta.bg,color:meta.color,fontFamily:'var(--font-condensed)'}}>{meta.label}</span>
+                  {req.status==='pending' && canEdit && (
+                    <div style={{display:'flex',gap:'4px'}}>
+                      <button onClick={()=>decide(req.id,'approved')} disabled={acting===req.id} style={{display:'inline-flex',alignItems:'center',gap:'4px',background:'var(--color-success-bg)',color:'var(--color-success)',border:'1px solid rgba(58,170,106,0.3)',borderRadius:'var(--radius-sm)',padding:'0 8px',height:'26px',fontFamily:'var(--font-condensed)',fontSize:'10px',fontWeight:700,cursor:'pointer'}}><Icon name="check" size={10}/>APPROVE</button>
+                      <button onClick={()=>decide(req.id,'denied')} disabled={acting===req.id} style={{display:'inline-flex',alignItems:'center',gap:'4px',background:'var(--color-danger-bg)',color:'var(--color-danger)',border:'1px solid rgba(192,57,43,0.3)',borderRadius:'var(--radius-sm)',padding:'0 8px',height:'26px',fontFamily:'var(--font-condensed)',fontSize:'10px',fontWeight:700,cursor:'pointer'}}><Icon name="x" size={10}/>DENY</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Uniforms Tab ──────────────────────────────────────────────────────────────
+
+function UniformsTab({ emp, canEdit }) {
+  const [requests, setRequests] = useState([])
+  const [loading, setLoading]   = useState(true)
+  const [showNew, setShowNew]   = useState(false)
+  const [form, setForm]         = useState({ items_requested:'', size:'', notes:'' })
+  const [saving, setSaving]     = useState(false)
+
+  useEffect(() => { load() }, [emp.id])
+
+  async function load() {
+    setLoading(true)
+    const { data } = await supabase.from('uniform_request').select('*').eq('employee_id', emp.id).order('created_at', {ascending:false})
+    setRequests(data||[])
+    setLoading(false)
+  }
+
+  async function submit() {
+    if (!form.items_requested.trim()) return
+    setSaving(true)
+    await supabase.from('uniform_request').insert({ company_id:emp.company_id, employee_id:emp.id, item_type:form.items_requested.trim(), size:form.size||null, notes:form.notes||null, status:'pending' })
+    setSaving(false); setShowNew(false); setForm({ items_requested:'', size:'', notes:'' }); load()
+  }
+
+  const STATUS = { pending:{bg:'var(--color-warning-bg)',color:'var(--color-warning)',label:'Pending'}, approved:{bg:'var(--color-info-bg)',color:'var(--color-info)',label:'Approved'}, fulfilled:{bg:'var(--color-success-bg)',color:'var(--color-success)',label:'Fulfilled'}, denied:{bg:'var(--color-danger-bg)',color:'var(--color-danger)',label:'Denied'} }
+  const inp = {background:'var(--bg-input)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',padding:'8px 10px',fontSize:'13px',color:'var(--text-primary)',outline:'none',width:'100%'}
+
+  if (loading) return <div style={{padding:'24px',color:'var(--text-muted)',fontSize:'12px'}}>Loading...</div>
+
+  return (
+    <div style={{padding:'24px'}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'14px'}}>
+        <div style={{fontSize:'12px',color:'var(--text-muted)'}}>{requests.length} request{requests.length!==1?'s':''}</div>
+        <button onClick={()=>setShowNew(true)} style={{display:'inline-flex',alignItems:'center',gap:'6px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-sm)',padding:'0 14px',height:'36px',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,letterSpacing:'1px',cursor:'pointer'}}><Icon name="plus" size={13}/>NEW REQUEST</button>
+      </div>
+      {showNew && (
+        <div style={{background:'var(--bg-surface)',border:'1px solid var(--border)',borderRadius:'var(--radius-md)',padding:'14px',marginBottom:'14px'}}>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'10px'}}>
+            <div><div style={{fontSize:'11px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',marginBottom:'4px'}}>Items Requested *</div><input style={inp} value={form.items_requested} onChange={e=>setForm(p=>({...p,items_requested:e.target.value}))} placeholder="e.g. Duty Shirt, Pants"/></div>
+            <div><div style={{fontSize:'11px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',marginBottom:'4px'}}>Size</div><input style={inp} value={form.size} onChange={e=>setForm(p=>({...p,size:e.target.value}))} placeholder="e.g. L, 34x30"/></div>
+            <div style={{gridColumn:'1/-1'}}><div style={{fontSize:'11px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',marginBottom:'4px'}}>Notes</div><input style={inp} value={form.notes} onChange={e=>setForm(p=>({...p,notes:e.target.value}))} placeholder="Replacement reason, special requirements..."/></div>
+          </div>
+          <div style={{display:'flex',gap:'8px'}}>
+            <button onClick={submit} disabled={saving||!form.items_requested.trim()} style={{display:'inline-flex',alignItems:'center',gap:'6px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-sm)',padding:'0 14px',height:'34px',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,cursor:'pointer',opacity:(saving||!form.items_requested.trim())?0.6:1}}><Icon name="save" size={13}/>{saving?'SAVING...':'SUBMIT'}</button>
+            <button onClick={()=>setShowNew(false)} style={{display:'inline-flex',alignItems:'center',gap:'6px',background:'transparent',color:'var(--text-secondary)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',padding:'0 12px',height:'34px',fontFamily:'var(--font-condensed)',fontSize:'12px',cursor:'pointer'}}>CANCEL</button>
+          </div>
+        </div>
+      )}
+      {requests.length === 0 ? (
+        <div style={{textAlign:'center',padding:'40px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:'var(--text-muted)',fontSize:'13px'}}>No uniform requests on file.</div>
+      ) : (
+        <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+          {requests.map(req => {
+            const meta = STATUS[req.status] || STATUS.pending
+            return (
+              <div key={req.id} style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'12px 16px',display:'flex',alignItems:'center',gap:'12px'}}>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-primary)'}}>{req.item_type}</div>
+                  <div style={{fontSize:'11px',color:'var(--text-muted)'}}>{req.size?`Size: ${req.size} · `:''}Requested {req.created_at?new Date(req.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):''}</div>
+                </div>
+                <span style={{fontSize:'11px',fontWeight:700,padding:'2px 8px',borderRadius:'10px',background:meta.bg,color:meta.color,fontFamily:'var(--font-condensed)'}}>{meta.label}</span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Reviews Tab ───────────────────────────────────────────────────────────────
+
+function ReviewsTab({ emp }) {
+  const [reviews, setReviews] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => { load() }, [emp.id])
+
+  async function load() {
+    setLoading(true)
+    const { data } = await supabase.from('performance_review').select('*').eq('employee_id', emp.id).order('created_at', {ascending:false})
+    setReviews(data||[])
+    setLoading(false)
+  }
+
+  function Stars({ rating }) {
+    return (
+      <div style={{display:'flex',gap:'2px'}}>
+        {[1,2,3,4,5].map(i=>(
+          <svg key={i} width="14" height="14" viewBox="0 0 24 24" fill={i<=rating?'var(--accent)':'var(--border)'} stroke="none"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+        ))}
+      </div>
+    )
+  }
+
+  if (loading) return <div style={{padding:'24px',color:'var(--text-muted)',fontSize:'12px'}}>Loading...</div>
+
+  return (
+    <div style={{padding:'24px'}}>
+      <div style={{fontSize:'12px',color:'var(--text-muted)',marginBottom:'14px'}}>{reviews.length} review{reviews.length!==1?'s':''} on file · <a href="/reviews" style={{color:'var(--accent)'}}>Write a Review →</a></div>
+      {reviews.length === 0 ? (
+        <div style={{textAlign:'center',padding:'40px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:'var(--text-muted)',fontSize:'13px'}}>No performance reviews on file. <a href="/reviews" style={{color:'var(--accent)'}}>Write the first one →</a></div>
+      ) : (
+        <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
+          {reviews.map(rev => (
+            <div key={rev.id} style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'16px'}}>
+              <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'12px',marginBottom:'8px'}}>
+                <div>
+                  <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-primary)'}}>{rev.review_period||'Performance Review'}</div>
+                  <div style={{fontSize:'11px',color:'var(--text-muted)',marginTop:'2px'}}>{rev.created_at?new Date(rev.created_at).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):''}{rev.reviewer_name?` · Reviewed by ${rev.reviewer_name}`:''}</div>
+                </div>
+                {rev.overall_rating && <Stars rating={rev.overall_rating}/>}
+              </div>
+              {rev.comments && <div style={{fontSize:'13px',color:'var(--text-secondary)',lineHeight:1.6}}>{rev.comments}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }

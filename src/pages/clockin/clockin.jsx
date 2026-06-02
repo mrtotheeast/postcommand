@@ -44,8 +44,32 @@ export default function ClockIn() {
   const [saving, setSaving]       = useState(false)
   const [overrideReason, setOverrideReason] = useState('')
   const [employeeId, setEmployeeId] = useState(null)
-  const photoInRef  = useRef(null)
-  const photoOutRef = useRef(null)
+  const photoInRef      = useRef(null)
+  const photoOutRef     = useRef(null)
+  const locationTimerRef = useRef(null)
+
+  // Periodic location update while clocked in
+  useEffect(() => {
+    if (step === STEPS.CLOCKED_IN && employeeId && profile?.company_id) {
+      function sendLocation() {
+        const geo = navigator.geolocation || (isNative() ? null : null)
+        if (!geo) return
+        geo.getCurrentPosition(pos => {
+          supabase.from('employee_location').insert({
+            company_id: profile.company_id,
+            employee_id: employeeId,
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+            accuracy: pos.coords.accuracy,
+            recorded_at: new Date().toISOString(),
+          }).catch(() => {})
+        }, () => {}, { timeout: 8000, maximumAge: 30000 })
+      }
+      sendLocation()
+      locationTimerRef.current = setInterval(sendLocation, 60000)
+    }
+    return () => { if (locationTimerRef.current) clearInterval(locationTimerRef.current) }
+  }, [step, employeeId])
 
   useEffect(() => { init() }, [profile])
 
