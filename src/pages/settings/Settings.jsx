@@ -1041,23 +1041,6 @@ function StateLicensingTab({ companyId }) {
           </table>
         )}
       </div>
-      <div style={{ ...s.card, background:'var(--bg-surface)', border:'1px solid var(--border)' }}>
-        <div style={s.cardTitle}>SQL — Create state_license table</div>
-        <pre style={{ fontSize:'11px', color:'var(--text-muted)', lineHeight:1.6, whiteSpace:'pre-wrap', wordBreak:'break-all', margin:0 }}>{`CREATE TABLE IF NOT EXISTS state_license (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  company_id UUID NOT NULL,
-  state TEXT NOT NULL,
-  license_type TEXT,
-  license_number TEXT,
-  issue_date DATE,
-  expiry_date DATE,
-  status TEXT DEFAULT 'active',
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-ALTER TABLE state_license ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "company scope" ON state_license
-  USING (company_id = (SELECT company_id FROM user_profile WHERE id = auth.uid()));`}</pre>
-      </div>
     </>
   )
 }

@@ -143,6 +143,10 @@ export default function Incidents() {
   )
 }
 
+const NPS_COMPANY_ID = '9af02c98-04f3-4dbd-9f7e-07e7f9bbdc6c'
+const BODY_PARTS = ['Head','Neck','Chest/Torso','Back','Left Arm','Right Arm','Left Hand','Right Hand','Left Leg','Right Leg','Left Foot','Right Foot','Multiple','Other']
+const WEAPON_TYPES = ['Firearm','Knife/Blade','Blunt Object','Improvised Weapon','Hands/Feet','Taser/Stun Gun','Pepper Spray','Other']
+
 function IncidentForm({profile,onClose,onSaved}) {
   const [mode,setMode]   = useState('guided')
   const [step,setStep]   = useState(0)
@@ -150,10 +154,32 @@ function IncidentForm({profile,onClose,onSaved}) {
   const [saving,setSaving] = useState(false)
   const [error,setError]   = useState(null)
   const [sites,setSites]   = useState([])
-  const [form,setForm] = useState({incident_type:'',occurred_at:'',site_id:'',location_detail:'',subject_name:'',subject_description:'',narrative:'',injuries:false,injury_detail:'',property_damage:false,damage_detail:'',weapons_involved:false,weapons_detail:'',police_notified:false,police_report_number:'',witnesses:'',evidence:'',q_what:'',q_who:'',q_where:'',q_when:'',q_how:'',q_result:''})
+  const [employees,setEmployees] = useState([])
+  const [form,setForm] = useState({
+    incident_type:'',occurred_at:'',site_id:'',location_detail:'',
+    officers_involved:[],
+    // Suspect
+    suspect_involved:false,subject_name:'',subject_description:'',
+    suspect_height:'',suspect_weight:'',suspect_clothing:'',suspect_direction:'',suspect_vehicle:'',
+    // Injuries
+    injuries:false,injury_body_part:'',injury_detail:'',
+    // Emergency services
+    police_notified:false,police_agency:'',police_report_number:'',
+    ems_called:false,ems_unit:'',ems_hospital:'',
+    fire_called:false,fire_unit:'',
+    // Property / weapons
+    property_damage:false,damage_detail:'',damage_value:'',
+    weapons_involved:false,weapon_type:'',weapons_detail:'',
+    witnesses:'',evidence:'',
+    // Narrative & guided questions
+    narrative:'',q_what:'',q_who:'',q_where:'',q_when:'',q_how:'',q_result:''
+  })
   const set=(k,v)=>setForm(f=>({...f,[k]:v}))
 
-  useEffect(()=>{ supabase.from('site').select('id,name').eq('company_id',profile.company_id).then(({data})=>setSites(data||[])) },[])
+  useEffect(()=>{
+    supabase.from('site').select('id,name').eq('company_id',profile.company_id).then(({data})=>setSites(data||[]))
+    supabase.from('employee').select('id,first_name,last_name').eq('company_id',profile.company_id).eq('status','active').order('last_name').then(({data})=>setEmployees(data||[]))
+  },[])
 
   async function generateNarrative() {
     if(!form.q_what||!form.q_where||!form.q_when){setError('Please answer What, Where, and When first.');return}
@@ -196,7 +222,27 @@ function IncidentForm({profile,onClose,onSaved}) {
       const cadNumber=`${month}-${String(nextNum).padStart(5,'0')}`
       const retainUntil=new Date(now); retainUntil.setFullYear(retainUntil.getFullYear()+3)
       const {data:empData}=await supabase.from('employee').select('id').eq('user_id',profile.id).eq('company_id',profile.company_id).maybeSingle()
-      const {error:insErr}=await supabase.from('incident_report').insert({company_id:profile.company_id,site_id:form.site_id||null,employee_id:empData?.id||null,cad_number:cadNumber,report_month:month,incident_type:form.incident_type,occurred_at:form.occurred_at,location_detail:form.location_detail||null,subject_name:form.subject_name||null,subject_description:form.subject_description||null,narrative:form.narrative,injuries:form.injuries,injury_detail:form.injury_detail||null,property_damage:form.property_damage,damage_detail:form.damage_detail||null,weapons_involved:form.weapons_involved,weapons_detail:form.weapons_detail||null,police_notified:form.police_notified,police_report_number:form.police_report_number||null,witnesses:form.witnesses||null,evidence:form.evidence||null,status:asDraft?'draft':'submitted',submitted_at:asDraft?null:now.toISOString(),submitted_by:asDraft?null:(empData?.id||null),retain_until:retainUntil.toISOString().split('T')[0]})
+      const {error:insErr}=await supabase.from('incident_report').insert({
+        company_id:profile.company_id,site_id:form.site_id||null,employee_id:empData?.id||null,
+        cad_number:cadNumber,report_month:month,incident_type:form.incident_type,
+        occurred_at:form.occurred_at,location_detail:form.location_detail||null,
+        officers_involved:form.officers_involved.length?form.officers_involved:null,
+        subject_name:form.subject_name||null,subject_description:form.subject_description||null,
+        suspect_height:form.suspect_height||null,suspect_weight:form.suspect_weight||null,
+        suspect_clothing:form.suspect_clothing||null,suspect_direction:form.suspect_direction||null,
+        suspect_vehicle:form.suspect_vehicle||null,
+        narrative:form.narrative,
+        injuries:form.injuries,injury_body_part:form.injury_body_part||null,injury_detail:form.injury_detail||null,
+        property_damage:form.property_damage,damage_detail:form.damage_detail||null,
+        damage_value:form.damage_value?parseFloat(form.damage_value):null,
+        weapons_involved:form.weapons_involved,weapon_type:form.weapon_type||null,weapons_detail:form.weapons_detail||null,
+        police_notified:form.police_notified,police_agency:form.police_agency||null,police_report_number:form.police_report_number||null,
+        ems_called:form.ems_called,ems_unit:form.ems_unit||null,ems_hospital:form.ems_hospital||null,
+        fire_called:form.fire_called,fire_unit:form.fire_unit||null,
+        witnesses:form.witnesses||null,evidence:form.evidence||null,
+        status:asDraft?'draft':'submitted',submitted_at:asDraft?null:now.toISOString(),
+        submitted_by:asDraft?null:(empData?.id||null),retain_until:retainUntil.toISOString().split('T')[0]
+      })
       if(insErr){setError(insErr.message);setSaving(false);return}
       onSaved()
     } catch(e){setError(e.message)}
@@ -234,6 +280,19 @@ function IncidentForm({profile,onClose,onSaved}) {
               <div><label style={lbl}>Date & Time *</label><input type="datetime-local" value={form.occurred_at} onChange={e=>set('occurred_at',e.target.value)} style={inp}/></div>
               <div><label style={lbl}>Site</label><select value={form.site_id} onChange={e=>set('site_id',e.target.value)} style={inp}><option value="">Select site...</option>{sites.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
               <div><label style={lbl}>Specific Location</label><input type="text" value={form.location_detail} onChange={e=>set('location_detail',e.target.value)} placeholder="e.g. North parking lot..." style={inp}/></div>
+              {employees.length>0&&<div>
+                <label style={lbl}>Officers Involved</label>
+                <div style={{background:'var(--bg-input)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'8px 12px',maxHeight:'140px',overflowY:'auto',display:'flex',flexDirection:'column',gap:'6px'}}>
+                  {employees.map(e=>(
+                    <label key={e.id} style={{display:'flex',alignItems:'center',gap:'8px',fontSize:'13px',color:'var(--text-primary)',cursor:'pointer'}}>
+                      <input type="checkbox" checked={form.officers_involved.includes(e.id)}
+                        onChange={ev=>{const ids=form.officers_involved;set('officers_involved',ev.target.checked?[...ids,e.id]:ids.filter(i=>i!==e.id))}}
+                        style={{accentColor:'var(--accent)',width:'15px',height:'15px'}}/>
+                      {e.first_name} {e.last_name}
+                    </label>
+                  ))}
+                </div>
+              </div>}
             </>}
 
             {step===1&&<>
@@ -259,18 +318,56 @@ function IncidentForm({profile,onClose,onSaved}) {
             </>}
 
             {step===3&&<>
+              <div style={{fontSize:'12px',fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',marginBottom:'4px'}}>Injuries</div>
               <BF label="Were there injuries?" checked={form.injuries} onChange={v=>set('injuries',v)}/>
-              {form.injuries&&<div><label style={lbl}>Injury Details</label><textarea value={form.injury_detail} onChange={e=>set('injury_detail',e.target.value)} rows={2} style={ta}/></div>}
-              <BF label="Was there property damage?" checked={form.property_damage} onChange={v=>set('property_damage',v)}/>
-              {form.property_damage&&<div><label style={lbl}>Damage Details</label><textarea value={form.damage_detail} onChange={e=>set('damage_detail',e.target.value)} rows={2} style={ta}/></div>}
-              <BF label="Were weapons involved?" checked={form.weapons_involved} onChange={v=>set('weapons_involved',v)}/>
-              {form.weapons_involved&&<div><label style={lbl}>Weapons Details</label><textarea value={form.weapons_detail} onChange={e=>set('weapons_detail',e.target.value)} rows={2} style={ta}/></div>}
-              <BF label="Was law enforcement notified?" checked={form.police_notified} onChange={v=>set('police_notified',v)}/>
-              {form.police_notified&&<div><label style={lbl}>Police Report #</label><input type="text" value={form.police_report_number} onChange={e=>set('police_report_number',e.target.value)} style={inp}/></div>}
-              <div><label style={lbl}>Witnesses</label><textarea value={form.witnesses} onChange={e=>set('witnesses',e.target.value)} rows={2} style={ta}/></div>
-              <div><label style={lbl}>Evidence</label><textarea value={form.evidence} onChange={e=>set('evidence',e.target.value)} rows={2} style={ta}/></div>
-              <div><label style={lbl}>Subject Name</label><input type="text" value={form.subject_name} onChange={e=>set('subject_name',e.target.value)} style={inp}/></div>
-              <div><label style={lbl}>Subject Description</label><textarea value={form.subject_description} onChange={e=>set('subject_description',e.target.value)} rows={2} style={ta}/></div>
+              {form.injuries&&<>
+                <div><label style={lbl}>Body Part Affected</label><select value={form.injury_body_part} onChange={e=>set('injury_body_part',e.target.value)} style={inp}><option value="">Select...</option>{BODY_PARTS.map(p=><option key={p}>{p}</option>)}</select></div>
+                <div><label style={lbl}>Injury Description</label><textarea value={form.injury_detail} onChange={e=>set('injury_detail',e.target.value)} rows={2} style={ta}/></div>
+              </>}
+
+              <div style={{fontSize:'12px',fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',marginBottom:'4px',marginTop:'8px'}}>Emergency Services</div>
+              <BF label="Police/Law Enforcement notified?" checked={form.police_notified} onChange={v=>set('police_notified',v)}/>
+              {form.police_notified&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}}>
+                <div><label style={lbl}>Responding Agency</label><input value={form.police_agency} onChange={e=>set('police_agency',e.target.value)} style={inp} placeholder="City PD, County Sheriff..."/></div>
+                <div><label style={lbl}>Police Report #</label><input value={form.police_report_number} onChange={e=>set('police_report_number',e.target.value)} style={inp}/></div>
+              </div>}
+              <BF label="EMS / Medical called?" checked={form.ems_called} onChange={v=>set('ems_called',v)}/>
+              {form.ems_called&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}}>
+                <div><label style={lbl}>EMS Unit #</label><input value={form.ems_unit} onChange={e=>set('ems_unit',e.target.value)} style={inp}/></div>
+                <div><label style={lbl}>Hospital (if transported)</label><input value={form.ems_hospital} onChange={e=>set('ems_hospital',e.target.value)} style={inp}/></div>
+              </div>}
+              <BF label="Fire Department called?" checked={form.fire_called} onChange={v=>set('fire_called',v)}/>
+              {form.fire_called&&<div><label style={lbl}>Fire Unit #</label><input value={form.fire_unit} onChange={e=>set('fire_unit',e.target.value)} style={inp}/></div>}
+
+              <div style={{fontSize:'12px',fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',marginBottom:'4px',marginTop:'8px'}}>Suspect</div>
+              <BF label="Suspect involved?" checked={form.suspect_involved} onChange={v=>set('suspect_involved',v)}/>
+              {form.suspect_involved&&<>
+                <div><label style={lbl}>Name (if known)</label><input value={form.subject_name} onChange={e=>set('subject_name',e.target.value)} style={inp}/></div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}}>
+                  <div><label style={lbl}>Height</label><input value={form.suspect_height} onChange={e=>set('suspect_height',e.target.value)} style={inp} placeholder={'5\'10"'}/></div>
+                  <div><label style={lbl}>Weight</label><input value={form.suspect_weight} onChange={e=>set('suspect_weight',e.target.value)} style={inp} placeholder="180 lbs"/></div>
+                </div>
+                <div><label style={lbl}>Clothing Description</label><textarea value={form.suspect_clothing} onChange={e=>set('suspect_clothing',e.target.value)} rows={2} style={ta} placeholder="Black hoodie, blue jeans..."/></div>
+                <div><label style={lbl}>Additional Description</label><textarea value={form.subject_description} onChange={e=>set('subject_description',e.target.value)} rows={2} style={ta}/></div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}}>
+                  <div><label style={lbl}>Direction of Travel</label><input value={form.suspect_direction} onChange={e=>set('suspect_direction',e.target.value)} style={inp} placeholder="Northbound on Main St."/></div>
+                  <div><label style={lbl}>Vehicle</label><input value={form.suspect_vehicle} onChange={e=>set('suspect_vehicle',e.target.value)} style={inp} placeholder="Blue 4-door sedan, plate..."/></div>
+                </div>
+              </>}
+
+              <div style={{fontSize:'12px',fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',marginBottom:'4px',marginTop:'8px'}}>Property & Weapons</div>
+              <BF label="Property damage?" checked={form.property_damage} onChange={v=>set('property_damage',v)}/>
+              {form.property_damage&&<>
+                <div><label style={lbl}>Damage Description</label><textarea value={form.damage_detail} onChange={e=>set('damage_detail',e.target.value)} rows={2} style={ta}/></div>
+                <div><label style={lbl}>Estimated Value ($)</label><input type="number" min="0" value={form.damage_value} onChange={e=>set('damage_value',e.target.value)} style={inp} placeholder="0.00"/></div>
+              </>}
+              <BF label="Weapons involved?" checked={form.weapons_involved} onChange={v=>set('weapons_involved',v)}/>
+              {form.weapons_involved&&<>
+                <div><label style={lbl}>Weapon Type</label><select value={form.weapon_type} onChange={e=>set('weapon_type',e.target.value)} style={inp}><option value="">Select...</option>{WEAPON_TYPES.map(w=><option key={w}>{w}</option>)}</select></div>
+                <div><label style={lbl}>Weapon Details</label><textarea value={form.weapons_detail} onChange={e=>set('weapons_detail',e.target.value)} rows={2} style={ta}/></div>
+              </>}
+              <div><label style={lbl}>Witnesses</label><textarea value={form.witnesses} onChange={e=>set('witnesses',e.target.value)} rows={2} style={ta} placeholder="Names, contact info..."/></div>
+              <div><label style={lbl}>Evidence</label><textarea value={form.evidence} onChange={e=>set('evidence',e.target.value)} rows={2} style={ta} placeholder="Video footage, photos, items..."/></div>
             </>}
           </>}
 

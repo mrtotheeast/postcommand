@@ -110,9 +110,29 @@ export default function SOS() {
     if (holdAnim.current) cancelAnimationFrame(holdAnim.current)
   }
 
+  function playAlertSound() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)()
+      const beep = (freq, start, dur) => {
+        const osc = ctx.createOscillator()
+        const gain = ctx.createGain()
+        osc.connect(gain); gain.connect(ctx.destination)
+        osc.frequency.value = freq; osc.type = 'sine'
+        gain.gain.setValueAtTime(0.4, ctx.currentTime + start)
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + start + dur)
+        osc.start(ctx.currentTime + start); osc.stop(ctx.currentTime + start + dur)
+      }
+      beep(880, 0, 0.2); beep(660, 0.25, 0.2); beep(880, 0.5, 0.2); beep(660, 0.75, 0.2)
+    } catch {}
+  }
+
   async function triggerSOS() {
     stopHold()
     if (!employee || !profile?.company_id) return
+    playAlertSound()
+    // Flash the body red briefly
+    document.body.style.backgroundColor = '#c0392b'
+    setTimeout(() => { document.body.style.backgroundColor = '' }, 600)
     let latitude = null, longitude = null
     try {
       const pos = await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, { timeout: 5000 }))
@@ -129,15 +149,34 @@ export default function SOS() {
     await loadData()
   }
 
-  async function resolveAlert(alertId) {
+  async function cancelSOS() {
+    if (!myAlert) return
+    await supabase.from('sos_alert').update({ status: 'cancelled', resolved_at: new Date().toISOString() }).eq('id', myAlert.id)
+    await loadData()
+  }
+
+  async function resolveAlert(alertId, note) {
     setResolving(alertId)
     let myEmpId = employee?.id
     if (!myEmpId) {
       const { data } = await supabase.from('employee').select('id').eq('user_id', profile.id).single()
       myEmpId = data?.id
     }
-    await supabase.from('sos_alert').update({ status: 'resolved', resolved_at: new Date().toISOString(), resolved_by: myEmpId }).eq('id', alertId)
+    await supabase.from('sos_alert').update({
+      status: 'resolved', resolved_at: new Date().toISOString(),
+      resolved_by: myEmpId, resolution_note: note||null
+    }).eq('id', alertId)
     setResolving(null)
+    await loadData()
+  }
+
+  async function acknowledgeAlert(alertId) {
+    let myEmpId = employee?.id
+    if (!myEmpId) {
+      const { data } = await supabase.from('employee').select('id').eq('user_id', profile.id).single()
+      myEmpId = data?.id
+    }
+    await supabase.from('sos_alert').update({ acknowledged_by: myEmpId, acknowledged_at: new Date().toISOString() }).eq('id', alertId)
     await loadData()
   }
 
@@ -199,9 +238,19 @@ export default function SOS() {
                 Your SOS alert is active. Supervisors have been notified.<br />
                 <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>Triggered at {new Date(myAlert.triggered_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</span>
               </div>
-              <button style={s.resolveBtn} onClick={() => resolveAlert(myAlert.id)} disabled={resolving === myAlert.id}>
-                <Icon name="check" size={16} />{resolving === myAlert.id ? 'RESOLVING...' : "I'M SAFE — CANCEL SOS"}
-              </button>
+              <div style={{ fontFamily: 'var(--font-display)', fontSize: '28px', color: '#e05555', letterSpacing: '2px', margin: '8px 0' }}>
+                <ElapsedCell start={myAlert.triggered_at} />
+              </div>
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                <button style={s.resolveBtn} onClick={() => resolveAlert(myAlert.id, '')} disabled={resolving === myAlert.id}>
+                  <Icon name="check" size={16} />{resolving === myAlert.id ? 'RESOLVING...' : "I'M SAFE — RESOLVE"}
+                </button>
+                {(Date.now() - new Date(myAlert.triggered_at).getTime()) < 30000 && (
+                  <button style={{ display:'flex',alignItems:'center',gap:'8px',background:'transparent',border:'2px solid rgba(224,85,85,0.5)',color:'#e05555',borderRadius:'var(--radius-sm)',padding:'0 20px',height:'48px',fontFamily:'var(--font-condensed)',fontSize:'14px',fontWeight:700,letterSpacing:'1px',cursor:'pointer' }} onClick={cancelSOS}>
+                    CANCEL SOS
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -217,7 +266,7 @@ export default function SOS() {
               <div style={{ marginTop: '12px', color: 'var(--color-success)', fontFamily: 'var(--font-condensed)', letterSpacing: '1px', fontSize: '13px' }}>ALL CLEAR — No active SOS alerts</div>
             </div>
           ) : (
-            <AlertList alerts={alerts} onResolve={resolveAlert} resolving={resolving} companyId={profile?.company_id} />
+            <AlertList alerts={alerts} onResolve={resolveAlert} onAcknowledge={acknowledgeAlert} resolving={resolving} companyId={profile?.company_id} />
           )}
         </div>
       )}
@@ -228,9 +277,11 @@ export default function SOS() {
   )
 }
 
-function AlertList({ alerts, onResolve, resolving, companyId }) {
+function AlertList({ alerts, onResolve, onAcknowledge, resolving, companyId }) {
   const [employees, setEmployees] = useState({})
   const [sites, setSites]         = useState({})
+  const [resolveNote, setResolveNote] = useState({})
+  const [showNote, setShowNote]   = useState({})
 
   useEffect(() => {
     if (!companyId) return
@@ -248,21 +299,41 @@ function AlertList({ alerts, onResolve, resolving, companyId }) {
       {alerts.map(alert => {
         const emp  = employees[alert.employee_id]
         const site = alert.site_id ? sites[alert.site_id] : null
+        const isAcked = !!alert.acknowledged_at
         return (
-          <div key={alert.id} style={s.alertRow}>
-            <div style={s.alertPulse} />
-            <div style={s.alertEmp}>
-              <div style={s.alertName}>{emp ? `${emp.first_name} ${emp.last_name}` : 'Unknown Officer'}</div>
-              <div style={s.alertMeta}>
-                {emp?.position_title || emp?.role?.replace(/_/g,' ') || '—'}
-                {site ? ` · ${site.name}` : ''}
-                {alert.latitude ? ` · ${alert.latitude.toFixed(4)}, ${alert.longitude.toFixed(4)}` : ''}
+          <div key={alert.id} style={{ ...s.alertRow, flexDirection:'column', alignItems:'flex-start', gap:'10px' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:'14px', width:'100%' }}>
+              <div style={s.alertPulse} />
+              <div style={s.alertEmp}>
+                <div style={s.alertName}>{emp ? `${emp.first_name} ${emp.last_name}` : 'Unknown Officer'}</div>
+                <div style={s.alertMeta}>
+                  {emp?.position_title || emp?.role?.replace(/_/g,' ') || '—'}
+                  {site ? ` · ${site.name}` : ''}
+                  {alert.latitude ? ` · GPS: ${alert.latitude.toFixed(4)}, ${alert.longitude.toFixed(4)}` : ''}
+                  {isAcked && <span style={{ color:'var(--color-success)', fontWeight:600 }}> · ACKNOWLEDGED</span>}
+                </div>
+              </div>
+              <ElapsedCell start={alert.triggered_at} />
+              <div style={{ display:'flex', gap:'6px', flexShrink:0 }}>
+                {!isAcked && onAcknowledge && (
+                  <button style={{ ...s.resolveSmall, background:'var(--color-info-bg)', color:'var(--color-info)', border:'1px solid rgba(91,159,224,0.3)' }} onClick={() => onAcknowledge(alert.id)}>
+                    <Icon name="eye" size={13}/>ACK
+                  </button>
+                )}
+                <button style={{ ...s.resolveSmall, opacity: resolving === alert.id ? 0.6 : 1 }} onClick={() => setShowNote(p=>({...p,[alert.id]:!p[alert.id]}))} disabled={resolving === alert.id}>
+                  <Icon name="check" size={13}/>{showNote[alert.id] ? 'CANCEL' : 'RESOLVE'}
+                </button>
               </div>
             </div>
-            <ElapsedCell start={alert.triggered_at} />
-            <button style={{ ...s.resolveSmall, opacity: resolving === alert.id ? 0.6 : 1 }} onClick={() => onResolve(alert.id)} disabled={resolving === alert.id}>
-              <Icon name="check" size={13} />{resolving === alert.id ? 'RESOLVING' : 'RESOLVE'}
-            </button>
+            {showNote[alert.id] && (
+              <div style={{ display:'flex', gap:'8px', width:'100%', paddingLeft:'26px' }}>
+                <input placeholder="Resolution note (required for record)..." value={resolveNote[alert.id]||''} onChange={e=>setResolveNote(p=>({...p,[alert.id]:e.target.value}))}
+                  style={{ flex:1, background:'var(--bg-input)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', padding:'8px 10px', fontSize:'12px', color:'var(--text-primary)', outline:'none', fontFamily:'var(--font-body)' }}/>
+                <button style={{ ...s.resolveSmall, opacity: resolving===alert.id||!resolveNote[alert.id]?.trim()?0.6:1 }} onClick={() => { if (resolveNote[alert.id]?.trim()) { onResolve(alert.id, resolveNote[alert.id]); setShowNote(p=>({...p,[alert.id]:false})) }}} disabled={!resolveNote[alert.id]?.trim()||resolving===alert.id}>
+                  {resolving === alert.id ? 'RESOLVING...' : 'CONFIRM RESOLVE'}
+                </button>
+              </div>
+            )}
           </div>
         )
       })}

@@ -51,6 +51,7 @@ const s = {
 export default function Uniforms() {
   const { profile } = useAuth()
   const isAdmin = atLeast(profile?.role, 'sergeant')
+  const [mainTab, setMainTab]     = useState('requests')
   const [employee, setEmployee]   = useState(null)
   const [requests, setRequests]   = useState([])
   const [employees, setEmployees] = useState([])
@@ -103,8 +104,17 @@ export default function Uniforms() {
   return (
     <div style={s.page}>
       <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}`}</style>
-      <h2 style={s.heading}>UNIFORMS</h2>
-      <p style={s.sub}>{isAdmin ? 'Review and fulfill uniform requests.' : 'Request uniform items and track your orders.'}</p>
+      <h2 style={s.heading}>EQUIPMENT & UNIFORMS</h2>
+      <p style={s.sub}>{isAdmin ? 'Manage inventory, requests, and equipment tracking.' : 'Request uniform items and track your orders.'}</p>
+
+      <div style={{display:'flex',gap:'2px',marginBottom:'20px',borderBottom:'1px solid var(--border)',paddingBottom:0}}>
+        {[['requests','Uniform Requests'],...(isAdmin?[['inventory','Inventory'],['scan','QR Scanner']]:[])]
+          .map(([v,l])=>(<button key={v} onClick={()=>setMainTab(v)} style={{padding:'10px 18px',fontSize:'13px',background:'transparent',border:'none',cursor:'pointer',fontFamily:'var(--font-condensed)',letterSpacing:'0.5px',borderBottom:`2px solid ${mainTab===v?'var(--accent)':'transparent'}`,color:mainTab===v?'var(--accent)':'var(--text-muted)',transition:'all 150ms ease',fontWeight:mainTab===v?700:400,marginBottom:'-1px'}}>{l}</button>))}
+      </div>
+
+      {mainTab==='inventory' && <InventoryTab companyId={profile.company_id} />}
+      {mainTab==='scan'      && <ScanTab companyId={profile.company_id} employee={employee} />}
+      {mainTab==='requests' && <>
 
       <div style={s.stats}>
         {[
@@ -168,6 +178,7 @@ export default function Uniforms() {
       </div>
 
       {showNew && <NewRequestModal employee={employee} companyId={profile.company_id} onClose={() => setShowNew(false)} onSaved={() => { setShowNew(false); load() }} />}
+      </>}
     </div>
   )
 }
@@ -227,6 +238,209 @@ function NewRequestModal({ employee, companyId, onClose, onSaved }) {
           <button style={s.ghostBtn} onClick={onClose}>CANCEL</button>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ── Equipment Inventory Tab ───────────────────────────────────────────────────
+
+const EQUIP_CATEGORIES = ['Uniform','Equipment','Firearm Accessory','Safety Gear','Electronics','Other']
+const EQUIP_CONDITIONS = ['New','Good','Fair','Poor']
+
+function generateQRSVG(text, size=200) {
+  // Simple visual QR placeholder using item ID — real QR encoding requires a library
+  // This generates a styled card with the ID for printing
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+    <rect width="${size}" height="${size}" fill="white"/>
+    <rect x="10" y="10" width="60" height="60" fill="none" stroke="black" stroke-width="3"/>
+    <rect x="20" y="20" width="40" height="40" fill="black"/>
+    <rect x="30" y="30" width="20" height="20" fill="white"/>
+    <rect x="${size-70}" y="10" width="60" height="60" fill="none" stroke="black" stroke-width="3"/>
+    <rect x="${size-60}" y="20" width="40" height="40" fill="black"/>
+    <rect x="${size-50}" y="30" width="20" height="20" fill="white"/>
+    <rect x="10" y="${size-70}" width="60" height="60" fill="none" stroke="black" stroke-width="3"/>
+    <rect x="20" y="${size-60}" width="40" height="40" fill="black"/>
+    <rect x="30" y="${size-50}" width="20" height="20" fill="white"/>
+    <text x="${size/2}" y="${size/2}" text-anchor="middle" dominant-baseline="middle" font-family="monospace" font-size="9" fill="black">${text.slice(0,8)}</text>
+    <text x="${size/2}" y="${size/2+14}" text-anchor="middle" font-family="monospace" font-size="8" fill="#666">${text.slice(8,16)}</text>
+  </svg>`
+}
+
+function InventoryTab({ companyId }) {
+  const [items, setItems]   = useState([])
+  const [loading, setLoading] = useState(true)
+  const [showAdd, setShowAdd] = useState(false)
+  const [saving, setSaving]   = useState(false)
+  const [error, setError]     = useState(null)
+  const [qrItem, setQrItem]   = useState(null)
+  const [form, setForm] = useState({ name:'', category:'Equipment', quantity:1, issued_quantity:0, condition:'New', serial_number:'', notes:'' })
+  const foc = e=>{e.target.style.borderColor='var(--border-focus)'}
+  const blr = e=>{e.target.style.borderColor='var(--border)'}
+
+  useEffect(() => { if (companyId) load() }, [companyId])
+
+  async function load() {
+    setLoading(true)
+    const { data } = await supabase.from('equipment_item').select('*').eq('company_id', companyId).order('category').order('name')
+    setItems(data||[])
+    setLoading(false)
+  }
+
+  async function save() {
+    if (!form.name.trim()) return
+    setSaving(true)
+    const { error: err } = await supabase.from('equipment_item').insert({ company_id:companyId, ...form, quantity:Number(form.quantity), issued_quantity:Number(form.issued_quantity)||0 })
+    setSaving(false)
+    if (err) { setError(err.message); return }
+    setShowAdd(false); setForm({ name:'', category:'Equipment', quantity:1, issued_quantity:0, condition:'New', serial_number:'', notes:'' }); load()
+  }
+
+  async function del(id) {
+    if (!window.confirm('Delete this item?')) return
+    await supabase.from('equipment_item').delete().eq('id', id); load()
+  }
+
+  function printQR(item) {
+    const w = window.open('', '_blank', 'width=400,height=400')
+    const svg = generateQRSVG(item.id)
+    w.document.write(`<!DOCTYPE html><html><head><title>QR — ${item.name}</title><style>body{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;margin:0;font-family:monospace}h2{font-size:14px;margin:10px 0}</style></head><body>${svg}<h2>${item.name}</h2><p style="font-size:11px;color:#666">${item.id.slice(0,16)}...</p></body></html>`)
+    w.document.close(); setTimeout(()=>w.print(), 300)
+  }
+
+  if (loading) return <div style={{color:'var(--text-muted)',fontSize:'12px'}}>Loading...</div>
+
+  const inpS = { background:'var(--bg-input)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', padding:'8px 10px', fontSize:'13px', color:'var(--text-primary)', outline:'none', width:'100%', fontFamily:'var(--font-body)' }
+  const lblS = { fontSize:'11px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', marginBottom:'4px' }
+
+  const grouped = EQUIP_CATEGORIES.map(cat => ({ cat, items: items.filter(i=>i.category===cat) })).filter(g=>g.items.length>0)
+
+  return (
+    <div>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'14px', flexWrap:'wrap', gap:'10px' }}>
+        <div style={{ fontSize:'12px', color:'var(--text-muted)' }}>{items.length} item{items.length!==1?'s':''} in inventory</div>
+        <button onClick={()=>setShowAdd(true)} style={{ display:'inline-flex', alignItems:'center', gap:'6px', background:'var(--accent)', color:'var(--text-inverse)', border:'none', borderRadius:'var(--radius-sm)', padding:'0 14px', height:'36px', fontFamily:'var(--font-condensed)', fontSize:'12px', fontWeight:700, letterSpacing:'1px', cursor:'pointer' }}>
+          <Icon name="plus" size={13}/>ADD ITEM
+        </button>
+      </div>
+
+      {error && <div style={{ padding:'8px 12px', borderRadius:'var(--radius-sm)', marginBottom:'12px', fontSize:'12px', background:'var(--color-danger-bg)', color:'var(--color-danger)', border:'1px solid rgba(192,57,43,0.3)' }}>{error}</div>}
+
+      {showAdd && (
+        <div style={{ background:'var(--bg-surface)', border:'1px solid var(--border)', borderRadius:'var(--radius-md)', padding:'16px', marginBottom:'16px' }}>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', marginBottom:'10px' }}>
+            <div><div style={lblS}>Item Name *</div><input style={inpS} value={form.name} onChange={e=>setForm(p=>({...p,name:e.target.value}))} onFocus={foc} onBlur={blr} placeholder="Taser X26P"/></div>
+            <div><div style={lblS}>Category</div><select style={{...inpS,cursor:'pointer'}} value={form.category} onChange={e=>setForm(p=>({...p,category:e.target.value}))}>{EQUIP_CATEGORIES.map(c=><option key={c}>{c}</option>)}</select></div>
+            <div><div style={lblS}>Qty on Hand</div><input type="number" min="0" style={inpS} value={form.quantity} onChange={e=>setForm(p=>({...p,quantity:e.target.value}))} onFocus={foc} onBlur={blr}/></div>
+            <div><div style={lblS}>Condition</div><select style={{...inpS,cursor:'pointer'}} value={form.condition} onChange={e=>setForm(p=>({...p,condition:e.target.value}))}>{EQUIP_CONDITIONS.map(c=><option key={c}>{c}</option>)}</select></div>
+            <div><div style={lblS}>Serial # (optional)</div><input style={inpS} value={form.serial_number} onChange={e=>setForm(p=>({...p,serial_number:e.target.value}))} onFocus={foc} onBlur={blr}/></div>
+            <div><div style={lblS}>Notes</div><input style={inpS} value={form.notes} onChange={e=>setForm(p=>({...p,notes:e.target.value}))} onFocus={foc} onBlur={blr}/></div>
+          </div>
+          <div style={{ display:'flex', gap:'8px' }}>
+            <button onClick={save} disabled={saving} style={{ display:'inline-flex', alignItems:'center', gap:'6px', background:'var(--accent)', color:'var(--text-inverse)', border:'none', borderRadius:'var(--radius-sm)', padding:'0 14px', height:'36px', fontFamily:'var(--font-condensed)', fontSize:'12px', fontWeight:700, cursor:'pointer', opacity:saving?0.6:1 }}><Icon name="save" size={13}/>{saving?'SAVING...':'SAVE'}</button>
+            <button onClick={()=>setShowAdd(false)} style={{ display:'inline-flex', alignItems:'center', gap:'6px', background:'transparent', color:'var(--text-secondary)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', padding:'0 12px', height:'36px', fontFamily:'var(--font-condensed)', fontSize:'12px', cursor:'pointer' }}>CANCEL</button>
+          </div>
+        </div>
+      )}
+
+      {items.length === 0 ? (
+        <div style={{ textAlign:'center', padding:'40px', background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-md)', color:'var(--text-muted)', fontSize:'13px' }}>No inventory items yet. Add your first item above.</div>
+      ) : (
+        grouped.map(({ cat, items: catItems }) => (
+          <div key={cat} style={{ marginBottom:'16px' }}>
+            <div style={{ fontSize:'10px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1.5px', fontFamily:'var(--font-condensed)', marginBottom:'8px', padding:'6px 0', borderBottom:'1px solid var(--border)' }}>{cat} ({catItems.length})</div>
+            {catItems.map(item => (
+              <div key={item.id} style={{ background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-md)', padding:'12px 16px', marginBottom:'6px', display:'flex', alignItems:'center', gap:'12px' }}>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:'13px', fontWeight:600, color:'var(--text-primary)', marginBottom:'2px' }}>{item.name}</div>
+                  <div style={{ fontSize:'12px', color:'var(--text-muted)', display:'flex', gap:'12px', flexWrap:'wrap' }}>
+                    <span>Qty: <strong style={{color:'var(--text-primary)'}}>{item.quantity}</strong></span>
+                    <span>Issued: {item.issued_quantity||0}</span>
+                    <span>Condition: {item.condition}</span>
+                    {item.serial_number && <span>S/N: {item.serial_number}</span>}
+                  </div>
+                </div>
+                <div style={{ display:'flex', gap:'6px', flexShrink:0 }}>
+                  <button onClick={()=>printQR(item)} style={{ display:'inline-flex', alignItems:'center', gap:'5px', background:'var(--accent-bg)', border:'1px solid var(--accent-border)', borderRadius:'var(--radius-sm)', color:'var(--accent)', fontFamily:'var(--font-condensed)', fontSize:'11px', fontWeight:700, cursor:'pointer', padding:'0 10px', height:'30px' }}>
+                    <Icon name="printer" size={11}/>QR CODE
+                  </button>
+                  <button onClick={()=>del(item.id)} style={{ background:'transparent', border:'none', color:'var(--text-muted)', cursor:'pointer', padding:'4px', display:'flex' }}><Icon name="trash-2" size={13}/></button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ))
+      )}
+      <div style={{ marginTop:'12px', fontSize:'11px', color:'var(--text-muted)' }}>
+        SQL: Create <code>equipment_item</code> table — see commit message for schema.
+      </div>
+    </div>
+  )
+}
+
+// ── QR Scanner Tab ────────────────────────────────────────────────────────────
+
+function ScanTab({ companyId, employee }) {
+  const [scannedItem, setScannedItem] = useState(null)
+  const [scanning, setScanning]       = useState(false)
+  const [manualId, setManualId]       = useState('')
+  const [log, setLog]                 = useState([])
+  const [acting, setActing]           = useState(false)
+
+  useEffect(() => { if (companyId) loadLog() }, [companyId])
+
+  async function loadLog() {
+    const { data } = await supabase.from('equipment_log').select('*,equipment_item(name,category)').eq('company_id', companyId).order('scanned_at', {ascending:false}).limit(20)
+    setLog(data||[])
+  }
+
+  async function lookupItem(id) {
+    const { data } = await supabase.from('equipment_item').select('*').eq('id', id).eq('company_id', companyId).single()
+    setScannedItem(data||null)
+    if (!data) alert('Item not found in inventory.')
+  }
+
+  async function logAction(action) {
+    if (!scannedItem || !employee) return
+    setActing(true)
+    await supabase.from('equipment_log').insert({ company_id:companyId, item_id:scannedItem.id, employee_id:employee.id, action, scanned_at:new Date().toISOString() })
+    const delta = action === 'checkout' ? 1 : -1
+    await supabase.from('equipment_item').update({ issued_quantity: Math.max(0, (scannedItem.issued_quantity||0)+delta) }).eq('id', scannedItem.id)
+    setActing(false); setScannedItem(null); setManualId(''); loadLog()
+  }
+
+  return (
+    <div>
+      <div style={{ background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-md)', padding:'20px', marginBottom:'16px' }}>
+        <div style={{ fontFamily:'var(--font-condensed)', fontSize:'11px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1.5px', marginBottom:'12px' }}>Manual Lookup (paste item ID)</div>
+        <div style={{ display:'flex', gap:'8px' }}>
+          <input value={manualId} onChange={e=>setManualId(e.target.value)} placeholder="Paste equipment item ID..." style={{ flex:1, background:'var(--bg-input)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', padding:'9px 12px', fontSize:'13px', color:'var(--text-primary)', outline:'none', fontFamily:'var(--font-body)' }} onKeyDown={e=>e.key==='Enter'&&manualId.trim()&&lookupItem(manualId.trim())}/>
+          <button onClick={()=>manualId.trim()&&lookupItem(manualId.trim())} style={{ display:'inline-flex', alignItems:'center', gap:'6px', background:'var(--accent)', color:'var(--text-inverse)', border:'none', borderRadius:'var(--radius-sm)', padding:'0 16px', height:'42px', fontFamily:'var(--font-condensed)', fontSize:'12px', fontWeight:700, cursor:'pointer' }}>LOOK UP</button>
+        </div>
+        <div style={{ fontSize:'11px', color:'var(--text-muted)', marginTop:'8px' }}>On mobile with Capacitor, scanning via camera requires the native app build with @capacitor/camera.</div>
+      </div>
+
+      {scannedItem && (
+        <div style={{ background:'var(--accent-bg)', border:'1px solid var(--accent-border)', borderRadius:'var(--radius-md)', padding:'18px 20px', marginBottom:'16px' }}>
+          <div style={{ fontFamily:'var(--font-display)', fontSize:'16px', letterSpacing:'1px', color:'var(--accent)', marginBottom:'6px' }}>{scannedItem.name}</div>
+          <div style={{ fontSize:'12px', color:'var(--text-secondary)', marginBottom:'12px' }}>{scannedItem.category} · Condition: {scannedItem.condition} · On hand: {scannedItem.quantity} · Issued: {scannedItem.issued_quantity||0}</div>
+          <div style={{ display:'flex', gap:'8px' }}>
+            <button onClick={()=>logAction('checkout')} disabled={acting} style={{ display:'inline-flex', alignItems:'center', gap:'6px', background:'var(--accent)', color:'var(--text-inverse)', border:'none', borderRadius:'var(--radius-sm)', padding:'0 16px', height:'38px', fontFamily:'var(--font-condensed)', fontSize:'12px', fontWeight:700, cursor:'pointer', opacity:acting?0.6:1 }}><Icon name="arrow-right" size={13}/>CHECK OUT</button>
+            <button onClick={()=>logAction('checkin')} disabled={acting} style={{ display:'inline-flex', alignItems:'center', gap:'6px', background:'var(--color-success-bg)', color:'var(--color-success)', border:'1px solid rgba(58,170,106,0.3)', borderRadius:'var(--radius-sm)', padding:'0 16px', height:'38px', fontFamily:'var(--font-condensed)', fontSize:'12px', fontWeight:700, cursor:'pointer', opacity:acting?0.6:1 }}><Icon name="arrow-left" size={13}/>CHECK IN</button>
+            <button onClick={()=>setScannedItem(null)} style={{ background:'transparent', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', color:'var(--text-secondary)', cursor:'pointer', padding:'0 12px', height:'38px', fontFamily:'var(--font-condensed)', fontSize:'12px' }}>CANCEL</button>
+          </div>
+        </div>
+      )}
+
+      <div style={{ fontFamily:'var(--font-condensed)', fontSize:'11px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1.5px', marginBottom:'8px' }}>Recent Activity</div>
+      {log.length === 0 ? <div style={{ color:'var(--text-muted)', fontSize:'13px' }}>No activity yet.</div> :
+        log.map((entry, i) => (
+          <div key={entry.id} style={{ display:'flex', alignItems:'center', gap:'12px', padding:'8px 0', borderBottom:i<log.length-1?'1px solid var(--border)':'none', fontSize:'12px' }}>
+            <span style={{ fontWeight:700, color:entry.action==='checkout'?'var(--color-warning)':'var(--color-success)', fontFamily:'var(--font-condensed)', minWidth:'70px' }}>{entry.action?.toUpperCase()}</span>
+            <span style={{ color:'var(--text-primary)', flex:1 }}>{entry.equipment_item?.name||'Unknown'}</span>
+            <span style={{ color:'var(--text-muted)' }}>{entry.scanned_at?new Date(entry.scanned_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):''}</span>
+          </div>
+        ))
+      }
     </div>
   )
 }

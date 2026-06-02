@@ -59,6 +59,8 @@ const paths = {
   map:"M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4zM8 2v16M16 6v16",
   zap:"M13 2L3 14h9l-1 8 10-12h-9l1-8z",
   "dollar-sign":"M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6",
+  "help-circle":"M12 22a10 10 0 100-20 10 10 0 000 20zM9.09 9a3 3 0 015.83 1c0 2-3 3-3 3M12 17h.01",
+  archive:"M21 8V21H3V8M1 3h22v5H1zM10 12h4",
 }
 export default function Icon({ name, size=20, color, className, style, strokeWidth=1.8 }) {
   const d = paths[name]

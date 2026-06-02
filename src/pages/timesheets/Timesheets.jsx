@@ -26,6 +26,19 @@ function fmtHours(h) {
   return `${Number(h).toFixed(2)}h`
 }
 
+function getCurrentPayPeriod() {
+  const now = new Date()
+  const day = now.getDay() // 0=Sun,1=Mon,...
+  const monday = new Date(now)
+  monday.setDate(now.getDate() - ((day + 6) % 7))
+  monday.setHours(0,0,0,0)
+  const sunday = new Date(monday)
+  sunday.setDate(monday.getDate() + 6)
+  sunday.setHours(23,59,59,999)
+  return { start: monday, end: sunday,
+    label: `${monday.toLocaleDateString('en-US',{month:'short',day:'numeric'})} – ${sunday.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}` }
+}
+
 export default function Timesheets() {
   const { profile } = useAuth()
   const [sheets, setSheets]       = useState([])
@@ -39,6 +52,10 @@ export default function Timesheets() {
   const [dateFrom, setDateFrom]         = useState('')
   const [dateTo, setDateTo]             = useState('')
   const [view, setView]                 = useState('list')
+  const [closingPeriod, setClosingPeriod] = useState(false)
+  const [noShowing, setNoShowing]         = useState(false)
+  const [periodMsg, setPeriodMsg]         = useState(null)
+  const payPeriod = getCurrentPayPeriod()
 
   const canReview = atLeast(profile?.role, 'sergeant')
   const canExport = atLeast(profile?.role, 'lieutenant')
@@ -138,6 +155,36 @@ export default function Timesheets() {
     URL.revokeObjectURL(url)
   }
 
+  const periodSheets = sheets.filter(t => {
+    const d = new Date(t.date)
+    return d >= payPeriod.start && d <= payPeriod.end
+  })
+  const periodHours = periodSheets.filter(t=>t.status==='approved').reduce((a,t)=>a+(Number(t.total_hours)||0),0)
+  const periodClosed = periodSheets.length > 0 && periodSheets.every(t => t.status === 'closed' || t.status === 'approved')
+
+  async function closePeriod() {
+    setClosingPeriod(true); setPeriodMsg(null)
+    const ids = periodSheets.filter(t=>t.status==='approved').map(t=>t.id)
+    if (ids.length === 0) { setClosingPeriod(false); setPeriodMsg({ ok:false, text:'No approved timesheets to close.' }); return }
+    await Promise.all(ids.map(id => supabase.from('timesheet').update({ status:'closed' }).eq('id',id)))
+    setClosingPeriod(false); setPeriodMsg({ ok:true, text:`${ids.length} timesheets closed.` }); loadAll()
+    setTimeout(()=>setPeriodMsg(null), 3000)
+  }
+
+  async function noShowAll() {
+    setNoShowing(true); setPeriodMsg(null)
+    const presentEmpIds = new Set(periodSheets.map(t=>t.employee_id))
+    const absent = employees.filter(e => !presentEmpIds.has(e.id))
+    if (absent.length === 0) { setNoShowing(false); setPeriodMsg({ ok:false, text:'All employees have timesheets this period.' }); return }
+    const periodStart = payPeriod.start.toISOString().split('T')[0]
+    await Promise.all(absent.map(e => supabase.from('timesheet').insert({
+      company_id: profile.company_id, employee_id: e.id,
+      date: periodStart, status: 'no_show', notes: 'Auto-marked no show for pay period close'
+    })))
+    setNoShowing(false); setPeriodMsg({ ok:true, text:`${absent.length} employees marked no show.` }); loadAll()
+    setTimeout(()=>setPeriodMsg(null), 3000)
+  }
+
   // selStyle moved to module scope below
 
   return (
@@ -161,6 +208,28 @@ export default function Timesheets() {
           {canExport&&<button onClick={()=>exportTimesheetPDF(filtered,employees,sites,'All timesheets')} style={{display:'flex',alignItems:'center',gap:'6px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'0 14px',height:'40px',color:'var(--text-secondary)',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,cursor:'pointer'}}><Icon name="file-text" size={14}/>PDF</button>}
           {canExport&&<button onClick={()=>exportToSheets('Timesheets','timesheets',[['Date','Employee','Site','Clock In','Clock Out','Hours','Status'],...filtered.map(t=>[t.date,empName(t.employee_id),siteName(t.site_id),fmt12(t.clock_in),fmt12(t.clock_out),fmtHours(t.total_hours),t.status])]).catch(()=>{})} style={{display:'flex',alignItems:'center',gap:'6px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'0 14px',height:'40px',color:'var(--text-secondary)',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,cursor:'pointer'}} title="Export to Google Sheets"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>SHEETS</button>}
         </div>
+      </div>
+
+      {/* Pay Period Banner */}
+      <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'14px 18px',marginBottom:'16px',display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:'12px'}}>
+        <div>
+          <div style={{fontSize:'10px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',marginBottom:'3px'}}>Current Pay Period (Weekly)</div>
+          <div style={{fontFamily:'var(--font-condensed)',fontSize:'14px',fontWeight:700,color:'var(--text-primary)',letterSpacing:'0.5px'}}>{payPeriod.label}</div>
+          <div style={{fontSize:'12px',color:'var(--text-muted)',marginTop:'2px'}}>{periodSheets.length} shifts · {periodHours.toFixed(1)}h approved</div>
+        </div>
+        {periodMsg && <div style={{fontSize:'12px',padding:'6px 12px',borderRadius:'var(--radius-sm)',background:periodMsg.ok?'var(--color-success-bg)':'var(--color-danger-bg)',color:periodMsg.ok?'var(--color-success)':'var(--color-danger)',border:`1px solid ${periodMsg.ok?'rgba(58,170,106,0.3)':'rgba(192,57,43,0.3)'}`}}>{periodMsg.text}</div>}
+        {canReview && (
+          <div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>
+            <button onClick={closePeriod} disabled={closingPeriod||periodSheets.filter(t=>t.status==='approved').length===0}
+              style={{display:'inline-flex',alignItems:'center',gap:'6px',background:'var(--accent-bg)',border:'1px solid var(--accent-border)',borderRadius:'var(--radius-sm)',color:'var(--accent)',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',padding:'0 14px',height:'36px',opacity:periodSheets.filter(t=>t.status==='approved').length===0?0.5:1}}>
+              <Icon name="check-circle" size={13}/>{closingPeriod?'CLOSING...':'CLOSE PERIOD'}
+            </button>
+            <button onClick={noShowAll} disabled={noShowing||!periodClosed}
+              style={{display:'inline-flex',alignItems:'center',gap:'6px',background:'var(--color-warning-bg)',border:'1px solid rgba(232,148,58,0.3)',borderRadius:'var(--radius-sm)',color:'var(--color-warning)',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',padding:'0 14px',height:'36px',opacity:!periodClosed?0.5:1}}>
+              <Icon name="alert-circle" size={13}/>{noShowing?'MARKING...':'NO SHOW ALL'}
+            </button>
+          </div>
+        )}
       </div>
 
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(130px,1fr))',gap:'10px',marginBottom:'20px'}}>

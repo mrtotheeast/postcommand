@@ -831,9 +831,6 @@ function ReportAutomationTab({ companyId }) {
           ))}
         </div>
       )}
-      <div style={{ marginTop:'12px', fontSize:'11px', color:'var(--text-muted)', lineHeight:1.6 }}>
-        SQL: <code>CREATE TABLE report_automation (id UUID DEFAULT gen_random_uuid() PRIMARY KEY, company_id UUID NOT NULL, report_type TEXT, recipients TEXT, schedule TEXT, format TEXT DEFAULT 'PDF', enabled BOOLEAN DEFAULT true, created_at TIMESTAMPTZ DEFAULT NOW()); ALTER TABLE report_automation ENABLE ROW LEVEL SECURITY;</code>
-      </div>
     </div>
   )
 }

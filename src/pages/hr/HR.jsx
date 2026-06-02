@@ -974,9 +974,6 @@ function PolicyManagementTab({ companyId }) {
           </div>
         ))
       )}
-      <div style={{ marginTop:'16px', padding:'12px 14px', background:'var(--bg-surface)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', fontSize:'11px', color:'var(--text-muted)', lineHeight:1.6 }}>
-        SQL: <code>CREATE TABLE company_policy (id UUID DEFAULT gen_random_uuid() PRIMARY KEY, company_id UUID NOT NULL, title TEXT NOT NULL, category TEXT, content TEXT, file_url TEXT, ai_summary TEXT, updated_at TIMESTAMPTZ DEFAULT NOW()); ALTER TABLE company_policy ENABLE ROW LEVEL SECURITY;</code>
-      </div>
     </div>
   )
 }

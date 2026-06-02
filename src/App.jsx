@@ -26,6 +26,7 @@ import Billing from './pages/billing/Billing'
 import Archived from './pages/archived/Archived'
 import SuperAdmin from './pages/admin/SuperAdmin'
 import More from './pages/more/More'
+import Help from './pages/help/Help'
 import PerformanceReviews from './pages/reviews/PerformanceReviews'
 import ClientManagement from './pages/clients/ClientManagement'
 
@@ -78,6 +79,7 @@ export default function App() {
       <Route path="/more"       element={<ProtectedRoute><More /></ProtectedRoute>} />
       <Route path="/reviews"    element={<ProtectedRoute><PerformanceReviews /></ProtectedRoute>} />
       <Route path="/clients"    element={<ProtectedRoute><ClientManagement /></ProtectedRoute>} />
+      <Route path="/help"       element={<ProtectedRoute><Help /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
     </>

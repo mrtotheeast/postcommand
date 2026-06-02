@@ -32,6 +32,7 @@ export const NAV_ITEMS = [
     { id:'reviews',  label:'Reviews',  path:'/reviews',  icon:'star',    roles:['super_admin','chief','lieutenant'] },
     { id:'clients',  label:'Clients',  path:'/clients',  icon:'users',   roles:['super_admin','chief'] },
     { id:'settings', label:'Settings', path:'/settings', icon:'settings', roles:['super_admin','chief'] },
+    { id:'help',     label:'Help',     path:'/help',     icon:'help-circle', roles:['super_admin','chief','lieutenant','sergeant','corporal','officer','hr','accounting','office_staff'] },
   ]},
 ]
 
