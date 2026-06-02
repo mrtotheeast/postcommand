@@ -66,6 +66,7 @@ export default function Invoices() {
   const [filterStatus, setFilterStatus] = useState('all')
   const [editing, setEditing]     = useState(null)
   const [viewing, setViewing]     = useState(null)
+  const [tileFilter, setTileFilter] = useState(null)
 
   useEffect(() => { if (profile?.company_id) load() }, [profile])
 
@@ -78,12 +79,15 @@ export default function Invoices() {
 
   const filtered = useMemo(() => invoices.filter(inv => {
     if (filterStatus !== 'all' && inv.status !== filterStatus) return false
+    if (tileFilter === 'outstanding' && inv.status !== 'sent' && inv.status !== 'overdue') return false
+    if (tileFilter === 'paid' && inv.status !== 'paid') return false
+    if (tileFilter === 'overdue' && inv.status !== 'overdue') return false
     if (search) {
       const q = search.toLowerCase()
       if (!inv.invoice_number?.toLowerCase().includes(q) && !inv.client_name?.toLowerCase().includes(q)) return false
     }
     return true
-  }), [invoices, search, filterStatus])
+  }), [invoices, search, filterStatus, tileFilter])
 
   async function updateStatus(id, status) {
     await supabase.from('invoice').update({ status }).eq('id', id)
@@ -109,15 +113,16 @@ export default function Invoices() {
 
       <div style={s.stats}>
         {[
-          { label:'Outstanding', value:fmtMoney(totalOutstanding), color: totalOutstanding > 0 ? 'var(--color-warning)' : 'var(--text-secondary)' },
-          { label:'Paid (All Time)', value:fmtMoney(totalPaid), color:'var(--color-success)' },
-          { label:'Overdue', value:overdueCount, color: overdueCount > 0 ? 'var(--color-danger)' : 'var(--text-secondary)' },
-          { label:'Total Invoices', value:invoices.length, color:'var(--text-primary)' },
+          { key:'outstanding', label:'Outstanding', value:fmtMoney(totalOutstanding), color: totalOutstanding > 0 ? 'var(--color-warning)' : 'var(--text-secondary)' },
+          { key:'paid', label:'Paid (All Time)', value:fmtMoney(totalPaid), color:'var(--color-success)' },
+          { key:'overdue', label:'Overdue', value:overdueCount, color: overdueCount > 0 ? 'var(--color-danger)' : 'var(--text-secondary)' },
+          { key:'total', label:'Total Invoices', value:invoices.length, color:'var(--text-primary)' },
         ].map(c => (
-          <div key={c.label} style={s.statCard}>
+          <button key={c.key} onClick={() => setTileFilter(tileFilter===c.key?null:c.key)}
+            style={{...s.statCard, border:`1px solid ${tileFilter===c.key?'var(--accent)':'var(--border-subtle)'}`, cursor:'pointer', textAlign:'left', outline:'none', transition:'all 150ms ease'}}>
             <div style={s.statLbl}>{c.label}</div>
-            <div style={{ ...s.statVal, color:c.color, fontSize: c.value.toString().length > 7 ? '18px' : '26px' }}>{c.value}</div>
-          </div>
+            <div style={{ ...s.statVal, color:tileFilter===c.key?'var(--accent)':c.color, fontSize: c.value.toString().length > 7 ? '18px' : '26px' }}>{c.value}</div>
+          </button>
         ))}
       </div>
 
@@ -329,6 +334,23 @@ function InvoiceFormModal({ invoices, mode, invoice, companyId, onClose, onSaved
 
 function InvoiceDetailModal({ invoice, onClose, onEdit, onDelete, onStatusChange }) {
   const items = invoice.invoice_item || []
+  const [nudging, setNudging] = useState(false)
+  const [nudgeMsg, setNudgeMsg] = useState(null)
+
+  async function sendNudge() {
+    if (!invoice.client_email) return
+    setNudging(true); setNudgeMsg(null)
+    try {
+      await supabase.functions.invoke('send-email', {
+        body: { type:'invoice_reminder', to:invoice.client_email, data:{ invoiceNumber:invoice.invoice_number, total:fmtMoney(invoice.total), dueDate:fmtDate(invoice.due_date) } }
+      })
+      await supabase.from('invoice').update({ sent_at: new Date().toISOString() }).eq('id', invoice.id)
+      setNudgeMsg({ ok:true, text:`Reminder sent to ${invoice.client_email}` })
+    } catch(e) {
+      setNudgeMsg({ ok:false, text: e.message || 'Failed to send' })
+    }
+    setNudging(false)
+  }
 
   function print() {
     const w = window.open('', '_blank', 'width=800,height=900')
@@ -390,12 +412,22 @@ function InvoiceDetailModal({ invoice, onClose, onEdit, onDelete, onStatusChange
           </div>
         </div>
 
+        {nudgeMsg && (
+          <div style={{padding:'8px 12px',borderRadius:'var(--radius-sm)',marginBottom:'14px',fontSize:'12px',background:nudgeMsg.ok?'var(--color-success-bg)':'var(--color-danger-bg)',color:nudgeMsg.ok?'var(--color-success)':'var(--color-danger)',border:`1px solid ${nudgeMsg.ok?'rgba(58,170,106,0.3)':'rgba(192,57,43,0.3)'}`}}>
+            {nudgeMsg.text}
+          </div>
+        )}
+
         <div style={{ display:'flex', gap:'24px', flexWrap:'wrap', marginBottom:'18px' }}>
           {[
             { label:'Issue Date', value:fmtDate(invoice.issue_date) },
             { label:'Due Date',   value:fmtDate(invoice.due_date) },
             { label:'Status',     value: <span style={{ ...s.pill, background:STATUS[invoice.status]?.bg, color:STATUS[invoice.status]?.color }}>{STATUS[invoice.status]?.label}</span> },
             { label:'Total',      value: <span style={{ fontFamily:'var(--font-display)', fontSize:'18px', color:'var(--accent)' }}>{fmtMoney(invoice.total)}</span> },
+            ...(invoice.sent_at ? [{ label:'Sent', value:fmtDate(invoice.sent_at) }] : []),
+            ...(invoice.viewed_at ? [{ label:'Viewed', value:fmtDate(invoice.viewed_at) }] : []),
+            ...(invoice.client_email ? [{ label:'Client Email', value:invoice.client_email }] : []),
+            ...(invoice.client_phone ? [{ label:'Client Phone', value:invoice.client_phone }] : []),
           ].map(item => (
             <div key={item.label}>
               <div style={s.lbl}>{item.label}</div>
@@ -433,6 +465,9 @@ function InvoiceDetailModal({ invoice, onClose, onEdit, onDelete, onStatusChange
           {invoice.status === 'draft'  && <button style={s.saveBtn}   onClick={() => onStatusChange(invoice.id,'sent')}><Icon name="send" size={13} />MARK SENT</button>}
           {invoice.status === 'sent'   && <button style={s.saveBtn}   onClick={() => onStatusChange(invoice.id,'paid')}><Icon name="check" size={13} />MARK PAID</button>}
           {invoice.status === 'sent'   && <button style={s.dangerBtn} onClick={() => onStatusChange(invoice.id,'overdue')}><Icon name="alert-circle" size={13} />MARK OVERDUE</button>}
+          {(invoice.status === 'sent' || invoice.status === 'overdue') && invoice.client_email && (
+            <button style={{...s.ghostBtn, opacity:nudging?0.6:1}} onClick={sendNudge} disabled={nudging}><Icon name="bell" size={13} />{nudging?'SENDING...':'SEND NUDGE'}</button>
+          )}
           {invoice.status !== 'void'   && <button style={s.ghostBtn}  onClick={onEdit}><Icon name="edit-2" size={13} />EDIT</button>}
           <button style={s.dangerBtn} onClick={() => { if (window.confirm('Delete this invoice?')) onDelete(invoice.id) }}><Icon name="trash-2" size={13} />DELETE</button>
         </div>

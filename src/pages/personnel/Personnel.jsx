@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
 import { ROLE_LABELS, atLeast } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
+import EmployeeProfile from './EmployeeProfile'
 
 const ROLE_COLORS = {
   super_admin:{bg:'rgba(201,162,39,0.15)',color:'#c9a227'},chief:{bg:'rgba(201,162,39,0.15)',color:'#c9a227'},
@@ -33,6 +34,8 @@ export default function Personnel() {
   const [bulkActing, setBulkActing] = useState(false)
   const [mainView, setMainView]     = useState('directory') // 'directory' | 'photo_approvals'
   const [showAdd, setShowAdd]       = useState(false)
+  const [tileFilter, setTileFilter] = useState(null)
+  const [profileTab, setProfileTab] = useState('overview')
   const canViewSensitive = atLeast(profile?.role, 'lieutenant')
   const canEdit = atLeast(profile?.role, 'chief')
 
@@ -54,12 +57,20 @@ export default function Personnel() {
   const filtered = useMemo(() => employees.filter(e => {
     const name = `${e.first_name} ${e.last_name}`.toLowerCase()
     const matchSearch = !search || name.includes(search.toLowerCase()) || e.email?.toLowerCase().includes(search.toLowerCase()) || e.employee_id_number?.toLowerCase().includes(search.toLowerCase()) || e.position_title?.toLowerCase().includes(search.toLowerCase())
-    return matchSearch && (filterRole==='all'||e.role===filterRole) && (filterStatus==='all'||e.status===filterStatus)
-  }), [employees, search, filterRole, filterStatus])
+    const matchTile = !tileFilter || tileFilter === 'total' ||
+      (tileFilter === 'unarmed' && !e.is_armed) ||
+      (tileFilter === 'armed' && e.is_armed) ||
+      (tileFilter === 'appAccess' && e.has_app_access) ||
+      (tileFilter === 'pendingInvite' && e.invitation_status === 'invited' && !e.has_app_access)
+    return matchSearch && matchTile && (filterRole==='all'||e.role===filterRole) && (filterStatus==='all'||e.status===filterStatus)
+  }), [employees, search, filterRole, filterStatus, tileFilter])
 
   const stats = useMemo(() => ({
-    total:employees.length, active:employees.filter(e=>e.status==='active').length,
-    armed:employees.filter(e=>e.is_armed).length, appAccess:employees.filter(e=>e.has_app_access).length,
+    total: employees.length,
+    unarmed: employees.filter(e => !e.is_armed).length,
+    armed: employees.filter(e => e.is_armed).length,
+    appAccess: employees.filter(e => e.has_app_access).length,
+    pendingInvite: employees.filter(e => e.invitation_status === 'invited' && !e.has_app_access).length,
   }), [employees])
 
   function initials(e) { return `${e.first_name?.[0]??''}${e.last_name?.[0]??''}`.toUpperCase() }
@@ -102,12 +113,19 @@ export default function Personnel() {
         )}
       </div>
 
-      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(130px,1fr))',gap:'10px',marginBottom:'20px'}}>
-        {[{label:'Total',value:stats.total,color:'var(--text-primary)'},{label:'Active',value:stats.active,color:'var(--color-success)'},{label:'Armed',value:stats.armed,color:'var(--accent)'},{label:'App Access',value:stats.appAccess,color:'var(--color-info)'}].map(s=>(
-          <div key={s.label} style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'14px 16px'}}>
-            <div style={{fontSize:'10px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',marginBottom:'4px'}}>{s.label}</div>
-            <div style={{fontFamily:'var(--font-display)',fontSize:'26px',letterSpacing:'1px',color:s.color,lineHeight:1}}>{s.value}</div>
-          </div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:'10px',marginBottom:'20px'}}>
+        {[
+          {key:'total',label:'Total Employees',value:stats.total},
+          {key:'unarmed',label:'Unarmed',value:stats.unarmed},
+          {key:'armed',label:'Armed',value:stats.armed},
+          {key:'appAccess',label:'App Access',value:stats.appAccess},
+          {key:'pendingInvite',label:'Pending Invite',value:stats.pendingInvite},
+        ].map(t=>(
+          <button key={t.key} onClick={()=>setTileFilter(tileFilter===t.key?null:t.key)}
+            style={{background:'var(--bg-card)',border:`1px solid ${tileFilter===t.key?'var(--accent)':'var(--border-subtle)'}`,borderRadius:'var(--radius-md)',padding:'14px 16px',textAlign:'left',cursor:'pointer',transition:'all 150ms ease',outline:'none',width:'100%'}}>
+            <div style={{fontSize:'10px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',marginBottom:'4px'}}>{t.label}</div>
+            <div style={{fontFamily:'var(--font-display)',fontSize:'26px',letterSpacing:'1px',color:tileFilter===t.key?'var(--accent)':'var(--text-primary)',lineHeight:1}}>{t.value}</div>
+          </button>
         ))}
       </div>
 
@@ -174,7 +192,7 @@ export default function Personnel() {
         </div>
       )}
 
-      {selected && <EmpDetail emp={selected} canViewSensitive={canViewSensitive} canEdit={canEdit} onClose={()=>setSelected(null)} onRefresh={loadEmployees}/>}
+      {selected && <EmployeeProfile emp={selected} allEmployees={filtered} activeTab={profileTab} onTabChange={setProfileTab} onNavigate={setSelected} canViewSensitive={canViewSensitive} canEdit={canEdit} onClose={()=>setSelected(null)} onRefresh={loadEmployees}/>}
       {showAdd && <AddEmployeeModal companyId={profile.company_id} onClose={()=>setShowAdd(false)} onSaved={()=>{setShowAdd(false);loadEmployees()}}/>}
       {showImport && <CSVImportModal companyId={profile.company_id} onClose={() => setShowImport(false)} onImported={() => { setShowImport(false); loadEmployees() }} />}
       </>

@@ -16,8 +16,8 @@ const s = {
   logoSub:{fontSize:'10px',color:'var(--text-muted)',letterSpacing:'1px',textTransform:'uppercase',marginTop:'4px'},
   nav:{flex:1,padding:'10px 0',overflowY:'auto'},
   navSection:{fontSize:'9px',color:'var(--text-muted)',letterSpacing:'1.5px',textTransform:'uppercase',padding:'14px 18px 5px',fontFamily:'var(--font-condensed)'},
-  navItem:{display:'flex',alignItems:'center',gap:'10px',width:'100%',padding:'10px 18px',fontSize:'13px',color:'var(--text-secondary)',background:'transparent',border:'none',borderLeft:'2px solid transparent',textAlign:'left',cursor:'pointer',transition:'all 150ms ease',minHeight:'44px'},
-  navItemActive:{color:'var(--accent)',background:'var(--accent-bg)',borderLeft:'2px solid var(--accent)',fontWeight:600},
+  navItem:{display:'flex',alignItems:'center',gap:'10px',width:'100%',padding:'10px 18px',fontSize:'13px',color:'var(--text-secondary)',background:'transparent',border:'none',borderLeft:'3px solid transparent',textAlign:'left',cursor:'pointer',transition:'all 150ms ease',minHeight:'44px'},
+  navItemActive:{color:'var(--accent)',background:'var(--accent-bg)',borderLeft:'3px solid var(--accent)',fontWeight:600},
   navLabel:{flex:1,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'},
   footer:{padding:'14px 18px',borderTop:'1px solid var(--border)',flexShrink:0},
   userPill:{display:'flex',alignItems:'center',gap:'10px'},
@@ -55,6 +55,11 @@ export default function AppLayout({ children }) {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768)
+  const [expandedSections, setExpandedSections] = useState(() => {
+    const init = {}
+    NAV_ITEMS.forEach(sec => { init[sec.section] = true })
+    return init
+  })
   const [isOnline, setIsOnline] = useState(navigator.onLine)
   const location = useLocation()
   const navigate = useNavigate()
@@ -125,22 +130,33 @@ export default function AppLayout({ children }) {
         )}
       </div>
       <nav style={s.nav}>
-        {visibleSections.map(sec => (
-          <div key={sec.section}>
-            <div style={s.navSection}>{sec.section}</div>
-            {sec.items.map(item => {
-              const active = location.pathname.startsWith(item.path)
-              const count = getBadgeCount(item)
-              return (
-                <button key={item.id} style={{...s.navItem,...(active?s.navItemActive:{})}} onClick={() => navigate(item.path)} aria-current={active?'page':undefined}>
-                  <Icon name={item.icon} size={17} />
-                  <span style={s.navLabel}>{item.label}</span>
-                  {count > 0 && <Badge count={count} />}
-                </button>
-              )
-            })}
-          </div>
-        ))}
+        {visibleSections.map(sec => {
+          const isExpanded = expandedSections[sec.section] !== false
+          return (
+            <div key={sec.section}>
+              <button onClick={() => setExpandedSections(prev => ({...prev, [sec.section]: !isExpanded}))}
+                style={{display:'flex',alignItems:'center',justifyContent:'space-between',width:'100%',background:'transparent',border:'none',cursor:'pointer',padding:'0'}}>
+                <div style={s.navSection}>{sec.section}</div>
+                <div style={{paddingRight:'14px',color:'var(--text-muted)',display:'flex',alignItems:'center'}}>
+                  <Icon name={isExpanded?'chevron-up':'chevron-down'} size={11}/>
+                </div>
+              </button>
+              {isExpanded && sec.items.map(item => {
+                const active = location.pathname.startsWith(item.path)
+                const count = getBadgeCount(item)
+                return (
+                  <button key={item.id} style={{...s.navItem,...(active?s.navItemActive:{})}}
+                    onClick={() => { navigate(item.path); document.getElementById('main-content')?.scrollTo(0,0) }}
+                    aria-current={active?'page':undefined}>
+                    <Icon name={item.icon} size={17} />
+                    <span style={s.navLabel}>{item.label}</span>
+                    {count > 0 && <Badge count={count} />}
+                  </button>
+                )
+              })}
+            </div>
+          )
+        })}
       </nav>
       <div style={s.footer}>
         <div style={s.userPill}>
@@ -186,6 +202,11 @@ export default function AppLayout({ children }) {
             {isMobile && (
               <button style={{...s.menuBtn,display:'flex'}} onClick={() => setDrawerOpen(o => !o)} aria-label="Open navigation">
                 <Icon name="menu" size={20} />
+              </button>
+            )}
+            {location.pathname !== '/dashboard' && (
+              <button style={s.iconBtn} onClick={() => navigate(-1)} aria-label="Go back">
+                <Icon name="arrow-left" size={18} />
               </button>
             )}
             <h1 style={s.pageTitle}>{pageTitle.toUpperCase()}</h1>
