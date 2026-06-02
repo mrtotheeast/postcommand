@@ -16,26 +16,59 @@
 
 import { useState, useMemo, useEffect } from 'react'
 import { ComposableMap, Geographies, Geography } from 'react-simple-maps'
-import { CCW_STATES, CCW_MAP, PERMIT_TYPES, DATA_META, getStateColor } from './ccwData'
+import CCW_DATA, { DATA_META, getStateData, getAllStateCodes } from './ccwData'
 import { supabase } from '../../lib/supabase'
 
 const GEO_URL = '/us-states.json'
 
-// Fix 3 — distinct, high-contrast permit type colors
-const TYPE_COLORS = {
-  constitutional: '#2e7d32',  // dark green
-  shall_issue:    '#1565c0',  // dark blue
-  may_issue:      '#e65100',  // dark orange
-  no_issue:       '#b71c1c',  // dark red
+// Build a flat array + map for iteration (new data is keyed object, old code expected array)
+const STATES_LIST = Object.entries(CCW_DATA).map(([code, data]) => ({ ...data, code }))
+const STATE_MAP   = CCW_DATA  // keyed by state code
+
+// Permit type display helpers (new data uses 'shall-issue' / 'may-issue' / 'constitutional')
+const PERMIT_TYPE_LABELS = {
+  'constitutional': 'Permitless / Constitutional Carry',
+  'shall-issue':    'Shall Issue',
+  'may-issue':      'May Issue',
 }
-const TYPE_BG = {
-  constitutional: 'rgba(46,125,50,0.12)',
-  shall_issue:    'rgba(21,101,192,0.12)',
-  may_issue:      'rgba(230,81,0,0.12)',
-  no_issue:       'rgba(183,28,28,0.12)',
+const PERMIT_TYPE_SHORT = { 'constitutional':'CC', 'shall-issue':'SI', 'may-issue':'MI' }
+
+// Permit type base colors (no home state selected)
+const PERMIT_COLORS = {
+  'constitutional': '#2e7d32',
+  'shall-issue':    '#1565c0',
+  'may-issue':      '#e65100',
 }
-function localColor(permitType) { return TYPE_COLORS[permitType] || '#c8d8e8' }
-function localBg(permitType)    { return TYPE_BG[permitType]    || 'rgba(200,216,232,0.2)' }
+const PERMIT_BG = {
+  'constitutional': 'rgba(46,125,50,0.12)',
+  'shall-issue':    'rgba(21,101,192,0.12)',
+  'may-issue':      'rgba(230,81,0,0.12)',
+}
+function baseColor(permitType) { return PERMIT_COLORS[permitType] || '#b71c1c' }
+function baseBg(permitType)    { return PERMIT_BG[permitType]    || 'rgba(183,28,28,0.12)' }
+
+// Task 2 — verified coloring logic using honoredBy arrays from handgunlaw.us data
+function getMapColor(stateCode, homeState) {
+  if (!homeState) {
+    const st = CCW_DATA[stateCode]
+    if (!st) return '#e0e0e0'
+    if (st.constitutionalCarry) return '#2e7d32'          // dark green — constitutional
+    if (st.permitType === 'shall-issue') return '#1565c0'  // dark blue — shall issue
+    if (st.permitType === 'may-issue')   return '#e65100'  // dark orange — may issue
+    return '#b71c1c'                                       // dark red — no issue / restrictive
+  }
+  const homeData = CCW_DATA[homeState]
+  if (!homeData) return '#e0e0e0'
+  if (stateCode === homeState) return '#c8a84b'            // gold — your home state
+  // Can you carry there with your home state permit?
+  if (homeData.honoredBy?.includes(stateCode)) return '#4caf50'  // green — YES carry allowed
+  // Does your home state honor their permit?
+  if (homeData.honors?.includes(stateCode)) return '#81c784'      // light green
+  // Constitutional carry states — anyone can carry there
+  if (CCW_DATA[stateCode]?.constitutionalCarry) return '#aed581'  // yellow-green
+  // Not honored
+  return '#ef5350'                                         // red — cannot carry here
+}
 
 const FIPS = {
   '01':'AL','02':'AK','04':'AZ','05':'AR','06':'CA','08':'CO','09':'CT','10':'DE',
@@ -73,7 +106,7 @@ export default function CCWMap() {
   const [zoom,         setZoom]         = useState(1)
   const [geoError,     setGeoError]     = useState(false)
 
-  const homeData = homeState ? CCW_MAP[homeState] : null
+  const homeData = homeState ? STATE_MAP[homeState] : null
 
   // States that honor the home state's permit
   const homeSupporters = useMemo(() =>
@@ -85,7 +118,7 @@ export default function CCWMap() {
     homeData ? new Set(homeData.honors || []) : new Set()
   , [homeData])
 
-  const filteredList = useMemo(() => CCW_STATES.filter(s => {
+  const filteredList = useMemo(() => STATES_LIST.filter(s => {
     if (filterType !== 'all' && s.permitType !== filterType) return false
     if (search) {
       const q = search.toLowerCase()
@@ -95,7 +128,7 @@ export default function CCWMap() {
   }), [filterType, search])
 
   function handleStateClick(code) {
-    const state = CCW_MAP[code]
+    const state = STATE_MAP[code]
     if (!state) return
     if (multiMode) {
       setSelected(prev => prev.includes(code) ? prev.filter(c=>c!==code) : prev.length<8?[...prev,code]:prev)
@@ -105,19 +138,20 @@ export default function CCWMap() {
   }
 
   function selectByCode(code) {
-    const st = CCW_MAP[code]
+    const st = STATE_MAP[code]
     if (st) setModal(st)
   }
 
   function printPDF() {
-    const stateRows = CCW_STATES.map(s => {
-      const pt = PERMIT_TYPES[s.permitType]
+    const stateRows = STATES_LIST.map(s => {
+      const pColor = baseColor(s.permitType)
+      const pShort = PERMIT_TYPE_SHORT[s.permitType] || '—'
       return `<tr>
         <td>${s.name}</td>
-        <td style="color:${pt?.color||'#666'};font-weight:600">${pt?.short||'—'}</td>
-        <td>${s.constitutional?'✓ YES':'No'}</td>
-        <td>${s.fee===0?'Free':'$'+s.fee}</td>
-        <td>${s.trainingRequired==='None required'||s.trainingRequired==='None'?'None':s.trainingRequired}</td>
+        <td style="color:${pColor};font-weight:600">${pShort}</td>
+        <td>${s.constitutionalCarry?'✓ YES':'No'}</td>
+        <td>${s.permitRequired?'Required':'Not required'}</td>
+        <td>${s.minAge} years</td>
         <td>${s.honoredBy?.length??0}</td>
         <td>${s.honors?.length??0}</td>
       </tr>`
@@ -146,22 +180,24 @@ tr:nth-child(even){background:#fafafa}
 </style></head><body>
 <h1>POST<span>COMMAND</span></h1>
 <div class="sub">CCW Reciprocity Map — All 50 States + DC</div>
-<div class="meta">Data last verified: ${DATA_META.lastUpdated} | Next scheduled AI update: ${DATA_META.nextUpdate}</div>
+<div class="meta">Source: ${DATA_META.source} — ${DATA_META.sourceUrl} | Last verified: ${DATA_META.lastVerified} | Next review: ${DATA_META.nextReview}</div>
 <div class="legend">
-${Object.entries(PERMIT_TYPES).map(([,pt])=>`<div class="legend-item"><div class="legend-dot" style="background:${pt.mapColor}"></div>${pt.label} (${CCW_STATES.filter(s=>PERMIT_TYPES[s.permitType]===pt).length} states)</div>`).join('')}
+<div class="legend-item"><div class="legend-dot" style="background:#2e7d32"></div>Constitutional/Permitless (${STATES_LIST.filter(s=>s.constitutionalCarry).length} states)</div>
+<div class="legend-item"><div class="legend-dot" style="background:#1565c0"></div>Shall-Issue (${STATES_LIST.filter(s=>s.permitType==='shall-issue'&&!s.constitutionalCarry).length} states)</div>
+<div class="legend-item"><div class="legend-dot" style="background:#e65100"></div>May-Issue (${STATES_LIST.filter(s=>s.permitType==='may-issue').length} states)</div>
 </div>
 <table>
-<thead><tr><th>State</th><th>Carry Type</th><th>Constitutional</th><th>Permit Fee</th><th>Training</th><th>Honored By</th><th>Honors</th></tr></thead>
+<thead><tr><th>State</th><th>Type</th><th>Constitutional</th><th>Permit Req.</th><th>Min Age</th><th>Honored By</th><th>Honors</th></tr></thead>
 <tbody>${stateRows}</tbody>
 </table>
 <div class="disclaimer">
 <h4>⚠ DISCLAIMER</h4>
-<p>This map is updated monthly using AI-assisted research. Information may not reflect the most current laws. <strong>Always verify with local state authorities and consult a licensed attorney before traveling with a firearm.</strong> Do not rely solely on this map for legal compliance. Laws change frequently. Nationwide Police Services LLC is not responsible for accuracy. Last updated: ${DATA_META.lastUpdated}</p>
+<p>Data sourced from <strong>Handgunlaw.us</strong> (handgunlaw.us/states/USStatesThatHonorMyPermit.pdf), last verified ${DATA_META.lastVerified}. Handgunlaw.us is referenced by law enforcement and firearms attorneys nationwide. <strong>Laws change frequently — always verify with the destination state's official authority before carrying.</strong> This map is for reference only and is not legal advice. Nationwide Police Services LLC assumes no liability for accuracy.</p>
 </div>
 <div class="footer">
 © 2026 Nationwide Police Services LLC. All rights reserved.<br/>
-CCW laws are subject to change without notice. Data compiled from public state statutes and AI-assisted research.<br/>
-Always verify current laws before carrying. This is not legal advice. Consult a licensed attorney.
+Data source: Handgunlaw.us, last verified ${DATA_META.lastVerified} | Next review: ${DATA_META.nextReview}<br/>
+Laws change frequently. Always verify with official state sources. This is not legal advice.
 </div>
 </body></html>`)
     w.document.close(); w.print()
@@ -223,14 +259,14 @@ Always verify current laws before carrying. This is not legal advice. Consult a 
             style={{ background:C.bg, border:`1px solid ${C.border}`, borderRadius:'6px', padding:'6px 10px', fontSize:'12px', color:C.text, outline:'none', cursor:'pointer', fontFamily:FONT, fontWeight:600 }}
           >
             <option value="">Select Your Home State</option>
-            {CCW_STATES.map(s=><option key={s.code} value={s.code}>{s.name}</option>)}
+            {STATES_LIST.sort((a,b)=>a.name.localeCompare(b.name)).map(s=><option key={s.code} value={s.code}>{s.name}</option>)}
           </select>
           <select
             value={filterType} onChange={e=>setFilterType(e.target.value)}
             style={{ background:C.bg, border:`1px solid ${C.border}`, borderRadius:'6px', padding:'6px 10px', fontSize:'12px', color:C.text, outline:'none', cursor:'pointer', fontFamily:FONT }}
           >
             <option value="all">All Permit Types</option>
-            {Object.entries(PERMIT_TYPES).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
+            {Object.entries(PERMIT_TYPE_LABELS).map(([k,v])=><option key={k} value={k}>{v}</option>)}
           </select>
           <input
             style={{ background:C.bg, border:`1px solid ${C.border}`, borderRadius:'6px', padding:'6px 10px', fontSize:'12px', color:C.text, outline:'none', fontFamily:FONT, width:'160px', transition:'border-color 150ms ease' }}
@@ -242,11 +278,11 @@ Always verify current laws before carrying. This is not legal advice. Consult a 
           {/* Legend */}
           <div style={{ marginLeft:'auto', display:'flex', gap:'10px', flexWrap:'wrap', alignItems:'center' }}>
             {homeState && <span style={{ fontSize:'11px', fontWeight:700, color:C.gold, background:C.goldBg, padding:'2px 8px', borderRadius:'10px', border:`1px solid rgba(200,168,75,0.3)` }}>📍 {homeState} selected</span>}
-            {Object.entries(PERMIT_TYPES).map(([k,v])=>(
+            {Object.entries(PERMIT_TYPE_LABELS).map(([k,v])=>(
               <button key={k} onClick={()=>setFilterType(filterType===k?'all':k)}
                 style={{ display:'flex', alignItems:'center', gap:'5px', background:'transparent', border:'none', cursor:'pointer', fontSize:'10px', color:C.text, padding:'2px 4px', opacity:filterType!=='all'&&filterType!==k?0.3:1, transition:'opacity 150ms ease' }}>
-                <div style={{ width:'12px', height:'12px', borderRadius:'2px', background:localColor(k), flexShrink:0 }}/>
-                {v.short} — {v.label}
+                <div style={{ width:'12px', height:'12px', borderRadius:'2px', background:baseColor(k), flexShrink:0 }}/>
+                {PERMIT_TYPE_SHORT[k]} — {v}
               </button>
             ))}
           </div>
@@ -261,9 +297,9 @@ Always verify current laws before carrying. This is not legal advice. Consult a 
             {/* Tooltip */}
             {hovering && !modal && (
               <div style={{ position:'absolute', top:'14px', left:'50%', transform:'translateX(-50%)', zIndex:10, background:C.bg, border:`1px solid ${C.border}`, borderRadius:'7px', padding:'6px 14px', pointerEvents:'none', boxShadow:'0 2px 8px rgba(0,0,0,0.08)', fontSize:'13px', fontWeight:600, whiteSpace:'nowrap' }}>
-                <span style={{ color:localColor(hovering.permitType) }}>{hovering.name}</span>
-                <span style={{ color:C.textMuted, fontWeight:400, marginLeft:'8px', fontSize:'11px' }}>{PERMIT_TYPES[hovering.permitType]?.label}</span>
-                {homeState && homeSupporters.has(hovering.code) && <span style={{ color:'#2e7d32', marginLeft:'8px', fontSize:'10px' }}>✓ Honors {homeState}</span>}
+                <span style={{ color:baseColor(hovering.permitType) }}>{hovering.name}</span>
+                <span style={{ color:C.textMuted, fontWeight:400, marginLeft:'8px', fontSize:'11px' }}>{PERMIT_TYPE_LABELS[hovering.permitType] || hovering.permitType}</span>
+                {homeState && homeData?.honoredBy?.includes(hovering.code) && <span style={{ color:'#2e7d32', marginLeft:'8px', fontSize:'10px' }}>✓ You can carry here</span>}
               </div>
             )}
 
@@ -276,28 +312,23 @@ Always verify current laws before carrying. This is not legal advice. Consult a 
                     return geographies.map(geo => {
                       const fips  = geo.id?.toString().padStart(2,'0')
                       const code  = FIPS[fips]
-                      const state = code ? CCW_MAP[code] : null
+                      const state = code ? STATE_MAP[code] : null
                       if (!state) return null
 
-                      const typeColor   = localColor(state.permitType)
-                      const isHome      = code === homeState
-                      const isSupporter = homeState && homeSupporters.has(code)
-                      const isHonored   = homeState && homeHonors.has(code)
                       const isFiltered  = filterType !== 'all' && state.permitType !== filterType
                       const isSelected  = selected.includes(code)
                       const isModal     = modal?.code === code
 
-                      let fill        = typeColor
+                      // Use verified getMapColor from Task 2
+                      const mapFill   = isFiltered ? '#c8d8e8' : getMapColor(code, homeState)
+                      let fill        = mapFill
                       let fillOp      = 0.88
                       let stroke      = '#ffffff'
                       let strokeWidth = 0.5
 
-                      if (isFiltered) { fill = '#c8d8e8'; fillOp = 1 }
-                      else if (isHome) { fill = typeColor; fillOp = 1; stroke = C.gold; strokeWidth = 3 }
-                      else if (isSelected || isModal) { fill = typeColor; fillOp = 1; stroke = C.gold; strokeWidth = 2 }
-                      else if (homeState && isSupporter) { fill = '#388e3c'; fillOp = 0.9 }
-                      else if (homeState && isHonored)   { fill = '#1976d2'; fillOp = 0.9 }
-                      else if (homeState && !isSupporter && !isHonored) { fill = "#ef5350"; fillOp = 0.75 }
+                      if (isFiltered) { fillOp = 1 }
+                      else if (code === homeState) { fillOp = 1; stroke = C.gold; strokeWidth = 3 }
+                      else if (isSelected || isModal) { fillOp = 1; stroke = C.gold; strokeWidth = 2 }
 
                       return (
                         <Geography key={geo.rsmKey} geography={geo}
@@ -306,8 +337,8 @@ Always verify current laws before carrying. This is not legal advice. Consult a 
                           onClick={() => handleStateClick(code)}
                           style={{
                             default: { fill, fillOpacity:fillOp, stroke, strokeWidth, outline:'none', cursor:'pointer' },
-                            hover:   { fill:typeColor, fillOpacity:1, stroke:C.gold, strokeWidth:1.5, outline:'none', cursor:'pointer' },
-                            pressed: { fill:typeColor, fillOpacity:1, outline:'none' },
+                            hover:   { fill:baseColor(state.permitType), fillOpacity:1, stroke:C.gold, strokeWidth:1.5, outline:'none', cursor:'pointer' },
+                            pressed: { fill:baseColor(state.permitType), fillOpacity:1, outline:'none' },
                           }}
                         />
                       )
@@ -350,26 +381,26 @@ Always verify current laws before carrying. This is not legal advice. Consult a 
           <div style={{ flex:'0 0 30%', borderLeft:`1px solid ${C.border}`, background:C.bg, display:'flex', flexDirection:'column', overflow:'hidden' }}>
             <div style={{ padding:'10px 14px', borderBottom:`1px solid ${C.border}`, flexShrink:0 }}>
               <div style={{ fontSize:'12px', fontWeight:700, color:C.text, fontFamily:FONT, letterSpacing:'0.5px' }}>
-                {filteredList.length} State{filteredList.length!==1?'s':''} {filterType!=='all'?`· ${PERMIT_TYPES[filterType]?.short}`:''}
+                {filteredList.length} State{filteredList.length!==1?'s':''} {filterType!=='all'?`· ${PERMIT_TYPE_SHORT[filterType]||filterType}`:''}
               </div>
             </div>
             <div style={{ flex:1, overflowY:'auto' }}>
               {filteredList.map(state => {
-                const pt          = PERMIT_TYPES[state.permitType]
-                const isSupporter = homeState && homeSupporters.has(state.code)
-                const isHonored   = homeState && homeHonors.has(state.code)
+                const canCarry  = homeState && homeData?.honoredBy?.includes(state.code)
+                const weHonor   = homeState && homeData?.honors?.includes(state.code)
                 return (
                   <div key={state.code} className="ccw-hover"
                     style={{ display:'flex', alignItems:'center', gap:'9px', padding:'9px 14px', borderBottom:`1px solid #f5f5f5`, cursor:'pointer', background:'transparent' }}
                     onClick={() => handleStateClick(state.code)}>
-                    <div style={{ width:'32px', height:'32px', borderRadius:'5px', background:localBg(state.permitType), color:localColor(state.permitType), display:'flex', alignItems:'center', justifyContent:'center', fontFamily:FONT, fontSize:'11px', fontWeight:700, flexShrink:0 }}>{state.code}</div>
+                    <div style={{ width:'32px', height:'32px', borderRadius:'5px', background:baseBg(state.permitType), color:baseColor(state.permitType), display:'flex', alignItems:'center', justifyContent:'center', fontFamily:FONT, fontSize:'11px', fontWeight:700, flexShrink:0 }}>{state.code}</div>
                     <div style={{ flex:1, minWidth:0 }}>
                       <div style={{ fontSize:'12px', fontWeight:600, color:C.text }}>{state.name}</div>
-                      <div style={{ fontSize:'10px', color:C.textMuted, marginTop:'1px' }}>{pt?.label} · {state.constitutional?'Permitless':state.permitName?.slice(0,28)}</div>
+                      <div style={{ fontSize:'10px', color:C.textMuted, marginTop:'1px' }}>{PERMIT_TYPE_LABELS[state.permitType]||state.permitType} · {state.constitutionalCarry?'Permitless':'Permit req.'}</div>
                     </div>
                     <div style={{ textAlign:'right', flexShrink:0 }}>
-                      {homeState && isSupporter && <div style={{ fontSize:'10px', color:'#2e7d32', fontWeight:700 }}>✓ Honors {homeState}</div>}
-                      {homeState && isHonored   && <div style={{ fontSize:'10px', color:'#1565c0', fontWeight:700 }}>{homeState} Honors</div>}
+                      {homeState && canCarry && <div style={{ fontSize:'10px', color:'#2e7d32', fontWeight:700 }}>✓ Carry Allowed</div>}
+                      {homeState && weHonor  && <div style={{ fontSize:'10px', color:'#1565c0', fontWeight:700 }}>Mutual</div>}
+                      {homeState && !canCarry && !weHonor && state.code !== homeState && <div style={{ fontSize:'10px', color:'#ef5350', fontWeight:700 }}>✗ Not Honored</div>}
                       <div style={{ fontSize:'11px', color:C.gold, fontFamily:FONT, fontWeight:600 }}>{state.honoredBy?.length??0} honor</div>
                     </div>
                   </div>
@@ -381,8 +412,8 @@ Always verify current laws before carrying. This is not legal advice. Consult a 
 
         {/* Footer */}
         <footer style={{ background:'#f8f9fa', borderTop:`1px solid ${C.border}`, padding:'8px 20px', fontSize:'10px', color:C.textMuted, display:'flex', justifyContent:'space-between', flexWrap:'wrap', gap:'6px', flexShrink:0 }}>
-          <span>© 2026 Nationwide Police Services LLC. All rights reserved. CCW laws subject to change without notice.</span>
-          <span>Data from public state statutes · AI-assisted research · Not legal advice · Always verify before carrying</span>
+          <span>© 2026 Nationwide Police Services LLC. All rights reserved. Data: Handgunlaw.us, verified {DATA_META.lastVerified}.</span>
+          <span>For reference only · Not legal advice · Laws change frequently · Always verify with official state sources before carrying</span>
         </footer>
       </div>
 
@@ -395,9 +426,11 @@ Always verify current laws before carrying. This is not legal advice. Consult a 
 // ── State detail modal ────────────────────────────────────────────────────────
 
 function StateModal({ state, onClose, onSelect, homeState }) {
-  const pt            = PERMIT_TYPES[state.permitType]
-  const honorsStates  = CCW_STATES.filter(s => state.honors.includes(s.code))
-  const honoredBy     = CCW_STATES.filter(s => s.honors.includes(state.code))
+  const ptColor       = baseColor(state.permitType)
+  const ptBg          = baseBg(state.permitType)
+  const ptLabel       = PERMIT_TYPE_LABELS[state.permitType] || state.permitType
+  const honorsStates  = STATES_LIST.filter(s => state.honors?.includes(s.code))
+  const honoredBy     = STATES_LIST.filter(s => s.honors?.includes(state.code))
   const FONT          = "'Barlow Condensed', 'Barlow', Helvetica, sans-serif"
   const C2            = { text:'#0d0f14', muted:'#8899aa', second:'#4a6080', border:'#e2e6ea', bg:'#ffffff' }
   const loc           = state.carryLocations || {}
@@ -414,8 +447,8 @@ function StateModal({ state, onClose, onSelect, homeState }) {
               <span style={{ fontFamily:FONT, fontSize:'16px', color:C2.muted }}>({state.code})</span>
             </div>
             <div style={{ display:'flex', gap:'6px', marginTop:'8px', flexWrap:'wrap' }}>
-              <span style={{ display:'inline-flex', alignItems:'center', padding:'3px 10px', borderRadius:'20px', fontSize:'11px', fontWeight:700, fontFamily:FONT, letterSpacing:'0.5px', background:pt?.bg, color:pt?.color }}>{pt?.label}</span>
-              {state.constitutional && <span style={{ display:'inline-flex', padding:'3px 10px', borderRadius:'20px', fontSize:'11px', fontWeight:700, fontFamily:FONT, letterSpacing:'0.5px', background:'rgba(46,125,50,0.12)', color:'#2e7d32' }}>✓ Permitless Carry</span>}
+              <span style={{ display:'inline-flex', alignItems:'center', padding:'3px 10px', borderRadius:'20px', fontSize:'11px', fontWeight:700, fontFamily:FONT, letterSpacing:'0.5px', background:ptBg, color:ptColor }}>{ptLabel}</span>
+              {state.constitutionalCarry && <span style={{ display:'inline-flex', padding:'3px 10px', borderRadius:'20px', fontSize:'11px', fontWeight:700, fontFamily:FONT, letterSpacing:'0.5px', background:'rgba(46,125,50,0.12)', color:'#2e7d32' }}>✓ Permitless Carry</span>}
               {state.redFlagLaw && <span style={{ display:'inline-flex', padding:'3px 10px', borderRadius:'20px', fontSize:'11px', fontWeight:700, fontFamily:FONT, letterSpacing:'0.5px', background:'rgba(183,28,28,0.1)', color:'#b71c1c' }}>Red Flag Law</span>}
             </div>
           </div>
@@ -431,7 +464,7 @@ function StateModal({ state, onClose, onSelect, homeState }) {
               { label:'Min Carry Age', value:`${state.minAge} years` },
               { label:'This State Honors', value:`${state.honors?.length??0} states` },
               { label:'Permit Required', value:state.permitRequired?'Yes':'No' },
-              { label:'Constitutional Carry', value:state.constitutional?'Yes':'No' },
+              { label:'Constitutional Carry', value:state.constitutionalCarry?'Yes':'No' },
               { label:'Open Carry', value:state.openCarry===true?'Yes':state.openCarry===false?'No':state.openCarry||'Varies' },
             ].map(item => (
               <div key={item.label} style={{ background:'#f8f9fa', borderRadius:'6px', padding:'10px 12px' }}>
@@ -511,16 +544,13 @@ function StateModal({ state, onClose, onSelect, homeState }) {
           <div style={{ display:'flex', flexWrap:'wrap', gap:'4px', marginBottom:'14px' }}>
             {honoredBy.length === 0
               ? <span style={{ fontSize:'12px', color:C2.muted }}>No states honor this permit for reciprocity</span>
-              : honoredBy.map(s2 => {
-                  const pt2 = PERMIT_TYPES[s2.permitType]
-                  return (
-                    <button key={s2.code} className="chip-btn"
-                      onClick={()=>{ onClose(); setTimeout(()=>onSelect(s2.code), 80) }}
-                      style={{ display:'inline-flex', padding:'2px 7px', borderRadius:'4px', fontSize:'10px', fontFamily:FONT, fontWeight:700, background:pt2?.bg, color:pt2?.color, border:'none', cursor:'pointer', transition:'all 150ms ease' }}>
-                      {s2.code}
-                    </button>
-                  )
-                })
+              : honoredBy.map(s2 => (
+                  <button key={s2.code} className="chip-btn"
+                    onClick={()=>{ onClose(); setTimeout(()=>onSelect(s2.code), 80) }}
+                    style={{ display:'inline-flex', padding:'2px 7px', borderRadius:'4px', fontSize:'10px', fontFamily:FONT, fontWeight:700, background:baseBg(s2.permitType), color:baseColor(s2.permitType), border:'none', cursor:'pointer', transition:'all 150ms ease' }}>
+                    {s2.code}
+                  </button>
+                ))
             }
           </div>
 
@@ -531,16 +561,13 @@ function StateModal({ state, onClose, onSelect, homeState }) {
           <div style={{ display:'flex', flexWrap:'wrap', gap:'4px', marginBottom:'14px' }}>
             {honorsStates.length === 0
               ? <span style={{ fontSize:'12px', color:C2.muted }}>Does not honor any out-of-state permits</span>
-              : honorsStates.map(s2 => {
-                  const pt2 = PERMIT_TYPES[s2.permitType]
-                  return (
-                    <button key={s2.code} className="chip-btn"
-                      onClick={()=>{ onClose(); setTimeout(()=>onSelect(s2.code), 80) }}
-                      style={{ display:'inline-flex', padding:'2px 7px', borderRadius:'4px', fontSize:'10px', fontFamily:FONT, fontWeight:700, background:pt2?.bg, color:pt2?.color, border:'none', cursor:'pointer', transition:'all 150ms ease' }}>
-                      {s2.code}
-                    </button>
-                  )
-                })
+              : honorsStates.map(s2 => (
+                  <button key={s2.code} className="chip-btn"
+                    onClick={()=>{ onClose(); setTimeout(()=>onSelect(s2.code), 80) }}
+                    style={{ display:'inline-flex', padding:'2px 7px', borderRadius:'4px', fontSize:'10px', fontFamily:FONT, fontWeight:700, background:baseBg(s2.permitType), color:baseColor(s2.permitType), border:'none', cursor:'pointer', transition:'all 150ms ease' }}>
+                    {s2.code}
+                  </button>
+                ))
             }
           </div>
 
@@ -554,9 +581,9 @@ function StateModal({ state, onClose, onSelect, homeState }) {
             </div>
           )}
 
-          {/* Disclaimer */}
+          {/* Disclaimer — Task 3 */}
           <div style={{ background:'#fff8e1', border:'1px solid #ffc107', borderRadius:'6px', padding:'10px 14px', fontSize:'11px', color:'#5d4037', lineHeight:1.6 }}>
-            <strong>⚠ Disclaimer:</strong> This information is for reference only and is not legal advice. Laws change frequently. Always verify with official state sources and consult a licensed attorney before carrying a firearm across state lines.
+            <strong>⚠ Disclaimer:</strong> Data sourced from <strong>Handgunlaw.us</strong> (handgunlaw.us/states/USStatesThatHonorMyPermit.pdf), last verified {DATA_META.lastVerified}. Handgunlaw.us is referenced by law enforcement and firearms attorneys nationwide. Laws change frequently — always verify with the destination state's official authority before carrying. This map is for reference only and is not legal advice. Nationwide Police Services LLC assumes no liability for accuracy.
           </div>
         </div>
       </div>

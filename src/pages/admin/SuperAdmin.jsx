@@ -159,6 +159,136 @@ export default function SuperAdmin() {
           )}
         </>
       )}
+
+      {/* CCW Monitor Panel */}
+      <CCWMonitorPanel />
+    </div>
+  )
+}
+
+// ── CCW Monitor Panel ─────────────────────────────────────────────────────────
+
+function CCWMonitorPanel() {
+  const [logs,    setLogs]    = useState([])
+  const [loading, setLoading] = useState(true)
+  const [running, setRunning] = useState(false)
+  const [showLog, setShowLog] = useState(false)
+  const [approving, setApproving] = useState(false)
+
+  useEffect(() => { loadLogs() }, [])
+
+  async function loadLogs() {
+    setLoading(true)
+    const { data } = await supabase
+      .from('ccw_monitor_log')
+      .select('*')
+      .order('checked_at', { ascending: false })
+      .limit(12)
+    setLogs(data || [])
+    setLoading(false)
+  }
+
+  async function runCheck() {
+    setRunning(true)
+    try {
+      await supabase.functions.invoke('ccw-monitor')
+      await loadLogs()
+    } catch (e) { console.error('CCW monitor error:', e) }
+    setRunning(false)
+  }
+
+  async function approveUpdate(logId) {
+    setApproving(true)
+    await supabase.from('ccw_monitor_log').update({
+      approved: true,
+      resolved: true,
+      needs_review: false,
+      status: 'APPROVED',
+      reviewed_at: new Date().toISOString(),
+    }).eq('id', logId)
+    await supabase.from('platform_notification').update({ resolved: true, resolved_at: new Date().toISOString() })
+      .eq('type', 'ccw_update_required').eq('resolved', false)
+    await loadLogs()
+    setApproving(false)
+  }
+
+  const latest    = logs[0]
+  const needsReview = latest?.needs_review && !latest?.approved
+  const fmtDate   = (iso) => iso ? new Date(iso).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—'
+
+  return (
+    <div style={{ background:'var(--bg-card)', border:`2px solid ${needsReview?'var(--color-warning)':'var(--border-subtle)'}`, borderRadius:'var(--radius-md)', padding:'20px', marginTop:'16px' }}>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'14px', flexWrap:'wrap', gap:'10px' }}>
+        <div>
+          <div style={{ display:'flex', alignItems:'center', gap:'8px', marginBottom:'4px' }}>
+            <Icon name="map" size={16} color="var(--accent)"/>
+            <div style={{ fontSize:'11px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1.5px', fontFamily:'var(--font-condensed)' }}>CCW Reciprocity Monitor</div>
+          </div>
+          <div style={{ fontSize:'12px', color:'var(--text-muted)' }}>
+            Source: <a href="https://handgunlaw.us/states/USStatesThatHonorMyPermit.pdf" target="_blank" rel="noopener noreferrer" style={{ color:'var(--color-info)' }}>handgunlaw.us/states/USStatesThatHonorMyPermit.pdf</a>
+          </div>
+        </div>
+        <div style={{ display:'flex', gap:'8px' }}>
+          <button onClick={() => setShowLog(l=>!l)} style={{ display:'inline-flex', alignItems:'center', gap:'6px', background:'var(--bg-surface)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', padding:'0 12px', height:'36px', fontFamily:'var(--font-condensed)', fontSize:'12px', color:'var(--text-secondary)', cursor:'pointer', letterSpacing:'1px' }}>
+            <Icon name="list" size={13}/>{showLog?'HIDE':'VIEW'} LOG
+          </button>
+          <button onClick={runCheck} disabled={running} style={{ display:'inline-flex', alignItems:'center', gap:'6px', background:'var(--accent)', color:'var(--text-inverse)', border:'none', borderRadius:'var(--radius-sm)', padding:'0 14px', height:'36px', fontFamily:'var(--font-condensed)', fontSize:'12px', fontWeight:700, cursor:'pointer', letterSpacing:'1px', opacity:running?0.6:1 }}>
+            <Icon name="refresh-cw" size={13}/>{running?'CHECKING...':'RUN CHECK NOW'}
+          </button>
+        </div>
+      </div>
+
+      {loading ? (
+        <div style={{ fontSize:'12px', color:'var(--text-muted)', fontFamily:'var(--font-condensed)', letterSpacing:'1px' }}>LOADING...</div>
+      ) : latest ? (
+        <>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))', gap:'10px', marginBottom:'14px' }}>
+            {[
+              { label:'Last Check', value: fmtDate(latest.checked_at) },
+              { label:'Source Last Modified', value: fmtDate(latest.source_last_modified) },
+              { label:'Status', value: latest.status || '—', highlight: latest.needs_review && !latest.approved },
+            ].map(item => (
+              <div key={item.label} style={{ background:'var(--bg-surface)', borderRadius:'var(--radius-sm)', padding:'10px 12px' }}>
+                <div style={{ fontSize:'9px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', marginBottom:'3px' }}>{item.label}</div>
+                <div style={{ fontSize:'13px', fontWeight:600, color: item.highlight ? 'var(--color-warning)' : 'var(--text-primary)', fontFamily:'var(--font-condensed)' }}>{item.value}</div>
+              </div>
+            ))}
+          </div>
+
+          {needsReview && (
+            <div style={{ background:'var(--color-warning-bg)', border:'1px solid rgba(232,148,58,0.4)', borderRadius:'var(--radius-sm)', padding:'14px 16px', marginBottom:'12px' }}>
+              <div style={{ fontSize:'13px', fontWeight:600, color:'var(--color-warning)', marginBottom:'6px', display:'flex', alignItems:'center', gap:'6px' }}>
+                <Icon name="alert-triangle" size={14}/>Source data has changed — review required
+              </div>
+              <div style={{ fontSize:'12px', color:'var(--text-secondary)', lineHeight:1.6, marginBottom:'10px' }}>
+                Handgunlaw.us has updated their reciprocity data. Review the changes at <a href="https://handgunlaw.us/states/USStatesThatHonorMyPermit.pdf" target="_blank" rel="noopener noreferrer" style={{ color:'var(--color-info)' }}>handgunlaw.us</a> before approving. Only approve after verifying the data is accurate. Super Admin must update ccwData.js manually with verified changes.
+              </div>
+              <button onClick={() => approveUpdate(latest.id)} disabled={approving} style={{ display:'inline-flex', alignItems:'center', gap:'6px', background:'var(--color-success-bg)', color:'var(--color-success)', border:'1px solid rgba(58,170,106,0.3)', borderRadius:'var(--radius-sm)', padding:'0 14px', height:'36px', fontFamily:'var(--font-condensed)', fontSize:'12px', fontWeight:700, cursor:'pointer', opacity:approving?0.6:1 }}>
+                <Icon name="check-circle" size={13}/>{approving?'APPROVING...':'MARK AS REVIEWED'}
+              </button>
+            </div>
+          )}
+
+          {showLog && logs.length > 0 && (
+            <div style={{ border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', overflow:'hidden' }}>
+              <div style={{ fontSize:'10px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', padding:'8px 12px', background:'var(--bg-surface)', borderBottom:'1px solid var(--border)' }}>Check History (Last 12)</div>
+              {logs.map((log, i) => (
+                <div key={log.id} style={{ display:'flex', alignItems:'center', gap:'12px', padding:'9px 12px', borderBottom:i<logs.length-1?'1px solid var(--border)':'none', fontSize:'12px' }}>
+                  <div style={{ width:'8px', height:'8px', borderRadius:'50%', background:log.needs_review&&!log.approved?'var(--color-warning)':log.approved?'var(--color-success)':'var(--color-success)', flexShrink:0 }}/>
+                  <div style={{ flex:1, color:'var(--text-secondary)' }}>{fmtDate(log.checked_at)}</div>
+                  <div style={{ fontSize:'11px', fontFamily:'var(--font-condensed)', fontWeight:700, color:log.needs_review&&!log.approved?'var(--color-warning)':log.approved?'var(--color-success)':'var(--text-muted)' }}>{log.approved?'APPROVED':log.status||'—'}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      ) : (
+        <div style={{ fontSize:'13px', color:'var(--text-muted)' }}>No checks run yet. Click "RUN CHECK NOW" to initialize.</div>
+      )}
+
+      <div style={{ fontSize:'10px', color:'var(--text-muted)', marginTop:'12px', lineHeight:1.6 }}>
+        Cron schedule: 1st of each month at 8am UTC via cron-job.org → https://xtylrvmzoxuyzcprqkql.supabase.co/functions/v1/ccw-monitor
+      </div>
     </div>
   )
 }

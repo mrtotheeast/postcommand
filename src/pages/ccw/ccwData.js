@@ -1,594 +1,411 @@
-// CCW Reciprocity Data — PostCommand / Nationwide Police Services LLC
-// Last verified: 2026-05-31 | Next scheduled AI update: 2026-06-30
-// Source: State statutes, AG opinions, USCCA, NRA-ILA state guides
-// ⚠ For reference only — verify with official state sources before carrying
+// CCW Reciprocity Data
+// Source: handgunlaw.us/states/USStatesThatHonorMyPermit.pdf
+// Last verified: April 18, 2026
+// Updated by: PostCommand CCW Monitor (monthly)
+// LEGAL DISCLAIMER: This data is for reference only. Laws change.
+// Always verify with destination state authorities before carrying.
+
+// PERMITLESS CARRY STATES (as of March 20, 2026)
+// Source: handgunlaw.us/documents/Permitless_Carry_States.pdf
+// AL, AK, AZ, AR, FL, GA, ID, IN, IA, KS, KY, LA, ME, MS, MO, MT,
+// NE, NH, ND, OH, OK, SC, SD, TN, TX, UT, VT, WV, WY
+
+// NOTES FROM SOURCE:
+// CO, FL, ME, MI, NH, ND, PA, SC only honor RESIDENT permits
+// from the states they honor.
+// superscript 2 in source = resident permits only
+// MD honors ZERO out-of-state permits
 
 export const DATA_META = {
-  lastUpdated: '2026-05-31',
-  nextUpdate:  '2026-06-30',
-  disclaimer:  'This information is for reference only and is not legal advice. Always verify current laws with official state sources and consult a licensed attorney before carrying a firearm across state lines.',
+  source: 'handgunlaw.us',
+  sourceUrl: 'https://handgunlaw.us/states/USStatesThatHonorMyPermit.pdf',
+  lastVerified: '2026-04-18',
+  nextReview: '2026-05-18',
+  disclaimer: 'Data sourced from Handgunlaw.us, referenced by law enforcement attorneys. Reviewed monthly. Laws change — always verify with the destination state\'s official authority before carrying. This is not legal advice. Nationwide Police Services LLC assumes no liability for accuracy.'
 }
 
-export const PERMIT_TYPES = {
-  constitutional: { label:'Permitless / Constitutional Carry', short:'CC',  color:'#2e7d32', bg:'rgba(46,125,50,0.12)',  mapColor:'#81c784' },
-  shall_issue:    { label:'Shall Issue',                       short:'SI',  color:'#1565c0', bg:'rgba(21,101,192,0.12)', mapColor:'#4caf50' },
-  may_issue:      { label:'May Issue',                         short:'MI',  color:'#e65100', bg:'rgba(230,81,0,0.12)',   mapColor:'#ff9800' },
-  no_issue:       { label:'No Issue / Highly Restricted',      short:'NI',  color:'#b71c1c', bg:'rgba(183,28,28,0.12)', mapColor:'#f44336' },
+// honoredBy = states that honor THIS state's permit
+// honors = states whose permit THIS state honors
+// constitutionalCarry = permitless carry allowed
+// residentsOnly = some honoring states only accept resident permits
+
+export const CCW_DATA = {
+  AL: {
+    name: 'Alabama', permitType: 'shall-issue', constitutionalCarry: true,
+    honoredBy: ['AK','AZ','AR','CO','FL','GA','ID','IN','IA','KS','KY','LA','ME','MI','MS','MO','MT','NH','NC','ND','OH','OK','PA','SD','TN','TX','UT','VT','VA','WV','WI','WY'],
+    honors: ['AK','AZ','AR','CO','FL','GA','ID','IN','IA','KS','KY','LA','ME','MI','MS','MO','MT','NH','NC','ND','OH','OK','PA','SD','TN','TX','UT','VT','VA','WV','WI','WY'],
+    permitRequired: false, openCarry: true, minAge: 19, redFlagLaw: false,
+    officialSource: 'https://www.alea.gov/sbi/firearms-unit'
+  },
+  AK: {
+    name: 'Alaska', permitType: 'shall-issue', constitutionalCarry: true,
+    honoredBy: ['AL','AR','AZ','CO','DE','FL','GA','IA','ID','IN','KS','KY','LA','ME','MI','MN','MO','MS','MT','NC','ND','NE','NH','NV','OH','OK','PA','SC','SD','TN','TX','UT','VA','VT','WI','WV','WY'],
+    honors: ['AL','AR','AZ','CO','DE','FL','GA','IA','ID','IN','KS','KY','LA','ME','MI','MN','MO','MS','MT','NC','ND','NE','NH','NV','OH','OK','PA','SC','SD','TN','TX','UT','VA','VT','WI','WV','WY'],
+    permitRequired: false, openCarry: true, minAge: 21, redFlagLaw: false,
+    officialSource: 'https://dps.alaska.gov/statewide/permitslicensing/firearms'
+  },
+  AZ: {
+    name: 'Arizona', permitType: 'shall-issue', constitutionalCarry: true,
+    honoredBy: ['AK','AL','AR','CO','DE','FL','GA','IA','ID','IN','KS','KY','LA','ME','MI','MO','MS','MT','NC','ND','NE','NH','NM','NV','OH','OK','PA','SC','SD','TN','TX','UT','VA','VT','WI','WV','WY'],
+    honors: ['AK','AL','AR','CO','DE','FL','GA','IA','ID','IN','KS','KY','LA','ME','MI','MO','MS','MT','NC','ND','NE','NH','NM','NV','OH','OK','PA','SC','SD','TN','TX','UT','VA','VT','WI','WV','WY'],
+    permitRequired: false, openCarry: true, minAge: 21, redFlagLaw: false,
+    officialSource: 'https://azdps.gov/services/public/concealed_weapons'
+  },
+  AR: {
+    name: 'Arkansas', permitType: 'shall-issue', constitutionalCarry: true,
+    honoredBy: ['AK','AL','AZ','CO','DE','FL','GA','IA','ID','IN','KS','KY','LA','ME','MI','MN','MO','MS','MT','NC','ND','NE','NH','NM','NV','OH','OK','PA','SC','SD','TN','TX','UT','VA','VT','WI','WV','WY'],
+    honors: ['AK','AL','AZ','CO','DE','FL','GA','IA','ID','IN','KS','KY','LA','ME','MI','MN','MO','MS','MT','NC','ND','NE','NH','NM','NV','OH','OK','PA','SC','SD','TN','TX','UT','VA','VT','WI','WV','WY'],
+    permitRequired: false, openCarry: true, minAge: 21, redFlagLaw: false,
+    officialSource: 'https://www.dfa.arkansas.gov/office/divisions/revenue-legal-counsel/concealed-handgun-licensing'
+  },
+  CA: {
+    name: 'California', permitType: 'shall-issue', constitutionalCarry: false,
+    honoredBy: ['AK','AL','AR','AZ','FL','GA','IA','ID','IN','KS','KY','MI','MN','MO','MS','MT','NC','NE','OH','OK','SD','TN','TX','UT','VA','VT','WI'],
+    honors: [],
+    permitRequired: true, openCarry: false, minAge: 21, redFlagLaw: true,
+    officialSource: 'https://oag.ca.gov/firearms/ccw'
+  },
+  CO: {
+    name: 'Colorado', permitType: 'shall-issue', constitutionalCarry: false,
+    honoredBy: ['AK','AL','AR','AZ','DE','FL','GA','IA','ID','IN','KS','KY','LA','MI','MN','MO','MS','MT','NH','NC','ND','NE','NM','OH','OK','PA','SD','TN','TX','UT','VA','VT','WI','WV','WY'],
+    honors: ['AK','AL','AR','AZ','DE','FL','GA','IA','ID','IN','KS','KY','LA','MI','MN','MO','MS','MT','NH','NC','ND','NE','NM','OH','OK','PA','SD','TN','TX','UT','VA','VT','WI','WV','WY'],
+    residentPermitsOnly: true,
+    permitRequired: true, openCarry: true, minAge: 21, redFlagLaw: true,
+    officialSource: 'https://www.coloradosos.gov/pubs/licensing/gunowners/gunOwnerMain.html'
+  },
+  CT: {
+    name: 'Connecticut', permitType: 'shall-issue', constitutionalCarry: false,
+    honoredBy: ['AK','AL','AR','AZ','FL','GA','IA','ID','IN','KS','KY','MI','MN','MO','MS','MT','NC','NE','OH','OK','SD','TN','TX','UT','VA','VT','WI'],
+    honors: ['AK','AL','AR','AZ','FL','GA','IA','ID','IN','KS','KY','MI','MN','MO','MS','MT','NC','NE','OH','OK','SD','TN','TX','UT','VA','VT','WI'],
+    permitRequired: true, openCarry: false, minAge: 21, redFlagLaw: true,
+    officialSource: 'https://portal.ct.gov/DESPP/Division-of-State-Police/Permits-Firearms-Unit'
+  },
+  DE: {
+    name: 'Delaware', permitType: 'shall-issue', constitutionalCarry: false,
+    honoredBy: ['AK','AL','AR','AZ','CO','FL','GA','IA','ID','IN','KS','KY','ME','MI','MN','MO','MS','NC','ND','NM','OH','OK','SC','SD','TN','TX','UT','VA','VT','WV','WI'],
+    honors: ['AK','AL','AR','AZ','CO','FL','GA','IA','ID','IN','KS','KY','ME','MI','MN','MO','MS','NC','ND','NM','OH','OK','SC','SD','TN','TX','UT','VA','VT','WV','WI'],
+    permitRequired: true, openCarry: true, minAge: 21, redFlagLaw: true,
+    officialSource: 'https://dsp.delaware.gov/firearms/'
+  },
+  DC: {
+    name: 'District of Columbia', permitType: 'shall-issue', constitutionalCarry: false,
+    honoredBy: ['AK','AL','AR','AZ','FL','GA','IA','ID','IN','KS','KY','MI','MO','MS','NC','NE','OH','OK','SD','TN','TX','UT','VA','VT','WI'],
+    honors: [],
+    permitRequired: true, openCarry: false, minAge: 21, redFlagLaw: true,
+    officialSource: 'https://mpdc.dc.gov/page/concealed-pistol-licensing'
+  },
+  FL: {
+    name: 'Florida', permitType: 'shall-issue', constitutionalCarry: true,
+    honoredBy: ['AK','AL','AR','AZ','CO','DE','GA','IA','ID','IN','KS','KY','LA','ME','MI','MO','MS','MT','NV','NC','NH','ND','NE','NM','OH','OK','PA','SC','SD','TN','TX','UT','VA','VT','WV','WI','WY'],
+    honors: ['AK','AL','AR','AZ','CO','DE','GA','IA','ID','IN','KS','KY','LA','ME','MI','MO','MS','MT','NV','NC','NH','ND','NE','NM','OH','OK','PA','SC','SD','TN','TX','UT','VA','VT','WV','WI','WY'],
+    residentPermitsOnly: true,
+    permitRequired: false, openCarry: false, minAge: 21, redFlagLaw: true,
+    officialSource: 'https://www.freshfromflorida.com/Divisions-Offices/Licensing/Businesses/Law-Enforcement-Firearms-Training/Concealed-Weapon-License'
+  },
+  GA: {
+    name: 'Georgia', permitType: 'shall-issue', constitutionalCarry: true,
+    honoredBy: ['AK','AL','AR','AZ','CO','FL','IA','ID','IN','KS','KY','LA','ME','MI','MO','MS','MT','NC','ND','NH','OH','OK','PA','SC','SD','TN','TX','UT','VA','VT','WI','WV','WY'],
+    honors: ['AK','AL','AR','AZ','CO','FL','IA','ID','IN','KS','KY','LA','ME','MI','MO','MS','MT','NC','ND','NH','OH','OK','PA','SC','SD','TN','TX','UT','VA','VT','WI','WV','WY'],
+    permitRequired: false, openCarry: true, minAge: 21, redFlagLaw: false,
+    officialSource: 'https://dds.georgia.gov/georgia-weapons-carry-license'
+  },
+  HI: {
+    name: 'Hawaii', permitType: 'may-issue', constitutionalCarry: false,
+    honoredBy: ['AK','AL','AR','AZ','FL','GA','IA','ID','IN','KS','KY','MI','MN','MO','MS','NC','NE','OH','OK','SD','TN','TX','UT','VA','VT','WI'],
+    honors: [],
+    permitRequired: true, openCarry: false, minAge: 21, redFlagLaw: true,
+    officialSource: 'https://www.honolulupd.org/information/firearms-registration/'
+  },
+  ID: {
+    name: 'Idaho', permitType: 'shall-issue', constitutionalCarry: true,
+    honoredBy: ['AL','AR','CO','FL','GA','IA','IN','KS','KY','LA','ME','MI','MO','MS','MT','NC','ND','NH','OH','OK','SC','SD','TN','TX','UT','VA','VT','WI','WV','WY'],
+    honors: ['AL','AR','CO','FL','GA','IA','IN','KS','KY','LA','ME','MI','MO','MS','MT','NC','ND','NH','OH','OK','SC','SD','TN','TX','UT','VA','VT','WI','WV','WY'],
+    permitRequired: false, openCarry: true, minAge: 18, redFlagLaw: false,
+    officialSource: 'https://www.isp.idaho.gov/BCI/gunreg.html'
+  },
+  IL: {
+    name: 'Illinois', permitType: 'shall-issue', constitutionalCarry: false,
+    honoredBy: ['AK','AL','AR','AZ','FL','GA','IA','ID','IN','KS','KY','MI','MN','MO','MS','MT','NC','NE','NV','OH','OK','SC','SD','TN','TX','UT','VA','VT','WI'],
+    honors: ['AK','AL','AR','AZ','FL','GA','IA','ID','IN','KS','KY','MI','MN','MO','MS','MT','NC','NE','NV','OH','OK','SC','SD','TN','TX','UT','VA','VT','WI'],
+    permitRequired: true, openCarry: false, minAge: 21, redFlagLaw: true,
+    officialSource: 'https://www.isp.state.il.us/firearms/foid.cfm'
+  },
+  IN: {
+    name: 'Indiana', permitType: 'shall-issue', constitutionalCarry: true,
+    honoredBy: ['AK','AL','AR','AZ','CO','FL','GA','IA','ID','KS','KY','LA','ME','MI','MO','MS','MT','NC','ND','NH','OH','OK','PA','SD','TN','TX','UT','VA','VT','WV','WI','WY'],
+    honors: ['AK','AL','AR','AZ','CO','FL','GA','IA','ID','KS','KY','LA','ME','MI','MO','MS','MT','NC','ND','NH','OH','OK','PA','SD','TN','TX','UT','VA','VT','WV','WI','WY'],
+    permitRequired: false, openCarry: true, minAge: 18, redFlagLaw: false,
+    officialSource: 'https://www.in.gov/isp/firearms.htm'
+  },
+  IA: {
+    name: 'Iowa', permitType: 'shall-issue', constitutionalCarry: true,
+    honoredBy: ['AK','AL','AR','AZ','CO','FL','GA','ID','IN','KS','KY','LA','ME','MI','MO','MS','MT','NC','ND','NE','NH','OH','OK','PA','SC','SD','TN','TX','UT','VA','VT','WI','WV','WY'],
+    honors: ['AK','AL','AR','AZ','CO','FL','GA','ID','IN','KS','KY','LA','ME','MI','MO','MS','MT','NC','ND','NE','NH','OH','OK','PA','SC','SD','TN','TX','UT','VA','VT','WI','WV','WY'],
+    permitRequired: false, openCarry: true, minAge: 18, redFlagLaw: false,
+    officialSource: 'https://www.dps.state.ia.us/asd/weapons.shtml'
+  },
+  KS: {
+    name: 'Kansas', permitType: 'shall-issue', constitutionalCarry: true,
+    honoredBy: ['AK','AL','AR','AZ','CO','DE','FL','GA','IA','ID','IN','KY','LA','ME','MI','MN','MO','MS','MT','NC','ND','NE','NH','NM','NV','OH','OK','PA','SC','SD','TN','TX','UT','VA','VT','WA','WI','WV','WY'],
+    honors: ['AK','AL','AR','AZ','CO','DE','FL','GA','IA','ID','IN','KY','LA','ME','MI','MN','MO','MS','MT','NC','ND','NE','NH','NM','NV','OH','OK','PA','SC','SD','TN','TX','UT','VA','VT','WA','WI','WV','WY'],
+    permitRequired: false, openCarry: true, minAge: 21, redFlagLaw: false,
+    officialSource: 'https://www.ag.ks.gov/in-your-corner-kansas/conceal-carry'
+  },
+  KY: {
+    name: 'Kentucky', permitType: 'shall-issue', constitutionalCarry: true,
+    honoredBy: ['AK','AL','AR','AZ','CO','DE','FL','GA','IA','ID','IN','KS','LA','ME','MI','MN','MO','MS','MT','NC','NH','ND','NE','NV','OH','OK','PA','SC','SD','TN','TX','VA','UT','VT','WI','WV','WY'],
+    honors: ['AK','AL','AR','AZ','CO','DE','FL','GA','IA','ID','IN','KS','LA','ME','MI','MN','MO','MS','MT','NC','NH','ND','NE','NV','OH','OK','PA','SC','SD','TN','TX','VA','UT','VT','WI','WV','WY'],
+    permitRequired: false, openCarry: true, minAge: 21, redFlagLaw: false,
+    officialSource: 'https://kentuckystatepolice.org/concealedcarry/'
+  },
+  LA: {
+    name: 'Louisiana', permitType: 'shall-issue', constitutionalCarry: true,
+    honoredBy: ['AK','AL','AR','AZ','CO','FL','GA','IA','ID','IN','KS','KY','ME','MI','MN','MO','MS','MT','NC','ND','NE','NH','NV','OH','OK','PA','SC','SD','TN','TX','UT','VA','VT','WA','WI','WV','WY'],
+    honors: ['AK','AL','AR','AZ','CO','FL','GA','IA','ID','IN','KS','KY','ME','MI','MN','MO','MS','MT','NC','ND','NE','NH','NV','OH','OK','PA','SC','SD','TN','TX','UT','VA','VT','WA','WI','WV','WY'],
+    permitRequired: false, openCarry: true, minAge: 18, redFlagLaw: false,
+    officialSource: 'https://www.lsp.org/ccp.html'
+  },
+  ME: {
+    name: 'Maine', permitType: 'shall-issue', constitutionalCarry: true,
+    honoredBy: ['AK','AL','AR','AZ','DE','FL','GA','IA','ID','IN','KS','KY','LA','MI','MO','MS','ND','NC','NE','NH','OH','OK','SD','TN','TX','UT','VA','VT','WY'],
+    honors: ['AK','AL','AR','AZ','DE','FL','GA','IA','ID','IN','KS','KY','LA','MI','MO','MS','ND','NC','NE','NH','OH','OK','SD','TN','TX','UT','VA','VT','WY'],
+    residentPermitsOnly: true,
+    permitRequired: false, openCarry: true, minAge: 21, redFlagLaw: true,
+    officialSource: 'https://www.maine.gov/dps/msp/licenses-permits/concealed-firearms-permits'
+  },
+  MD: {
+    name: 'Maryland', permitType: 'shall-issue', constitutionalCarry: false,
+    honoredBy: ['AK','AL','AR','AZ','FL','GA','IA','ID','IN','KS','KY','MI','MN','MO','MS','MT','NC','OH','OK','SC','SD','TN','TX','UT','VA','VT','WI'],
+    honors: [],
+    residentPermitsOnlyStates: ['MI','SC'],
+    permitRequired: true, openCarry: false, minAge: 21, redFlagLaw: true,
+    officialSource: 'https://mdsp.maryland.gov/Organization/Pages/CriminalInvestigationBureau/LicensingDivision/Firearms.aspx'
+  },
+  MA: {
+    name: 'Massachusetts', permitType: 'shall-issue', constitutionalCarry: false,
+    honoredBy: ['AK','AL','AR','AZ','FL','GA','IA','ID','IN','KS','KY','MI','MN','MO','MS','MT','NC','NV','OH','OK','SD','TN','TX','UT','VA','VT','WI'],
+    honors: ['AK','AL','AR','AZ','FL','GA','IA','ID','IN','KS','KY','MI','MN','MO','MS','MT','NC','NV','OH','OK','SD','TN','TX','UT','VA','VT','WI'],
+    permitRequired: true, openCarry: false, minAge: 21, redFlagLaw: true,
+    officialSource: 'https://www.mass.gov/how-to/apply-for-a-firearms-license'
+  },
+  MI: {
+    name: 'Michigan', permitType: 'shall-issue', constitutionalCarry: false,
+    honoredBy: ['AK','AL','AR','AZ','CO','DE','FL','GA','IA','ID','IN','KS','KY','LA','ME','MN','MO','MS','MT','NC','NH','ND','NE','NM','OH','OK','PA','SC','SD','TN','TX','UT','VA','VT','WA','WI','WV','WY'],
+    honors: ['AK','AL','AR','AZ','CO','DE','FL','GA','IA','ID','IN','KS','KY','LA','ME','MN','MO','MS','MT','NC','NH','ND','NE','NM','OH','OK','PA','SC','SD','TN','TX','UT','VA','VT','WA','WI','WV','WY'],
+    residentPermitsOnly: true,
+    permitRequired: true, openCarry: true, minAge: 21, redFlagLaw: false,
+    officialSource: 'https://www.michigan.gov/msp/divisions/crd/concealed-pistol-licensing'
+  },
+  MN: {
+    name: 'Minnesota', permitType: 'shall-issue', constitutionalCarry: false,
+    honoredBy: ['AK','AL','AR','AZ','CO','FL','GA','IA','ID','IN','KS','KY','LA','MI','MO','MS','MT','NE','NC','ND','NV','OH','OK','SC','SD','TN','TX','UT','VA','VT','WV','WI'],
+    honors: ['AK','AL','AR','AZ','CO','FL','GA','IA','ID','IN','KS','KY','LA','MI','MO','MS','MT','NE','NC','ND','NV','OH','OK','SC','SD','TN','TX','UT','VA','VT','WV','WI'],
+    permitRequired: true, openCarry: false, minAge: 21, redFlagLaw: true,
+    officialSource: 'https://dps.mn.gov/divisions/bca/bca-divisions/administrative/Pages/permit-to-carry.aspx'
+  },
+  MS: {
+    name: 'Mississippi', permitType: 'shall-issue', constitutionalCarry: true,
+    honoredBy: ['AK','AL','AR','AZ','CO','FL','GA','IA','ID','IN','KS','KY','LA','ME','MI','MO','MT','NC','ND','NH','NM','OH','OK','PA','SC','SD','TN','TX','UT','VA','VT','WI','WV','WY'],
+    honors: ['AK','AL','AR','AZ','CO','FL','GA','IA','ID','IN','KS','KY','LA','ME','MI','MO','MT','NC','ND','NH','NM','OH','OK','PA','SC','SD','TN','TX','UT','VA','VT','WI','WV','WY'],
+    permitRequired: false, openCarry: true, minAge: 18, redFlagLaw: false,
+    officialSource: 'https://www.dps.state.ms.us/firearms/'
+  },
+  MO: {
+    name: 'Missouri', permitType: 'shall-issue', constitutionalCarry: true,
+    honoredBy: ['AK','AL','AR','AZ','CO','DE','FL','GA','IA','ID','IN','KS','KY','LA','ME','MI','MS','MN','MT','NC','ND','NE','NH','NM','OH','OK','PA','SC','SD','TN','TX','UT','VA','VT','WI','WV','WY'],
+    honors: ['AK','AL','AR','AZ','CO','DE','FL','GA','IA','ID','IN','KS','KY','LA','ME','MI','MS','MN','MT','NC','ND','NE','NH','NM','OH','OK','PA','SC','SD','TN','TX','UT','VA','VT','WI','WV','WY'],
+    permitRequired: false, openCarry: true, minAge: 19, redFlagLaw: false,
+    officialSource: 'https://www.mshp.dps.missouri.gov/MSHPWeb/PatrolDivisions/CRID/ccw.html'
+  },
+  MT: {
+    name: 'Montana', permitType: 'shall-issue', constitutionalCarry: true,
+    honoredBy: ['AK','AL','AR','AZ','CO','FL','GA','IA','ID','IN','KS','KY','LA','MI','MO','MS','NH','NC','ND','NE','NV','OH','OK','PA','SD','TN','TX','UT','VA','VT','WV','WI','WY'],
+    honors: ['AK','AL','AR','AZ','CO','FL','GA','IA','ID','IN','KS','KY','LA','MI','MO','MS','NH','NC','ND','NE','NV','OH','OK','PA','SD','TN','TX','UT','VA','VT','WV','WI','WY'],
+    permitRequired: false, openCarry: true, minAge: 18, redFlagLaw: false,
+    officialSource: 'https://dojmt.gov/enforcement/concealed-weapons-permits/'
+  },
+  NE: {
+    name: 'Nebraska', permitType: 'shall-issue', constitutionalCarry: true,
+    honoredBy: ['AK','AL','AR','AZ','CO','FL','GA','IA','ID','IN','KS','KY','LA','ME','MI','MN','MO','MS','MT','NC','ND','NV','NM','OH','OK','SC','SD','TN','TX','UT','VA','VT','WI','WV','WY'],
+    honors: ['AK','AL','AR','AZ','CO','FL','GA','IA','ID','IN','KS','KY','LA','ME','MI','MN','MO','MS','MT','NC','ND','NV','NM','OH','OK','SC','SD','TN','TX','UT','VA','VT','WI','WV','WY'],
+    permitRequired: false, openCarry: true, minAge: 21, redFlagLaw: false,
+    officialSource: 'https://statepatrol.nebraska.gov/concealed-handgun-permits'
+  },
+  NV: {
+    name: 'Nevada', permitType: 'shall-issue', constitutionalCarry: false,
+    honoredBy: ['AK','AL','AR','AZ','FL','GA','IA','ID','IN','KS','KY','LA','MI','MO','MS','MN','MT','NC','ND','NE','NM','OH','OK','SD','TN','TX','UT','VA','VT','WI','WV','WY'],
+    honors: ['AK','AL','AR','AZ','FL','GA','IA','ID','IN','KS','KY','LA','MI','MO','MS','MN','MT','NC','ND','NE','NM','OH','OK','SD','TN','TX','UT','VA','VT','WI','WV','WY'],
+    permitRequired: true, openCarry: true, minAge: 21, redFlagLaw: true,
+    officialSource: 'https://www.leg.state.nv.us/nrs/nrs-202.html'
+  },
+  NH: {
+    name: 'New Hampshire', permitType: 'shall-issue', constitutionalCarry: true,
+    honoredBy: ['AK','AL','AR','AZ','CO','FL','GA','IA','ID','IN','KS','KY','LA','ME','MI','MO','MS','NC','ND','OH','OK','PA','SD','TN','TX','UT','VA','VT','WV','WI','WY'],
+    honors: ['AK','AL','AR','AZ','CO','FL','GA','IA','ID','IN','KS','KY','LA','ME','MI','MO','MS','NC','ND','OH','OK','PA','SD','TN','TX','UT','VA','VT','WV','WI','WY'],
+    residentPermitsOnly: true,
+    permitRequired: false, openCarry: true, minAge: 18, redFlagLaw: false,
+    officialSource: 'https://www.nh.gov/safety/divisions/nhsp/ssb/permitslicensing/pisrp.html'
+  },
+  NJ: {
+    name: 'New Jersey', permitType: 'shall-issue', constitutionalCarry: false,
+    honoredBy: ['AK','AL','AR','AZ','FL','GA','IA','ID','IN','KS','KY','MI','MN','MO','MS','MT','NC','OH','OK','SD','TN','TX','UT','VA','VT'],
+    honors: ['AK','AL','AR','AZ','FL','GA','IA','ID','IN','KS','KY','MI','MN','MO','MS','MT','NC','OH','OK','SD','TN','TX','UT','VA','VT'],
+    permitRequired: true, openCarry: false, minAge: 21, redFlagLaw: true,
+    officialSource: 'https://www.njsp.org/firearms/index.shtml'
+  },
+  NM: {
+    name: 'New Mexico', permitType: 'shall-issue', constitutionalCarry: false,
+    honoredBy: ['AK','AL','AR','AZ','CO','DE','FL','GA','IA','ID','IN','KS','KY','MI','MN','MO','MS','MT','NC','ND','NE','NV','OH','OK','SC','SD','TN','TX','UT','VA','VT','WI','WV','WY'],
+    honors: ['AK','AL','AR','AZ','CO','DE','FL','GA','IA','ID','IN','KS','KY','MI','MN','MO','MS','MT','NC','ND','NE','NV','OH','OK','SC','SD','TN','TX','UT','VA','VT','WI','WV','WY'],
+    permitRequired: true, openCarry: true, minAge: 21, redFlagLaw: true,
+    officialSource: 'https://www.dps.nm.gov/index.php/concealed-carry-unit-ccw/'
+  },
+  NY: {
+    name: 'New York', permitType: 'may-issue', constitutionalCarry: false,
+    honoredBy: ['AK','AL','AR','AZ','FL','GA','IA','ID','IN','KS','KY','MI','MO','MS','MN','MT','NC','OH','OK','SD','TN','TX','UT','VA','VT','WI'],
+    honors: [],
+    permitRequired: true, openCarry: false, minAge: 21, redFlagLaw: true,
+    officialSource: 'https://www.criminaljustice.ny.gov/crimnet/ojsa/countycodes.htm'
+  },
+  NC: {
+    name: 'North Carolina', permitType: 'shall-issue', constitutionalCarry: false,
+    honoredBy: ['AK','AL','AZ','AR','CO','DE','FL','GA','IA','ID','IN','KS','KY','LA','ME','MI','MN','MO','MS','MT','NV','ND','NE','NH','NM','OH','OK','PA','SC','SD','TN','TX','UT','VA','VT','WA','WI','WV','WY'],
+    honors: ['AK','AL','AZ','AR','CO','DE','FL','GA','IA','ID','IN','KS','KY','LA','ME','MI','MN','MO','MS','MT','NV','ND','NE','NH','NM','OH','OK','PA','SC','SD','TN','TX','UT','VA','VT','WA','WI','WV','WY'],
+    permitRequired: true, openCarry: true, minAge: 21, redFlagLaw: false,
+    officialSource: 'https://www.ncsbi.gov/Services/Firearm-Regulatory'
+  },
+  ND: {
+    name: 'North Dakota', permitType: 'shall-issue', constitutionalCarry: true,
+    honoredBy: ['AK','AL','AR','AZ','CO','DE','FL','GA','IA','ID','IN','KS','KY','LA','ME','MI','MN','MO','MS','MT','NC','NE','NH','NM','NV','OH','OK','PA','SC','SD','TN','TX','UT','VA','VT','WA','WI','WV','WY'],
+    honors: ['AK','AL','AR','AZ','CO','DE','FL','GA','IA','ID','IN','KS','KY','LA','ME','MI','MN','MO','MS','MT','NC','NE','NH','NM','NV','OH','OK','PA','SC','SD','TN','TX','UT','VA','VT','WA','WI','WV','WY'],
+    residentPermitsOnly: true,
+    permitRequired: false, openCarry: true, minAge: 18, redFlagLaw: false,
+    officialSource: 'https://www.ag.nd.gov/BCI/Weapons/Weapons.html'
+  },
+  OH: {
+    name: 'Ohio', permitType: 'shall-issue', constitutionalCarry: true,
+    honoredBy: ['AK','AL','AR','AZ','CO','DE','FL','GA','IA','ID','IN','KS','KY','LA','ME','MI','MN','MO','MS','MT','NE','NV','NC','ND','NH','NM','OK','PA','SC','SD','TN','TX','UT','VA','VT','WA','WI','WV','WY'],
+    honors: ['AK','AL','AR','AZ','CO','DE','FL','GA','IA','ID','IN','KS','KY','LA','ME','MI','MN','MO','MS','MT','NE','NV','NC','ND','NH','NM','OK','PA','SC','SD','TN','TX','UT','VA','VT','WA','WI','WV','WY'],
+    permitRequired: false, openCarry: true, minAge: 21, redFlagLaw: false,
+    officialSource: 'https://www.ohioattorneygeneral.gov/Law-Enforcement/Concealed-Carry'
+  },
+  OK: {
+    name: 'Oklahoma', permitType: 'shall-issue', constitutionalCarry: true,
+    honoredBy: ['AK','AL','AR','AZ','CO','DE','FL','GA','IA','ID','IN','KS','KY','LA','ME','MI','MO','MN','MT','MS','NC','ND','NE','NH','NV','NM','OH','PA','SC','SD','TN','TX','UT','VA','VT','WV','WI','WY'],
+    honors: ['AK','AL','AR','AZ','CO','DE','FL','GA','IA','ID','IN','KS','KY','LA','ME','MI','MO','MN','MT','MS','NC','ND','NE','NH','NV','NM','OH','PA','SC','SD','TN','TX','UT','VA','VT','WV','WI','WY'],
+    permitRequired: false, openCarry: true, minAge: 21, redFlagLaw: false,
+    officialSource: 'https://oklahoma.gov/osbi/programs-and-services/firearms/handgun-licensing.html'
+  },
+  OR: {
+    name: 'Oregon', permitType: 'shall-issue', constitutionalCarry: false,
+    honoredBy: ['AK','AL','AR','AZ','FL','GA','IA','ID','IN','KS','KY','MI','MO','MS','MT','NE','NC','OH','OK','SD','TN','UT','VA','VT'],
+    honors: ['AK','AL','AR','AZ','FL','GA','IA','ID','IN','KS','KY','MI','MO','MS','MT','NE','NC','OH','OK','SD','TN','UT','VA','VT'],
+    permitRequired: true, openCarry: true, minAge: 21, redFlagLaw: true,
+    officialSource: 'https://www.oregon.gov/osp/programs/cch/pages/index.aspx'
+  },
+  PA: {
+    name: 'Pennsylvania', permitType: 'shall-issue', constitutionalCarry: false,
+    honoredBy: ['AK','AL','AR','AZ','CO','FL','GA','IA','ID','IN','KS','KY','LA','MI','MO','MS','MT','NC','ND','NH','OH','OK','SD','TN','TX','UT','VA','VT','WI','WV','WY'],
+    honors: ['AK','AL','AR','AZ','CO','FL','GA','IA','ID','IN','KS','KY','LA','MI','MO','MS','MT','NC','ND','NH','OH','OK','SD','TN','TX','UT','VA','VT','WI','WV','WY'],
+    residentPermitsOnly: true,
+    permitRequired: true, openCarry: true, minAge: 21, redFlagLaw: false,
+    officialSource: 'https://www.psp.pa.gov/firearms-information/Pages/Licensing-to-Carry-Firearms.aspx'
+  },
+  RI: {
+    name: 'Rhode Island', permitType: 'may-issue', constitutionalCarry: false,
+    honoredBy: ['AK','AL','AR','AZ','FL','GA','IA','ID','IN','KS','KY','MI','MN','MO','MS','NC','OH','OK','SD','TN','TX','UT','VA','VT','WI'],
+    honors: ['AK','AL','AR','AZ','FL','GA','IA','ID','IN','KS','KY','MI','MN','MO','MS','NC','OH','OK','SD','TN','TX','UT','VA','VT','WI'],
+    permitRequired: true, openCarry: true, minAge: 21, redFlagLaw: true,
+    officialSource: 'https://riag.ri.gov/bureaus-divisions/bureau-criminal-identification/firearms'
+  },
+  SC: {
+    name: 'South Carolina', permitType: 'shall-issue', constitutionalCarry: true,
+    honoredBy: ['AK','AL','AR','AZ','FL','GA','IA','ID','IN','KS','KY','LA','MI','MO','MS','MN','MT','NC','ND','NE','NV','NM','OH','OK','SD','TN','TX','UT','VA','VT','WI','WV','WY'],
+    honors: ['AK','AL','AR','AZ','FL','GA','IA','ID','IN','KS','KY','LA','MI','MO','MS','MN','MT','NC','ND','NE','NV','NM','OH','OK','SD','TN','TX','UT','VA','VT','WI','WV','WY'],
+    residentPermitsOnly: true,
+    permitRequired: false, openCarry: true, minAge: 18, redFlagLaw: false,
+    officialSource: 'https://www.sled.sc.gov/concealedweapon.aspx'
+  },
+  SD: {
+    name: 'South Dakota', permitType: 'shall-issue', constitutionalCarry: true,
+    honoredBy: ['AK','AL','AR','AZ','CO','FL','GA','IA','ID','IN','KS','KY','LA','ME','MI','MO','MS','MT','NH','NM','NC','ND','OH','OK','PA','TN','SC','TX','UT','VA','VT','WV','WY'],
+    honors: ['AK','AL','AR','AZ','CO','FL','GA','IA','ID','IN','KS','KY','LA','ME','MI','MO','MS','MT','NH','NM','NC','ND','OH','OK','PA','TN','SC','TX','UT','VA','VT','WV','WY'],
+    permitRequired: false, openCarry: true, minAge: 18, redFlagLaw: false,
+    officialSource: 'https://dlr.sd.gov/licensing/professional_licensing/concealed_pistol_permits.aspx'
+  },
+  TN: {
+    name: 'Tennessee', permitType: 'shall-issue', constitutionalCarry: true,
+    honoredBy: ['AK','AL','AR','AZ','CO','DE','FL','GA','IA','ID','IN','KS','KY','LA','ME','MI','MO','MS','MT','NC','NH','NV','ND','OH','OK','PA','SC','SD','TX','UT','VA','VT','WI','WV','WY'],
+    honors: ['AK','AL','AR','AZ','CO','DE','FL','GA','IA','ID','IN','KS','KY','LA','ME','MI','MO','MS','MT','NC','NH','NV','ND','OH','OK','PA','SC','SD','TX','UT','VA','VT','WI','WV','WY'],
+    permitRequired: false, openCarry: true, minAge: 18, redFlagLaw: false,
+    officialSource: 'https://www.tn.gov/safety/driverlicense/handgunpermit.html'
+  },
+  TX: {
+    name: 'Texas', permitType: 'shall-issue', constitutionalCarry: true,
+    honoredBy: ['AK','AL','AR','AZ','CO','DE','FL','GA','IA','ID','IN','KS','KY','LA','MI','MO','MS','MN','MT','NC','ND','NE','NV','NM','OH','OK','PA','SC','SD','TN','UT','VA','VT','WI','WV','WY'],
+    honors: ['AK','AL','AR','AZ','CO','DE','FL','GA','IA','ID','IN','KS','KY','LA','MI','MO','MS','MN','MT','NC','ND','NE','NV','NM','OH','OK','PA','SC','SD','TN','UT','VA','VT','WI','WV','WY'],
+    permitRequired: false, openCarry: true, minAge: 21, redFlagLaw: false,
+    officialSource: 'https://www.dps.texas.gov/rsd/LTC/index.htm'
+  },
+  UT: {
+    name: 'Utah', permitType: 'shall-issue', constitutionalCarry: true,
+    honoredBy: ['AK','AL','AR','AZ','CO','DE','FL','GA','IA','ID','IN','KS','KY','LA','ME','MI','MO','MS','MT','NC','ND','NE','NV','NH','OH','OK','PA','SD','TN','TX','VA','VT','WA','WI','WV','WY'],
+    honors: ['AK','AL','AR','AZ','CO','DE','FL','GA','IA','ID','IN','KS','KY','LA','ME','MI','MO','MS','MT','NC','ND','NE','NV','NH','OH','OK','PA','SD','TN','TX','VA','VT','WA','WI','WV','WY'],
+    permitRequired: false, openCarry: true, minAge: 21, redFlagLaw: false,
+    officialSource: 'https://bci.utah.gov/concealed-firearm/'
+  },
+  VT: {
+    name: 'Vermont', permitType: 'constitutional', constitutionalCarry: true,
+    honoredBy: ['AL','AK','AZ','AR','FL','GA','IN','ID','IA','KS','KY','ME','MT','MS','MO','NE','NH','ND','OH','OK','SC','SD','TN','TX','UT','VT','WV','WY'],
+    honors: [],
+    note: 'Vermont does not issue permits. Residents carry on state DL/ID in states that honor VT.',
+    permitRequired: false, openCarry: true, minAge: 18, redFlagLaw: false,
+    officialSource: 'https://www.dps.vermont.gov/criminal-justice-services/legislation/weapons'
+  },
+  VA: {
+    name: 'Virginia', permitType: 'shall-issue', constitutionalCarry: false,
+    honoredBy: ['AK','AL','AR','AZ','CO','FL','GA','IA','ID','IN','KS','KY','LA','ME','MI','MO','MS','MT','NC','ND','NE','NV','NH','NM','OH','OK','PA','SC','SD','TN','TX','UT','VT','WI','WV','WY'],
+    honors: ['AK','AL','AR','AZ','CO','FL','GA','IA','ID','IN','KS','KY','LA','ME','MI','MO','MS','MT','NC','ND','NE','NV','NH','NM','OH','OK','PA','SC','SD','TN','TX','UT','VT','WI','WV','WY'],
+    permitRequired: true, openCarry: true, minAge: 21, redFlagLaw: true,
+    officialSource: 'https://www.vsp.virginia.gov/Firearms_ConealedWeapons.shtm'
+  },
+  WA: {
+    name: 'Washington', permitType: 'shall-issue', constitutionalCarry: false,
+    honoredBy: ['AK','AL','AR','AZ','FL','GA','IA','ID','IN','KS','KY','LA','MI','MS','MT','MO','NC','ND','OH','OK','SD','TN','TX','UT','VA','VT','WI'],
+    honors: ['AK','AL','AR','AZ','FL','GA','IA','ID','IN','KS','KY','LA','MI','MS','MT','MO','NC','ND','OH','OK','SD','TN','TX','UT','VA','VT','WI'],
+    permitRequired: true, openCarry: true, minAge: 21, redFlagLaw: true,
+    officialSource: 'https://www.dol.wa.gov/business/firearms/faconcealedpistol.html'
+  },
+  WV: {
+    name: 'West Virginia', permitType: 'shall-issue', constitutionalCarry: true,
+    honoredBy: ['AK','AL','AR','AZ','CO','DE','FL','GA','ID','IN','IA','KS','KY','LA','MI','MN','MO','MS','MT','NC','ND','NE','NV','NH','OH','OK','PA','SC','SD','TN','TX','UT','VA','VT','WI','WY'],
+    honors: ['AK','AL','AR','AZ','CO','DE','FL','GA','ID','IN','IA','KS','KY','LA','MI','MN','MO','MS','MT','NC','ND','NE','NV','NH','OH','OK','PA','SC','SD','TN','TX','UT','VA','VT','WI','WY'],
+    permitRequired: false, openCarry: true, minAge: 21, redFlagLaw: false,
+    officialSource: 'https://www.wvsp.gov/about/Pages/FirearmsLicensing.aspx'
+  },
+  WI: {
+    name: 'Wisconsin', permitType: 'shall-issue', constitutionalCarry: false,
+    honoredBy: ['AK','AL','AR','AZ','CO','FL','GA','IA','ID','IN','KS','KY','LA','MI','MO','MS','MT','NC','ND','NE','NV','OH','OK','PA','SD','TN','TX','UT','VA','VT','WV','WY'],
+    honors: ['AK','AL','AR','AZ','CO','FL','GA','IA','ID','IN','KS','KY','LA','MI','MO','MS','MT','NC','ND','NE','NV','OH','OK','PA','SD','TN','TX','UT','VA','VT','WV','WY'],
+    permitRequired: true, openCarry: true, minAge: 21, redFlagLaw: false,
+    officialSource: 'https://www.doj.state.wi.us/dles/cib/concealed-carry'
+  },
+  WY: {
+    name: 'Wyoming', permitType: 'shall-issue', constitutionalCarry: true,
+    honoredBy: ['AK','AL','AR','AZ','CO','FL','GA','IA','ID','IN','KS','KY','LA','ME','MI','MO','MS','MT','NC','ND','NE','NH','NM','NV','OH','OK','PA','SC','SD','TN','TX','UT','VA','VT','WI','WV'],
+    honors: ['AK','AL','AR','AZ','CO','FL','GA','IA','ID','IN','KS','KY','LA','ME','MI','MO','MS','MT','NC','ND','NE','NH','NM','NV','OH','OK','PA','SC','SD','TN','TX','UT','VA','VT','WI','WV'],
+    permitRequired: false, openCarry: true, minAge: 21, redFlagLaw: false,
+    officialSource: 'https://wyomingdci.wyo.gov/dci-criminal-justice-information-systems-section/concealed-firearms-permits'
+  }
 }
 
-// ── State data ────────────────────────────────────────────────────────────────
+export default CCW_DATA
 
-export const CCW_STATES = [
-  {
-    code:'AL', name:'Alabama', permitType:'constitutional', constitutional:true, permitRequired:false,
-    openCarry:true, minAge:19, redFlagLaw:false,
-    permitName:'Pistol Permit (optional for reciprocity)',
-    processingTime:'30 days', fee:20, trainingRequired:'None required',
-    gunLawSummary:'Alabama enacted constitutional carry in January 2023, allowing any person 19+ who may legally possess a firearm to carry concealed without a permit. An optional permit is still available for reciprocity purposes when traveling to other states.',
-    selfDefenseLaws:'Stand Your Ground law. Castle Doctrine applies in the home, vehicle, and place of business.',
-    honors:['AK','AZ','AR','CO','FL','GA','ID','IN','IA','KS','KY','LA','ME','MI','MO','MT','NE','NV','NH','NM','NC','ND','OH','OK','PA','SD','TN','TX','UT','VA','WV','WY'],
-    carryLocations:{ vehicle:true, barsRestaurants:'Check Local Laws', stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://www.alalerts.org',
-  },
-  {
-    code:'AK', name:'Alaska', permitType:'constitutional', constitutional:true, permitRequired:false,
-    openCarry:true, minAge:21, redFlagLaw:false,
-    permitName:'Concealed Handgun Permit (optional)',
-    processingTime:'30 days', fee:88, trainingRequired:'None for permit; safety course recommended',
-    gunLawSummary:'Alaska has allowed permitless carry since 2003. Residents 21+ who legally possess a firearm may carry concealed without a permit. An optional CHP is available for reciprocity travel.',
-    selfDefenseLaws:'Stand Your Ground. Castle Doctrine. No duty to retreat.',
-    honors:['AL','AZ','AR','CO','FL','GA','ID','IN','IA','KS','KY','LA','ME','MI','MN','MO','MT','NE','NV','NH','NM','NC','ND','OH','OK','OR','PA','SD','TN','TX','UT','VA','WA','WV','WI','WY'],
-    carryLocations:{ vehicle:true, barsRestaurants:'Prohibited if posted', stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://dps.alaska.gov/Statewide/PermitsLicensing',
-  },
-  {
-    code:'AZ', name:'Arizona', permitType:'constitutional', constitutional:true, permitRequired:false,
-    openCarry:true, minAge:21, redFlagLaw:false,
-    permitName:'Concealed Weapons Permit (optional)',
-    processingTime:'75 days', fee:60, trainingRequired:'8-hour course for optional permit',
-    gunLawSummary:'Arizona recognizes the broadest reciprocity of any state. Permitless carry was enacted in 2010. The optional CWP is accepted in nearly every state with reciprocity agreements. Arizona has some of the most permissive gun laws in the nation.',
-    selfDefenseLaws:'Strong Castle Doctrine. Stand Your Ground. No duty to retreat anywhere.',
-    honors:['AL','AK','AR','CO','FL','GA','ID','IN','IA','KS','KY','LA','ME','MI','MN','MO','MT','NE','NV','NH','NM','NC','ND','OH','OK','PA','SD','TN','TX','UT','VA','WV','WI','WY'],
-    carryLocations:{ vehicle:true, barsRestaurants:true, stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://www.azdps.gov/services/public/cwp',
-  },
-  {
-    code:'AR', name:'Arkansas', permitType:'constitutional', constitutional:true, permitRequired:false,
-    openCarry:true, minAge:18, redFlagLaw:false,
-    permitName:'License to Carry (LTC)',
-    processingTime:'90 days', fee:95, trainingRequired:'5-hour course for LTC',
-    gunLawSummary:'Arkansas enacted constitutional carry in 2018. The optional LTC is available for reciprocity. Arkansas has an enhanced LTC option that provides broader access including more locations within the state.',
-    selfDefenseLaws:'Stand Your Ground. Castle Doctrine. No duty to retreat.',
-    honors:['AL','AK','AZ','CO','FL','GA','ID','IN','IA','KS','KY','LA','ME','MI','MO','MT','NE','NV','NH','NM','NC','ND','OH','OK','PA','SD','TN','TX','UT','VA','WV','WY'],
-    carryLocations:{ vehicle:true, barsRestaurants:'Check Local Laws', stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://www.asp.arkansas.gov/services-and-programs/detail/chcl',
-  },
-  {
-    code:'CA', name:'California', permitType:'shall_issue', constitutional:false, permitRequired:true,
-    openCarry:false, minAge:21, redFlagLaw:true,
-    permitName:'Carry Concealed Weapon (CCW) License',
-    processingTime:'90 days', fee:200, trainingRequired:'16 hours required',
-    gunLawSummary:'California does not honor any out-of-state permits. Post-Bruen (2022) California moved to shall-issue but implemented extensive sensitive location restrictions. County sheriffs issue CCW licenses. California has numerous magazine capacity restrictions and assault weapon bans.',
-    selfDefenseLaws:'Duty to retreat may apply in some circumstances. Castle Doctrine applies in the home. No Stand Your Ground law.',
-    honors:[],
-    carryLocations:{ vehicle:'Unloaded and in locked container', barsRestaurants:false, stateParks:false, nationalParks:false, roadside:false, hotels:false, worship:false, bowHunting:'Check regulations', gunHunting:'With valid hunting license' },
-    officialSource:'https://oag.ca.gov/firearms/ccw',
-  },
-  {
-    code:'CO', name:'Colorado', permitType:'shall_issue', constitutional:false, permitRequired:true,
-    openCarry:true, minAge:21, redFlagLaw:true,
-    permitName:'Concealed Handgun Permit (CHP)',
-    processingTime:'90 days', fee:152, trainingRequired:'Demonstrated competency required',
-    gunLawSummary:'Colorado is shall-issue but does not honor non-resident permits from other states. Colorado does not recognize permits from states with lower requirements. Denver has additional local ordinances. Red Flag laws were enacted in 2019.',
-    selfDefenseLaws:'Duty to retreat in some situations. Castle Doctrine applies in the home and vehicle.',
-    honors:['AL','AK','AZ','AR','GA','ID','IN','IA','KS','KY','LA','ME','MI','MN','MO','MT','NE','NV','NH','NM','NC','ND','OH','OK','PA','SD','TN','TX','UT','VA','WV','WY'],
-    carryLocations:{ vehicle:true, barsRestaurants:true, stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://csp.colorado.gov/permits-and-licensing/concealed-handgun-permit',
-  },
-  {
-    code:'CT', name:'Connecticut', permitType:'shall_issue', constitutional:false, permitRequired:true,
-    openCarry:false, minAge:21, redFlagLaw:true,
-    permitName:'State Permit to Carry Pistols & Revolvers',
-    processingTime:'60 days', fee:140, trainingRequired:'NRA or state-approved course required',
-    gunLawSummary:'Connecticut does not honor any out-of-state permits. Requires completion of an approved handgun safety course. Has extensive firearm regulations including assault weapon restrictions and magazine capacity limits.',
-    selfDefenseLaws:'Duty to retreat outside the home. Castle Doctrine applies inside the home.',
-    honors:[],
-    carryLocations:{ vehicle:true, barsRestaurants:false, stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://portal.ct.gov/DESPP/Division-of-State-Police/Firearms-Unit/Permit-to-Carry',
-  },
-  {
-    code:'DE', name:'Delaware', permitType:'shall_issue', constitutional:false, permitRequired:true,
-    openCarry:true, minAge:18, redFlagLaw:true,
-    permitName:'License to Carry a Concealed Deadly Weapon',
-    processingTime:'90 days', fee:65, trainingRequired:'Training recommended but not required',
-    gunLawSummary:'Delaware does not honor out-of-state permits. Applicants must publish notice in a county newspaper and obtain court approval. Delaware has relatively few gun-specific laws compared to neighboring states.',
-    selfDefenseLaws:'Castle Doctrine. Stand Your Ground law enacted in 2021. No duty to retreat.',
-    honors:[],
-    carryLocations:{ vehicle:true, barsRestaurants:false, stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://courts.delaware.gov/forms/download.aspx?id=5740',
-  },
-  {
-    code:'DC', name:'District of Columbia', permitType:'shall_issue', constitutional:false, permitRequired:true,
-    openCarry:false, minAge:21, redFlagLaw:true,
-    permitName:'Concealed Carry Pistol License (CCPL)',
-    processingTime:'90 days', fee:75, trainingRequired:'16 hours required + range qualification',
-    gunLawSummary:'DC does not honor any out-of-state permits. Comprehensive handgun registration required. Extensive sensitive place restrictions throughout the District. One of the most restrictive jurisdictions in the US.',
-    selfDefenseLaws:'Duty to retreat required. No Stand Your Ground law.',
-    honors:[],
-    carryLocations:{ vehicle:false, barsRestaurants:false, stateParks:false, nationalParks:false, roadside:false, hotels:false, worship:false, bowHunting:false, gunHunting:false },
-    officialSource:'https://mpdc.dc.gov/page/concealed-pistol-licensing',
-  },
-  {
-    code:'FL', name:'Florida', permitType:'constitutional', constitutional:true, permitRequired:false,
-    openCarry:false, minAge:21, redFlagLaw:true,
-    permitName:'Concealed Weapon License (CWL)',
-    processingTime:'90 days', fee:97, trainingRequired:'Proof of competence required for CWL',
-    gunLawSummary:'Florida enacted constitutional carry in July 2023. The Florida CWL remains one of the most widely recognized permits across the US (~37 states). Florida prohibits open carry but allows concealed carry with or without a permit for those 21+.',
-    selfDefenseLaws:'Stand Your Ground law (2005, first in nation). Castle Doctrine. No duty to retreat.',
-    honors:['AL','AK','AZ','AR','CO','GA','ID','IN','IA','KS','KY','LA','ME','MI','MN','MO','MT','NE','NV','NH','NM','NC','ND','OH','OK','PA','SD','TN','TX','UT','VA','WV','WI','WY'],
-    carryLocations:{ vehicle:true, barsRestaurants:false, stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://www.freshfromflorida.com/Divisions-Offices/Licensing/Consumer-Services/Concealed-Weapon-License',
-  },
-  {
-    code:'GA', name:'Georgia', permitType:'constitutional', constitutional:true, permitRequired:false,
-    openCarry:true, minAge:21, redFlagLaw:false,
-    permitName:'Weapons Carry License (WCL)',
-    processingTime:'30 days', fee:30, trainingRequired:'None required',
-    gunLawSummary:'Georgia enacted constitutional carry in April 2022. The optional WCL remains valuable for reciprocity travel. Georgia has one of the most affordable and accessible licensing systems in the country.',
-    selfDefenseLaws:'Stand Your Ground. Castle Doctrine. No duty to retreat.',
-    honors:['AL','AK','AZ','AR','CO','FL','ID','IN','IA','KS','KY','LA','ME','MI','MN','MO','MT','NE','NV','NH','NM','NC','ND','OH','OK','PA','SD','TN','TX','UT','VA','WV','WY'],
-    carryLocations:{ vehicle:true, barsRestaurants:true, stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://georgiaprobate.gov/probate-information/weapons-carry-license',
-  },
-  {
-    code:'HI', name:'Hawaii', permitType:'may_issue', constitutional:false, permitRequired:true,
-    openCarry:false, minAge:21, redFlagLaw:true,
-    permitName:'License to Carry Loaded Firearms',
-    processingTime:'14 days', fee:20, trainingRequired:'8-hour safety course required',
-    gunLawSummary:'Hawaii has historically been extremely restrictive — essentially no-issue until post-Bruen court orders. Hawaii does not honor any out-of-state permits. All firearms must be registered with local police within 5 days of acquisition.',
-    selfDefenseLaws:'Duty to retreat required. No Stand Your Ground law.',
-    honors:[],
-    carryLocations:{ vehicle:false, barsRestaurants:false, stateParks:false, nationalParks:false, roadside:false, hotels:false, worship:false, bowHunting:false, gunHunting:false },
-    officialSource:'https://www.honolulupd.org/firearms',
-  },
-  {
-    code:'ID', name:'Idaho', permitType:'constitutional', constitutional:true, permitRequired:false,
-    openCarry:true, minAge:18, redFlagLaw:false,
-    permitName:'Enhanced Concealed Weapons License',
-    processingTime:'90 days', fee:20, trainingRequired:'8 hours for Enhanced license',
-    gunLawSummary:'Idaho allows permitless carry for residents 18+. The Enhanced license requires training and is accepted in more states. Standard license available at reduced cost. Idaho is known for very permissive firearms laws.',
-    selfDefenseLaws:'Stand Your Ground. Castle Doctrine. No duty to retreat.',
-    honors:['AL','AK','AZ','AR','CO','FL','GA','IN','IA','KS','KY','LA','ME','MI','MN','MO','MT','NE','NV','NH','NM','NC','ND','OH','OK','OR','PA','SD','TN','TX','UT','VA','WA','WV','WY'],
-    carryLocations:{ vehicle:true, barsRestaurants:true, stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://isp.idaho.gov/bci/concealed-weapons',
-  },
-  {
-    code:'IL', name:'Illinois', permitType:'shall_issue', constitutional:false, permitRequired:true,
-    openCarry:false, minAge:21, redFlagLaw:true,
-    permitName:'Firearm Owner Identification (FOID) + Concealed Carry License',
-    processingTime:'90 days', fee:153, trainingRequired:'16 hours required',
-    gunLawSummary:'Illinois does not honor any out-of-state permits. Requires both a FOID card (for ownership) and a separate CCL (for carry). 16 hours of training required. Chicago and Cook County have additional local restrictions.',
-    selfDefenseLaws:'Castle Doctrine. No Stand Your Ground law. Duty to retreat in some situations.',
-    honors:[],
-    carryLocations:{ vehicle:true, barsRestaurants:false, stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:'Check Local Laws', bowHunting:true, gunHunting:true },
-    officialSource:'https://isp.illinois.gov/ConcealedCarry',
-  },
-  {
-    code:'IN', name:'Indiana', permitType:'constitutional', constitutional:true, permitRequired:false,
-    openCarry:true, minAge:18, redFlagLaw:false,
-    permitName:'Handgun License (optional)',
-    processingTime:'60 days', fee:17, trainingRequired:'None required',
-    gunLawSummary:'Indiana enacted constitutional carry in July 2022. One of the most affordable optional permits available. Lifetime license option available. No state preemption issues — state law generally prevails.',
-    selfDefenseLaws:'Stand Your Ground. Castle Doctrine. No duty to retreat.',
-    honors:['AL','AK','AZ','AR','CO','FL','GA','ID','IA','KS','KY','LA','ME','MI','MN','MO','MT','NE','NV','NH','NM','NC','ND','OH','OK','PA','SD','TN','TX','UT','VA','WV','WY'],
-    carryLocations:{ vehicle:true, barsRestaurants:true, stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://www.in.gov/isp/2358.htm',
-  },
-  {
-    code:'IA', name:'Iowa', permitType:'constitutional', constitutional:true, permitRequired:false,
-    openCarry:true, minAge:21, redFlagLaw:false,
-    permitName:'Permit to Carry Weapons',
-    processingTime:'30 days', fee:50, trainingRequired:'None for constitutional carry; course for permit',
-    gunLawSummary:'Iowa enacted constitutional carry in July 2021. Optional permit available for reciprocity. Iowa recognizes permits from all states that recognize Iowa permits.',
-    selfDefenseLaws:'Stand Your Ground. Castle Doctrine. No duty to retreat.',
-    honors:['AL','AK','AZ','AR','CO','FL','GA','ID','IN','KS','KY','LA','ME','MI','MN','MO','MT','NE','NV','NH','NM','NC','ND','OH','OK','PA','SD','TN','TX','UT','VA','WV','WY'],
-    carryLocations:{ vehicle:true, barsRestaurants:true, stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://dps.iowa.gov/bureaus/iowas-department-public-safety/fp/permit-carry-weapons',
-  },
-  {
-    code:'KS', name:'Kansas', permitType:'constitutional', constitutional:true, permitRequired:false,
-    openCarry:true, minAge:21, redFlagLaw:false,
-    permitName:'Kansas Concealed Carry License',
-    processingTime:'45 days', fee:32, trainingRequired:'8-hour course for license',
-    gunLawSummary:'Kansas enacted constitutional carry in 2015 — one of the first states. Optional license available for reciprocity. Kansas recognizes all other state permits.',
-    selfDefenseLaws:'Stand Your Ground. Castle Doctrine. No duty to retreat.',
-    honors:['AL','AK','AZ','AR','CO','FL','GA','ID','IN','IA','KY','LA','ME','MI','MN','MO','MT','NE','NV','NH','NM','NC','ND','OH','OK','PA','SD','TN','TX','UT','VA','WV','WY'],
-    carryLocations:{ vehicle:true, barsRestaurants:true, stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://www.ag.ks.gov/public-protection/conceal-and-carry',
-  },
-  {
-    code:'KY', name:'Kentucky', permitType:'constitutional', constitutional:true, permitRequired:false,
-    openCarry:true, minAge:21, redFlagLaw:false,
-    permitName:'Concealed Carry Deadly Weapons (CCDW) License',
-    processingTime:'60 days', fee:60, trainingRequired:'8-hour course for CCDW',
-    gunLawSummary:'Kentucky enacted constitutional carry in 2019. CCDW license widely honored for reciprocity travel. Kentucky has strong firearms preemption laws preventing local restrictions.',
-    selfDefenseLaws:'Stand Your Ground. Castle Doctrine. No duty to retreat.',
-    honors:['AL','AK','AZ','AR','CO','FL','GA','ID','IN','IA','KS','LA','ME','MI','MN','MO','MT','NE','NV','NH','NM','NC','ND','OH','OK','PA','SD','TN','TX','UT','VA','WV','WY'],
-    carryLocations:{ vehicle:true, barsRestaurants:true, stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://kentuckystatepolice.org/ccdw',
-  },
-  {
-    code:'LA', name:'Louisiana', permitType:'constitutional', constitutional:true, permitRequired:false,
-    openCarry:true, minAge:21, redFlagLaw:false,
-    permitName:'Concealed Handgun Permit (CHP)',
-    processingTime:'45 days', fee:125, trainingRequired:'8-hour course for CHP',
-    gunLawSummary:'Louisiana enacted constitutional carry in July 2024. CHP remains available and honored in approximately 31 states. Louisiana has strong gun rights protections in the state constitution.',
-    selfDefenseLaws:'Stand Your Ground. Castle Doctrine. No duty to retreat.',
-    honors:['AL','AK','AZ','AR','CO','FL','GA','ID','IN','IA','KS','KY','ME','MI','MN','MO','MT','NE','NV','NH','NM','NC','ND','OH','OK','PA','SD','TN','TX','UT','VA','WV','WY'],
-    carryLocations:{ vehicle:true, barsRestaurants:'Prohibited where alcohol is primary business', stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://www.lsp.org/chp.html',
-  },
-  {
-    code:'ME', name:'Maine', permitType:'constitutional', constitutional:true, permitRequired:false,
-    openCarry:true, minAge:21, redFlagLaw:true,
-    permitName:'Concealed Firearms Permit (optional)',
-    processingTime:'30 days', fee:35, trainingRequired:'None required',
-    gunLawSummary:'Maine has allowed constitutional carry since 2015. Non-resident permits available. Maine has Red Flag laws. Generally permissive carry laws with limited sensitive location restrictions.',
-    selfDefenseLaws:'Castle Doctrine. Duty to retreat may apply in some public locations.',
-    honors:['AL','AK','AZ','AR','CO','FL','GA','ID','IN','IA','KS','KY','LA','MI','MN','MO','MT','NE','NV','NH','NM','NC','ND','OH','OK','PA','SD','TN','TX','UT','VA','WV','WY'],
-    carryLocations:{ vehicle:true, barsRestaurants:true, stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://www.maine.gov/dps/msp/licenses-permits/concealed-firearms-permit',
-  },
-  {
-    code:'MD', name:'Maryland', permitType:'shall_issue', constitutional:false, permitRequired:true,
-    openCarry:false, minAge:21, redFlagLaw:true,
-    permitName:'Wear & Carry Permit',
-    processingTime:'90 days', fee:125, trainingRequired:'16 hours required',
-    gunLawSummary:'Maryland became shall-issue post-Bruen (2022) but implemented extensive sensitive place restrictions. Does not honor out-of-state permits. Has assault weapon restrictions and magazine capacity limits.',
-    selfDefenseLaws:'Duty to retreat outside the home. Castle Doctrine inside the home.',
-    honors:[],
-    carryLocations:{ vehicle:'Limited', barsRestaurants:false, stateParks:false, nationalParks:false, roadside:false, hotels:false, worship:false, bowHunting:'Check regulations', gunHunting:'With valid hunting license' },
-    officialSource:'https://mdsp.maryland.gov/Organization/Pages/CriminalInvestigationBureau/LicensingDivision/HandgunPermit.aspx',
-  },
-  {
-    code:'MA', name:'Massachusetts', permitType:'may_issue', constitutional:false, permitRequired:true,
-    openCarry:true, minAge:21, redFlagLaw:true,
-    permitName:'License to Carry (LTC)',
-    processingTime:'40 days', fee:100, trainingRequired:'Approved safety course required',
-    gunLawSummary:'Massachusetts does not honor any out-of-state permits. License issuance is controlled by local police chief who has discretion. Has assault weapon ban, magazine capacity limits, and extensive registration requirements.',
-    selfDefenseLaws:'Duty to retreat in public. Castle Doctrine inside the home.',
-    honors:[],
-    carryLocations:{ vehicle:true, barsRestaurants:false, stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://www.mass.gov/guides/licenses-to-carry-firearms',
-  },
-  {
-    code:'MI', name:'Michigan', permitType:'shall_issue', constitutional:false, permitRequired:true,
-    openCarry:true, minAge:21, redFlagLaw:true,
-    permitName:'Concealed Pistol License (CPL)',
-    processingTime:'45 days', fee:105, trainingRequired:'8-hour safety course required',
-    gunLawSummary:'Michigan is shall-issue with mandatory training. CPL widely recognized by other states. Has red flag law enacted in 2023. Michigan pistol free zones include schools, churches, courts, and entertainment venues.',
-    selfDefenseLaws:'Stand Your Ground law (post-2006). Castle Doctrine. No duty to retreat in some situations.',
-    honors:['AL','AK','AZ','AR','CO','FL','GA','ID','IN','IA','KS','KY','LA','ME','MN','MO','MT','NE','NV','NH','NC','ND','OH','OK','SD','TN','TX','UT','VA','WV','WY'],
-    carryLocations:{ vehicle:true, barsRestaurants:false, stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:false, bowHunting:true, gunHunting:true },
-    officialSource:'https://www.michigan.gov/msp/divisions/crd/cpl',
-  },
-  {
-    code:'MN', name:'Minnesota', permitType:'shall_issue', constitutional:false, permitRequired:true,
-    openCarry:false, minAge:21, redFlagLaw:true,
-    permitName:'Permit to Carry a Pistol',
-    processingTime:'30 days', fee:100, trainingRequired:'Certified instruction required',
-    gunLawSummary:'Minnesota is shall-issue and must issue within 30 days. Does not honor AL, AR permits but honors most shall-issue states. Extensive training from certified instructors required.',
-    selfDefenseLaws:'Castle Doctrine. No general Stand Your Ground outside the home.',
-    honors:['AK','AZ','CO','FL','GA','ID','IN','IA','KS','KY','LA','ME','MI','MO','MT','NE','NV','NH','NC','ND','OH','OK','OR','SD','TN','TX','UT','VA','WV','WI','WY'],
-    carryLocations:{ vehicle:true, barsRestaurants:true, stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://dps.mn.gov/divisions/bca/bca-divisions/administrative/Pages/permit-to-carry.aspx',
-  },
-  {
-    code:'MS', name:'Mississippi', permitType:'constitutional', constitutional:true, permitRequired:false,
-    openCarry:true, minAge:21, redFlagLaw:false,
-    permitName:'Standard / Enhanced Carry Permit',
-    processingTime:'45 days', fee:132, trainingRequired:'8 hours for Enhanced permit',
-    gunLawSummary:'Mississippi has allowed permitless carry since 2015. Enhanced permit provides additional carry locations. Mississippi has very limited firearm restrictions and strong gun rights protections.',
-    selfDefenseLaws:'Stand Your Ground. Castle Doctrine. No duty to retreat.',
-    honors:['AL','AK','AZ','AR','CO','FL','GA','ID','IN','IA','KS','KY','LA','ME','MI','MN','MO','MT','NE','NV','NH','NM','NC','ND','OH','OK','PA','SD','TN','TX','UT','VA','WV','WY'],
-    carryLocations:{ vehicle:true, barsRestaurants:true, stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://www.dps.state.ms.us/firearms/concealed-carry/',
-  },
-  {
-    code:'MO', name:'Missouri', permitType:'constitutional', constitutional:true, permitRequired:false,
-    openCarry:true, minAge:19, redFlagLaw:false,
-    permitName:'Concealed Carry Permit (CCP)',
-    processingTime:'45 days', fee:0, trainingRequired:'None required for permit',
-    gunLawSummary:'Missouri offers a free optional CCP for reciprocity. No permit required to carry. Missouri Constitution Article I §23 provides among the strongest firearms protections of any state.',
-    selfDefenseLaws:'Stand Your Ground. Castle Doctrine. No duty to retreat anywhere.',
-    honors:['AL','AK','AZ','AR','CO','FL','GA','ID','IN','IA','KS','KY','LA','ME','MI','MN','MS','MT','NE','NV','NH','NM','NC','ND','OH','OK','PA','SD','TN','TX','UT','VA','WV','WY'],
-    carryLocations:{ vehicle:true, barsRestaurants:true, stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://www.mshp.dps.missouri.gov/MSHPWeb/PatrolDivisions/CRID/concealedCarry.html',
-  },
-  {
-    code:'MT', name:'Montana', permitType:'constitutional', constitutional:true, permitRequired:false,
-    openCarry:true, minAge:18, redFlagLaw:false,
-    permitName:'Concealed Weapon Permit (CWP)',
-    processingTime:'60 days', fee:60, trainingRequired:'None required',
-    gunLawSummary:'Montana enacted constitutional carry in 2021. CWP available for reciprocity. Montana amended its constitution in 2024 to further strengthen firearms rights. Very permissive carry laws.',
-    selfDefenseLaws:'Stand Your Ground. Castle Doctrine. No duty to retreat.',
-    honors:['AL','AK','AZ','AR','CO','FL','GA','ID','IN','IA','KS','KY','LA','ME','MI','MN','MS','MO','NE','NV','NH','NM','NC','ND','OH','OK','PA','SD','TN','TX','UT','VA','WV','WY'],
-    carryLocations:{ vehicle:true, barsRestaurants:true, stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://dojmt.gov/enforcement/concealed-weapons-permits/',
-  },
-  {
-    code:'NE', name:'Nebraska', permitType:'constitutional', constitutional:true, permitRequired:false,
-    openCarry:true, minAge:21, redFlagLaw:false,
-    permitName:'Concealed Handgun Permit (CHP)',
-    processingTime:'45 days', fee:100, trainingRequired:'10-hour course for CHP',
-    gunLawSummary:'Nebraska enacted constitutional carry in April 2023. CHP available for reciprocity travel. Nebraska has limited local preemption — Omaha has some additional ordinances.',
-    selfDefenseLaws:'Castle Doctrine. No general Stand Your Ground law.',
-    honors:['AL','AK','AZ','AR','CO','FL','GA','ID','IN','IA','KS','KY','LA','ME','MI','MN','MS','MO','MT','NV','NH','NM','NC','ND','OH','OK','PA','SD','TN','TX','UT','VA','WV','WY'],
-    carryLocations:{ vehicle:true, barsRestaurants:true, stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://statepatrol.nebraska.gov/conceal-carry',
-  },
-  {
-    code:'NV', name:'Nevada', permitType:'shall_issue', constitutional:false, permitRequired:true,
-    openCarry:true, minAge:21, redFlagLaw:true,
-    permitName:'Concealed Firearm Permit (CFP)',
-    processingTime:'120 days', fee:100, trainingRequired:'8-hour course required',
-    gunLawSummary:'Nevada is shall-issue and non-resident permits are available. Does not honor AL and some others. Clark County (Las Vegas) has some additional restrictions. Background check required for private sales.',
-    selfDefenseLaws:'Castle Doctrine. No general Stand Your Ground in public.',
-    honors:['AK','AZ','AR','CO','FL','GA','ID','IN','IA','KS','KY','LA','ME','MI','MN','MO','MT','NE','NH','NM','NC','ND','OH','OK','PA','SD','TN','TX','UT','WA','WV','WY'],
-    carryLocations:{ vehicle:true, barsRestaurants:false, stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://www.sheriff.clarkcountynv.gov/divisions/detention-enforcement/concealed-firearm-permit',
-  },
-  {
-    code:'NH', name:'New Hampshire', permitType:'constitutional', constitutional:true, permitRequired:false,
-    openCarry:true, minAge:18, redFlagLaw:false,
-    permitName:'Non-Resident Pistol/Revolver License',
-    processingTime:'14 days', fee:100, trainingRequired:'None required',
-    gunLawSummary:'New Hampshire has required no permit to carry since 2017. Non-resident licenses available. NH license widely honored for reciprocity. Very gun-friendly state with minimal restrictions.',
-    selfDefenseLaws:'Stand Your Ground. Castle Doctrine. No duty to retreat.',
-    honors:['AL','AK','AZ','AR','CO','FL','GA','ID','IN','IA','KS','KY','LA','ME','MI','MN','MS','MO','MT','NE','NV','NM','NC','ND','OH','OK','PA','SD','TN','TX','UT','VA','WV','WY'],
-    carryLocations:{ vehicle:true, barsRestaurants:true, stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://www.nh.gov/safety/divisions/nhsp/ssb/permitslicensing/pcl.html',
-  },
-  {
-    code:'NJ', name:'New Jersey', permitType:'shall_issue', constitutional:false, permitRequired:true,
-    openCarry:false, minAge:21, redFlagLaw:true,
-    permitName:'Permit to Carry a Handgun',
-    processingTime:'90 days', fee:200, trainingRequired:'16 hours + qualification required',
-    gunLawSummary:'New Jersey moved to shall-issue post-Bruen but enacted CCIA with extensive sensitive place restrictions. Does not honor any out-of-state permits. Has magazine capacity limits and assault weapon restrictions.',
-    selfDefenseLaws:'Duty to retreat required in public. Castle Doctrine in the home.',
-    honors:[],
-    carryLocations:{ vehicle:false, barsRestaurants:false, stateParks:false, nationalParks:false, roadside:false, hotels:false, worship:false, bowHunting:false, gunHunting:'Check regulations' },
-    officialSource:'https://www.njsp.org/firearms/index.shtml',
-  },
-  {
-    code:'NM', name:'New Mexico', permitType:'shall_issue', constitutional:false, permitRequired:true,
-    openCarry:true, minAge:21, redFlagLaw:true,
-    permitName:'Concealed Handgun License (CHL)',
-    processingTime:'30 days', fee:100, trainingRequired:'15 hours required',
-    gunLawSummary:'New Mexico is shall-issue with relatively high training requirements. Honors most other states. Albuquerque has some additional ordinances. Red Flag law enacted in 2020.',
-    selfDefenseLaws:'Castle Doctrine. No general Stand Your Ground outside the home.',
-    honors:['AK','AZ','AR','CO','FL','GA','ID','IN','IA','KS','KY','LA','ME','MI','MN','MO','MT','NE','NV','NH','NC','ND','OH','OK','PA','SD','TN','TX','UT','VA','WV','WY'],
-    carryLocations:{ vehicle:true, barsRestaurants:false, stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://www.dps.nm.gov/divisions/law-enforcement/concealed-handgun',
-  },
-  {
-    code:'NY', name:'New York', permitType:'may_issue', constitutional:false, permitRequired:true,
-    openCarry:false, minAge:21, redFlagLaw:true,
-    permitName:'Pistol License',
-    processingTime:'180+ days', fee:340, trainingRequired:'16 hours required (2022 law)',
-    gunLawSummary:'New York does not honor any out-of-state permits. CCIA 2022 created extensive sensitive place restrictions post-Bruen. NYC requires a separate city permit. Extremely restrictive — one of the most difficult states to obtain a carry permit.',
-    selfDefenseLaws:'Duty to retreat in public. Castle Doctrine in the home.',
-    honors:[],
-    carryLocations:{ vehicle:false, barsRestaurants:false, stateParks:false, nationalParks:false, roadside:false, hotels:false, worship:false, bowHunting:false, gunHunting:'Check regulations' },
-    officialSource:'https://www.nypdlicensedivision.org',
-  },
-  {
-    code:'NC', name:'North Carolina', permitType:'shall_issue', constitutional:false, permitRequired:true,
-    openCarry:true, minAge:21, redFlagLaw:false,
-    permitName:'Concealed Handgun Permit (CHP)',
-    processingTime:'45 days', fee:90, trainingRequired:'8-hour course required',
-    gunLawSummary:'North Carolina is shall-issue and widely recognized by other states. Strong reciprocity agreements. Handgun purchase permit required through county sheriff. Open carry is generally allowed.',
-    selfDefenseLaws:'Stand Your Ground (enacted 2011). Castle Doctrine. No duty to retreat.',
-    honors:['AL','AK','AZ','AR','CO','FL','GA','ID','IN','IA','KS','KY','LA','ME','MI','MN','MS','MO','MT','NE','NV','NH','NM','ND','OH','OK','PA','SD','TN','TX','UT','VA','WV','WY'],
-    carryLocations:{ vehicle:true, barsRestaurants:'Allowed if 51% rule not triggered', stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://www.nc.gov/conceal-carry-permits',
-  },
-  {
-    code:'ND', name:'North Dakota', permitType:'constitutional', constitutional:true, permitRequired:false,
-    openCarry:true, minAge:18, redFlagLaw:false,
-    permitName:'Class 1 / Class 2 Concealed Weapon License',
-    processingTime:'60 days', fee:25, trainingRequired:'8 hours for Class 1 (broader reciprocity)',
-    gunLawSummary:'North Dakota allows constitutional carry for residents. Class 1 permit requires training and offers broader reciprocity. Class 2 limited reciprocity. ND recognizes all valid permits from other states.',
-    selfDefenseLaws:'Stand Your Ground. Castle Doctrine. No duty to retreat.',
-    honors:['AL','AK','AZ','AR','CO','FL','GA','ID','IN','IA','KS','KY','LA','ME','MI','MN','MS','MO','MT','NE','NV','NH','NM','NC','OH','OK','PA','SD','TN','TX','UT','VA','WV','WY'],
-    carryLocations:{ vehicle:true, barsRestaurants:true, stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://www.ag.nd.gov/BCI/ConcealedWeapons/ConcealedWeapons.html',
-  },
-  {
-    code:'OH', name:'Ohio', permitType:'constitutional', constitutional:true, permitRequired:false,
-    openCarry:true, minAge:21, redFlagLaw:false,
-    permitName:'Concealed Handgun License (CHL)',
-    processingTime:'45 days', fee:67, trainingRequired:'8-hour course for CHL',
-    gunLawSummary:'Ohio enacted constitutional carry in June 2022. CHL widely accepted by other states. Ohio also removed duty to inform police unless asked. Strong preemption prevents local regulations.',
-    selfDefenseLaws:'Stand Your Ground (enacted 2021). Castle Doctrine. No duty to retreat.',
-    honors:['AL','AK','AZ','AR','CO','FL','GA','ID','IN','IA','KS','KY','LA','ME','MI','MN','MS','MO','MT','NE','NV','NH','NM','NC','ND','OK','PA','SD','TN','TX','UT','VA','WV','WY'],
-    carryLocations:{ vehicle:true, barsRestaurants:'Allowed unless prohibited', stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://www.ohioattorneygeneral.gov/concealedcarry',
-  },
-  {
-    code:'OK', name:'Oklahoma', permitType:'constitutional', constitutional:true, permitRequired:false,
-    openCarry:true, minAge:21, redFlagLaw:false,
-    permitName:'Self-Defense Act License (SDA)',
-    processingTime:'60 days', fee:100, trainingRequired:'8-hour course for SDA',
-    gunLawSummary:'Oklahoma enacted constitutional carry in November 2019. SDA license available for reciprocity. Oklahoma has among the most permissive carry laws in the south. No waiting period for purchases.',
-    selfDefenseLaws:'Stand Your Ground. Castle Doctrine. No duty to retreat.',
-    honors:['AL','AK','AZ','AR','CO','FL','GA','ID','IN','IA','KS','KY','LA','ME','MI','MN','MS','MO','MT','NE','NV','NH','NM','NC','ND','OH','PA','SD','TN','TX','UT','VA','WV','WY'],
-    carryLocations:{ vehicle:true, barsRestaurants:true, stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://www.oscn.net/applications/oscn/index.asp?level=1&type=TITLE&title=21',
-  },
-  {
-    code:'OR', name:'Oregon', permitType:'shall_issue', constitutional:false, permitRequired:true,
-    openCarry:'Restricted in cities', minAge:21, redFlagLaw:true,
-    permitName:'Concealed Handgun License (CHL)',
-    processingTime:'45 days', fee:65, trainingRequired:'Demonstrated knowledge required',
-    gunLawSummary:'Oregon is shall-issue but Measure 114 (2022) attempted significant restrictions including permit-to-purchase — currently under legal challenge. Portland and other cities ban open carry. Does not honor some other state permits.',
-    selfDefenseLaws:'Castle Doctrine. No general Stand Your Ground outside the home.',
-    honors:['AK','AZ','AR','CO','FL','GA','ID','IN','IA','KS','KY','LA','ME','MI','MN','MO','MT','NE','NV','NH','NC','ND','OH','OK','PA','SD','TN','TX','UT','VA','WV','WY'],
-    carryLocations:{ vehicle:true, barsRestaurants:true, stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://www.oregonlaws.org/ors/166.291',
-  },
-  {
-    code:'PA', name:'Pennsylvania', permitType:'shall_issue', constitutional:false, permitRequired:true,
-    openCarry:true, minAge:21, redFlagLaw:false,
-    permitName:'License to Carry Firearms (LTCF)',
-    processingTime:'45 days', fee:20, trainingRequired:'No training required',
-    gunLawSummary:'Pennsylvania is shall-issue with one of the lowest permit fees. No training required. Philadelphia has some additional local restrictions. LTCF widely honored in about 30 states. Non-resident permits available online.',
-    selfDefenseLaws:'Castle Doctrine. No general Stand Your Ground outside the home.',
-    honors:['AL','AK','AZ','AR','CO','FL','GA','ID','IN','IA','KS','KY','LA','ME','MI','MN','MS','MO','MT','NE','NV','NH','NM','NC','ND','OH','OK','SD','TN','TX','UT','VA','WV','WY'],
-    carryLocations:{ vehicle:true, barsRestaurants:true, stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://www.pa.gov/guides/license-to-carry-firearms/',
-  },
-  {
-    code:'RI', name:'Rhode Island', permitType:'may_issue', constitutional:false, permitRequired:true,
-    openCarry:'Attorney General permits only', minAge:21, redFlagLaw:true,
-    permitName:'License to Carry Concealed Pistol/Revolver',
-    processingTime:'90 days', fee:40, trainingRequired:'Proof of qualification required',
-    gunLawSummary:'Rhode Island has dual licensing through both Attorney General and local licensing authorities. Does not honor out-of-state permits. AG permits have different requirements than municipal permits.',
-    selfDefenseLaws:'Duty to retreat required. No Stand Your Ground law.',
-    honors:[],
-    carryLocations:{ vehicle:true, barsRestaurants:false, stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://www.riag.ri.gov/civil-bureau/concealed-weapons-permits',
-  },
-  {
-    code:'SC', name:'South Carolina', permitType:'constitutional', constitutional:true, permitRequired:false,
-    openCarry:false, minAge:18, redFlagLaw:false,
-    permitName:'Concealed Weapon Permit (CWP)',
-    processingTime:'90 days', fee:50, trainingRequired:'8-hour course required',
-    gunLawSummary:'South Carolina enacted constitutional carry in March 2024. CWP widely honored for reciprocity. Open carry prohibited without permit. Strong state preemption laws.',
-    selfDefenseLaws:'Stand Your Ground. Castle Doctrine. No duty to retreat.',
-    honors:['AL','AK','AZ','AR','CO','FL','GA','ID','IN','IA','KS','KY','LA','ME','MI','MN','MS','MO','MT','NE','NV','NH','NM','NC','ND','OH','OK','PA','SD','TN','TX','UT','VA','WV','WY'],
-    carryLocations:{ vehicle:true, barsRestaurants:'Allowed if not prohibited', stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://sled.sc.gov/concealed-weapons-permits',
-  },
-  {
-    code:'SD', name:'South Dakota', permitType:'constitutional', constitutional:true, permitRequired:false,
-    openCarry:true, minAge:18, redFlagLaw:false,
-    permitName:'Concealed Pistol Permit',
-    processingTime:'30 days', fee:10, trainingRequired:'None required',
-    gunLawSummary:'South Dakota enacted constitutional carry in 2019. One of the cheapest permits at $10. No training required for permit. Lifetime permit option available. Very permissive carry laws.',
-    selfDefenseLaws:'Stand Your Ground. Castle Doctrine. No duty to retreat.',
-    honors:['AL','AK','AZ','AR','CO','FL','GA','ID','IN','IA','KS','KY','LA','ME','MI','MN','MS','MO','MT','NE','NV','NH','NM','NC','ND','OH','OK','PA','SC','TN','TX','UT','VA','WV','WY'],
-    carryLocations:{ vehicle:true, barsRestaurants:true, stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://dci.sd.gov/records/ccw',
-  },
-  {
-    code:'TN', name:'Tennessee', permitType:'constitutional', constitutional:true, permitRequired:false,
-    openCarry:true, minAge:21, redFlagLaw:false,
-    permitName:'Enhanced Handgun Carry Permit (EHCP)',
-    processingTime:'45 days', fee:100, trainingRequired:'8 hours for EHCP',
-    gunLawSummary:'Tennessee enacted constitutional carry in July 2021. Enhanced permit required for reciprocity and some restricted areas. Concealed only for constitutional carry (open carry requires permit). Tennessee passed firearms preemption laws.',
-    selfDefenseLaws:'Stand Your Ground. Castle Doctrine. No duty to retreat.',
-    honors:['AL','AK','AZ','AR','CO','FL','GA','ID','IN','IA','KS','KY','LA','ME','MI','MN','MS','MO','MT','NE','NV','NH','NM','NC','ND','OH','OK','PA','SD','TX','UT','VA','WV','WY'],
-    carryLocations:{ vehicle:true, barsRestaurants:'Allowed with permit if not 51% alcohol', stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://www.tn.gov/safety/driver-services/handgun.html',
-  },
-  {
-    code:'TX', name:'Texas', permitType:'constitutional', constitutional:true, permitRequired:false,
-    openCarry:true, minAge:21, redFlagLaw:false,
-    permitName:'License to Carry (LTC)',
-    processingTime:'60 days', fee:40, trainingRequired:'4-6 hours for LTC',
-    gunLawSummary:'Texas enacted constitutional carry in September 2021. Texas LTC is honored in approximately 40 states, making it one of the most widely recognized permits. Texas has strong gun rights culture and minimal restrictions on carry.',
-    selfDefenseLaws:'Stand Your Ground (Castle Doctrine Act). No duty to retreat anywhere you have a right to be.',
-    honors:['AL','AK','AZ','AR','CO','FL','GA','ID','IN','IA','KS','KY','LA','ME','MI','MN','MS','MO','MT','NE','NV','NH','NM','NC','ND','OH','OK','PA','SD','TN','UT','VA','WV','WY'],
-    carryLocations:{ vehicle:true, barsRestaurants:'Allowed if not 51% alcohol establishment', stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://www.dps.texas.gov/section/handgun-licensing',
-  },
-  {
-    code:'UT', name:'Utah', permitType:'constitutional', constitutional:true, permitRequired:false,
-    openCarry:true, minAge:21, redFlagLaw:false,
-    permitName:'Concealed Firearm Permit (CFP)',
-    processingTime:'60 days', fee:65, trainingRequired:'4-hour course for CFP',
-    gunLawSummary:'Utah CFP is one of the most widely accepted non-resident permits in the country — valid in approximately 37 states. Utah enacted constitutional carry in 2021. Non-resident permits available and very popular for those from states with limited reciprocity.',
-    selfDefenseLaws:'Stand Your Ground. Castle Doctrine. No duty to retreat.',
-    honors:['AL','AK','AZ','AR','CO','FL','GA','ID','IN','IA','KS','KY','LA','ME','MI','MN','MS','MO','MT','NE','NV','NH','NM','NC','ND','OH','OK','PA','SD','TN','TX','VA','WV','WY'],
-    carryLocations:{ vehicle:true, barsRestaurants:true, stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://bci.utah.gov/concealed-firearm/about-the-utah-concealed-firearm-permit/',
-  },
-  {
-    code:'VT', name:'Vermont', permitType:'constitutional', constitutional:true, permitRequired:false,
-    openCarry:true, minAge:16, redFlagLaw:true,
-    permitName:'No permit issued',
-    processingTime:'N/A', fee:0, trainingRequired:'None',
-    gunLawSummary:'Vermont has never required a permit to carry — the original constitutional carry state. Vermont does not issue carry permits, limiting reciprocity options for Vermonters traveling to states requiring permits. Has red flag and background check laws.',
-    selfDefenseLaws:'Castle Doctrine. No general Stand Your Ground.',
-    honors:[],
-    carryLocations:{ vehicle:true, barsRestaurants:true, stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://vtjustice.vermont.gov',
-  },
-  {
-    code:'VA', name:'Virginia', permitType:'shall_issue', constitutional:false, permitRequired:true,
-    openCarry:true, minAge:21, redFlagLaw:true,
-    permitName:'Concealed Handgun Permit (CHP)',
-    processingTime:'45 days', fee:50, trainingRequired:'None required but competence must be shown',
-    gunLawSummary:'Virginia is shall-issue with non-resident permits available online. CHP widely recognized in approximately 30 states. Has red flag law and universal background check. Virginia removed suppressor and assault weapon restrictions.',
-    selfDefenseLaws:'Castle Doctrine. No general Stand Your Ground outside the home.',
-    honors:['AL','AK','AZ','AR','CO','FL','GA','ID','IN','IA','KS','KY','LA','ME','MI','MN','MS','MO','MT','NE','NV','NH','NM','NC','ND','OH','OK','PA','SD','TN','TX','UT','WV','WY'],
-    carryLocations:{ vehicle:true, barsRestaurants:'Allowed if not prohibited', stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://www.vsp.virginia.gov/Firearms_Concealed.shtm',
-  },
-  {
-    code:'WA', name:'Washington', permitType:'shall_issue', constitutional:false, permitRequired:true,
-    openCarry:true, minAge:21, redFlagLaw:true,
-    permitName:'Concealed Pistol License (CPL)',
-    processingTime:'30 days', fee:55, trainingRequired:'None required',
-    gunLawSummary:'Washington is shall-issue with no training requirement. CPL honored by fewer states due to stricter local laws. Has magazine capacity restrictions (10-round limit enacted 2022), assault weapon restrictions, and red flag law.',
-    selfDefenseLaws:'Castle Doctrine. No general Stand Your Ground outside the home.',
-    honors:['AK','AZ','AR','CO','FL','GA','ID','IN','IA','KS','KY','LA','ME','MI','MN','MO','MT','NE','NH','NM','NC','ND','OH','OK','PA','SD','TN','TX','UT','VA','WV','WY'],
-    carryLocations:{ vehicle:true, barsRestaurants:true, stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://www.dol.wa.gov/business/firearms/faconcealedpistol.html',
-  },
-  {
-    code:'WV', name:'West Virginia', permitType:'constitutional', constitutional:true, permitRequired:false,
-    openCarry:true, minAge:21, redFlagLaw:false,
-    permitName:'Concealed Handgun License (CHL)',
-    processingTime:'45 days', fee:25, trainingRequired:'None required',
-    gunLawSummary:'West Virginia enacted constitutional carry in May 2016. CHL available for reciprocity. West Virginia has strong state preemption and very permissive firearms laws with minimal restrictions.',
-    selfDefenseLaws:'Stand Your Ground. Castle Doctrine. No duty to retreat.',
-    honors:['AL','AK','AZ','AR','CO','FL','GA','ID','IN','IA','KS','KY','LA','ME','MI','MN','MS','MO','MT','NE','NV','NH','NM','NC','ND','OH','OK','PA','SD','TN','TX','UT','VA','WY'],
-    carryLocations:{ vehicle:true, barsRestaurants:true, stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://www.wvsp.gov/law-enforcement/concealed-handgun-license/',
-  },
-  {
-    code:'WI', name:'Wisconsin', permitType:'shall_issue', constitutional:false, permitRequired:true,
-    openCarry:true, minAge:21, redFlagLaw:false,
-    permitName:'Concealed Carry Weapon (CCW) License',
-    processingTime:'21 days', fee:40, trainingRequired:'Certification from recognized course',
-    gunLawSummary:'Wisconsin is shall-issue with a fast processing time. License widely accepted. Training certificate required — many accepted including online options. Strong state preemption prevents local restrictions.',
-    selfDefenseLaws:'Castle Doctrine. No general Stand Your Ground outside the home.',
-    honors:['AL','AK','AZ','AR','CO','FL','GA','ID','IN','IA','KS','KY','LA','ME','MI','MN','MS','MO','MT','NE','NV','NH','NM','NC','ND','OH','OK','PA','SD','TN','TX','UT','VA','WV','WY'],
-    carryLocations:{ vehicle:true, barsRestaurants:true, stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://www.doj.state.wi.us/dles/cib/concealed-carry',
-  },
-  {
-    code:'WY', name:'Wyoming', permitType:'constitutional', constitutional:true, permitRequired:false,
-    openCarry:true, minAge:21, redFlagLaw:false,
-    permitName:'Concealed Firearm Permit (CFP)',
-    processingTime:'30 days', fee:75, trainingRequired:'None required',
-    gunLawSummary:'Wyoming enacted constitutional carry in 2011 — one of the first states. CFP available for reciprocity. Wyoming has very permissive firearms laws and strong state preemption. No assault weapon restrictions.',
-    selfDefenseLaws:'Stand Your Ground. Castle Doctrine. No duty to retreat.',
-    honors:['AL','AK','AZ','AR','CO','FL','GA','ID','IN','IA','KS','KY','LA','ME','MI','MN','MS','MO','MT','NE','NV','NH','NM','NC','ND','OH','OK','PA','SD','TN','TX','UT','VA','WV'],
-    carryLocations:{ vehicle:true, barsRestaurants:true, stateParks:true, nationalParks:true, roadside:true, hotels:true, worship:true, bowHunting:true, gunHunting:true },
-    officialSource:'https://www.wyo.gov/services/concealed-carry-permits',
-  },
-]
+// Helpers for CCWMap.jsx
+export function getStateData(code) {
+  return CCW_DATA[code] || null
+}
 
-// Derive honoredBy from honors arrays
-CCW_STATES.forEach(state => {
-  state.honoredBy = CCW_STATES.filter(other => other.honors.includes(state.code)).map(s => s.code)
-})
-
-export const CCW_MAP = Object.fromEntries(CCW_STATES.map(s => [s.code, s]))
-
-export function getStateColor(permitType) {
-  return PERMIT_TYPES[permitType]?.mapColor || '#e2e6ea'
+export function getAllStateCodes() {
+  return Object.keys(CCW_DATA)
 }
