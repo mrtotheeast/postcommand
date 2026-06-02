@@ -316,17 +316,43 @@ function TeamTab({ profile, companyId, theme, toggleTheme }) {
 
       <div style={s.card}>
         <div style={s.cardTitle}>Roles & Permissions</div>
-        <div style={{ display:'flex', gap:'24px', flexWrap:'wrap' }}>
-          {[
-            { label:'Your Role', value:ROLE_LABELS[profile?.role]||profile?.role },
-            { label:'Access Level', value:`Level ${ROLE_LEVELS[profile?.role]||0}` },
-          ].map(item => (
-            <div key={item.label}><div style={s.lbl}>{item.label}</div><div style={{ fontSize:'14px', color:'var(--accent)', fontFamily:'var(--font-condensed)', fontWeight:700, letterSpacing:'0.5px', marginTop:'4px' }}>{item.value}</div></div>
-          ))}
+        <div style={{ display:'flex', gap:'16px', marginBottom:'16px', flexWrap:'wrap' }}>
+          <div><div style={s.lbl}>Your Role</div><div style={{ fontSize:'14px', color:'var(--accent)', fontFamily:'var(--font-condensed)', fontWeight:700, letterSpacing:'0.5px', marginTop:'4px' }}>{ROLE_LABELS[profile?.role]||profile?.role}</div></div>
+          <div><div style={s.lbl}>Access Level</div><div style={{ fontSize:'14px', color:'var(--accent)', fontFamily:'var(--font-condensed)', fontWeight:700, letterSpacing:'0.5px', marginTop:'4px' }}>Level {ROLE_LEVELS[profile?.role]||0}</div></div>
         </div>
-        <button style={{ ...s.ghost, marginTop:'14px' }} onClick={()=> document.querySelector('[data-role-link]')?.click()}>
-          <Icon name="shield" size={14}/>MANAGE ROLES & PERMISSIONS →
-        </button>
+        <div style={{ overflowX:'auto' }}>
+          <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'12px' }}>
+            <thead>
+              <tr style={{ borderBottom:'2px solid var(--border)' }}>
+                {['Role','Level','Access'].map(h => <th key={h} style={{ textAlign:'left', padding:'8px 10px', fontSize:'10px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', fontWeight:600 }}>{h}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {[
+                { role:'Officer',     level:1, access:'Clock in/out, view own schedule, submit incidents and patrol logs' },
+                { role:'Corporal',    level:2, access:'Officer + approve timesheets, view team members' },
+                { role:'Sergeant',    level:3, access:'Corporal + manage schedules, edit employee records, view reports' },
+                { role:'Lieutenant',  level:4, access:'Sergeant + access training, view sensitive employee data, manage sites' },
+                { role:'Chief',       level:5, access:'Lieutenant + billing, invoices, all settings, hire/terminate' },
+                { role:'Super Admin', level:6, access:'Full platform access including company management and audit logs' },
+                { role:'HR',          level:2, access:'Employee records, onboarding, PTO, HR documents' },
+                { role:'Accounting',  level:2, access:'Invoices, billing, payroll export, financial reports' },
+                { role:'Client',      level:1, access:'Client portal only — incident reports, site activity for their contract' },
+              ].map((row, i) => (
+                <tr key={row.role} style={{ borderBottom:'1px solid var(--border)', background: profile?.role && ROLE_LABELS[profile.role]===row.role ? 'var(--accent-bg)' : 'transparent' }}>
+                  <td style={{ padding:'9px 10px', fontWeight:600, color: profile?.role && ROLE_LABELS[profile.role]===row.role ? 'var(--accent)' : 'var(--text-primary)', whiteSpace:'nowrap' }}>
+                    {row.role}{profile?.role && ROLE_LABELS[profile.role]===row.role && <span style={{ fontSize:'10px', marginLeft:'6px', fontFamily:'var(--font-condensed)', opacity:0.7 }}>← you</span>}
+                  </td>
+                  <td style={{ padding:'9px 10px', color:'var(--text-muted)', fontFamily:'var(--font-condensed)', fontWeight:700, fontSize:'11px' }}>{row.level}</td>
+                  <td style={{ padding:'9px 10px', color:'var(--text-secondary)', lineHeight:1.4 }}>{row.access}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div style={{ fontSize:'11px', color:'var(--text-muted)', marginTop:'12px', lineHeight:1.6 }}>
+          Role assignments are managed per-employee in the Employee Directory. Contact your Super Admin to change your own role.
+        </div>
       </div>
     </>
   )

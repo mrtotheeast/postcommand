@@ -147,6 +147,7 @@ function CredentialsTab({emp, canEdit}) {
   const [showAdd, setShowAdd] = useState(false)
   const [form, setForm] = useState({type:'guard_card',number:'',issued_date:'',expiry_date:'',issuing_authority:'',notes:''})
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState(null)
 
   useEffect(() => { load() }, [emp.id])
 
@@ -158,8 +159,9 @@ function CredentialsTab({emp, canEdit}) {
   }
 
   async function save() {
-    setSaving(true)
-    await supabase.from('employee_credential').insert({ employee_id:emp.id, company_id:emp.company_id, ...form, issued_date:form.issued_date||null, expiry_date:form.expiry_date||null })
+    setSaving(true); setSaveError(null)
+    const { error } = await supabase.from('employee_credential').insert({ employee_id:emp.id, company_id:emp.company_id, ...form, issued_date:form.issued_date||null, expiry_date:form.expiry_date||null })
+    if (error) { setSaveError(error.message); setSaving(false); return }
     setSaving(false); setShowAdd(false); setForm({type:'guard_card',number:'',issued_date:'',expiry_date:'',issuing_authority:'',notes:''}); load()
   }
 
@@ -193,6 +195,7 @@ function CredentialsTab({emp, canEdit}) {
 
       {showAdd && (
         <div style={{background:'var(--bg-surface)',border:'1px solid var(--border)',borderRadius:'var(--radius-md)',padding:'16px',marginBottom:'16px'}}>
+          {saveError && <div style={{padding:'8px 12px',borderRadius:'var(--radius-sm)',marginBottom:'10px',fontSize:'12px',background:'var(--color-danger-bg)',color:'var(--color-danger)',border:'1px solid rgba(192,57,43,0.3)'}}>{saveError}</div>}
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'10px'}}>
             <div><div style={lbl}>Type</div><select style={{...inp,cursor:'pointer'}} value={form.type} onChange={e=>setForm(p=>({...p,type:e.target.value}))}>{CRED_TYPES.map(t=><option key={t} value={t}>{t.replace(/_/g,' ')}</option>)}</select></div>
             <div><div style={lbl}>Number / ID</div><input style={inp} value={form.number} onChange={e=>setForm(p=>({...p,number:e.target.value}))} placeholder="License or cert number"/></div>
@@ -203,7 +206,7 @@ function CredentialsTab({emp, canEdit}) {
           </div>
           <div style={{display:'flex',gap:'8px'}}>
             <button onClick={save} disabled={saving} style={{display:'inline-flex',alignItems:'center',gap:'6px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-sm)',padding:'0 16px',height:'36px',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,cursor:'pointer',opacity:saving?0.6:1}}><Icon name="save" size={13}/>{saving?'SAVING...':'SAVE'}</button>
-            <button onClick={()=>setShowAdd(false)} style={{display:'inline-flex',alignItems:'center',gap:'6px',background:'transparent',color:'var(--text-secondary)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',padding:'0 14px',height:'36px',fontFamily:'var(--font-condensed)',fontSize:'12px',cursor:'pointer'}}>CANCEL</button>
+            <button onClick={()=>{setShowAdd(false);setSaveError(null)}} style={{display:'inline-flex',alignItems:'center',gap:'6px',background:'transparent',color:'var(--text-secondary)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',padding:'0 14px',height:'36px',fontFamily:'var(--font-condensed)',fontSize:'12px',cursor:'pointer'}}>CANCEL</button>
           </div>
         </div>
       )}
@@ -247,6 +250,7 @@ function NotesTab({emp, canEdit, authorId}) {
   const [loading, setLoading] = useState(true)
   const [text, setText] = useState('')
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState(null)
 
   useEffect(() => { load() }, [emp.id])
 
@@ -259,8 +263,9 @@ function NotesTab({emp, canEdit, authorId}) {
 
   async function addNote() {
     if (!text.trim()) return
-    setSaving(true)
-    await supabase.from('employee_note').insert({ employee_id:emp.id, company_id:emp.company_id, body:text.trim(), author_id:authorId||null })
+    setSaving(true); setSaveError(null)
+    const { error } = await supabase.from('employee_note').insert({ employee_id:emp.id, company_id:emp.company_id, body:text.trim(), author_id:authorId||null })
+    if (error) { setSaveError(error.message); setSaving(false); return }
     setText(''); setSaving(false); load()
   }
 
@@ -275,6 +280,7 @@ function NotesTab({emp, canEdit, authorId}) {
     <div style={{padding:'24px'}}>
       {canEdit && (
         <div style={{marginBottom:'16px'}}>
+          {saveError && <div style={{padding:'8px 12px',borderRadius:'var(--radius-sm)',marginBottom:'8px',fontSize:'12px',background:'var(--color-danger-bg)',color:'var(--color-danger)',border:'1px solid rgba(192,57,43,0.3)'}}>{saveError}</div>}
           <textarea value={text} onChange={e=>setText(e.target.value)} placeholder="Add a note..." rows={3}
             style={{width:'100%',background:'var(--bg-input)',border:'1px solid var(--border)',borderRadius:'var(--radius-md)',padding:'10px 12px',fontSize:'13px',color:'var(--text-primary)',outline:'none',fontFamily:'var(--font-body)',resize:'vertical',lineHeight:1.5,boxSizing:'border-box'}}
             onFocus={e=>e.target.style.borderColor='var(--border-focus)'} onBlur={e=>e.target.style.borderColor='var(--border)'}/>

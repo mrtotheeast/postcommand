@@ -67,8 +67,14 @@ export default function Invoices() {
   const [editing, setEditing]     = useState(null)
   const [viewing, setViewing]     = useState(null)
   const [tileFilter, setTileFilter] = useState(null)
+  const [company, setCompany]     = useState(null)
 
-  useEffect(() => { if (profile?.company_id) load() }, [profile])
+  useEffect(() => {
+    if (profile?.company_id) {
+      load()
+      supabase.from('company').select('name,logo_url,address,phone,email,license_number').eq('id', profile.company_id).single().then(({ data }) => setCompany(data||null))
+    }
+  }, [profile])
 
   async function load() {
     setLoading(true)
@@ -183,8 +189,8 @@ export default function Invoices() {
         </table>
       </div>
 
-      {editing && <InvoiceFormModal invoices={invoices} mode={editing === 'new' ? 'new' : 'edit'} invoice={editing === 'new' ? null : editing} companyId={profile.company_id} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load() }} />}
-      {viewing && <InvoiceDetailModal invoice={viewing} onClose={() => setViewing(null)} onEdit={() => { setEditing(viewing); setViewing(null) }} onDelete={deleteInvoice} onStatusChange={(id,st) => { updateStatus(id,st); setViewing(null) }} />}
+      {editing && <InvoiceFormModal invoices={invoices} mode={editing === 'new' ? 'new' : 'edit'} invoice={editing === 'new' ? null : editing} companyId={profile.company_id} company={company} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load() }} />}
+      {viewing && <InvoiceDetailModal invoice={viewing} company={company} onClose={() => setViewing(null)} onEdit={() => { setEditing(viewing); setViewing(null) }} onDelete={deleteInvoice} onStatusChange={(id,st) => { updateStatus(id,st); setViewing(null) }} />}
     </div>
   )
 }
@@ -332,7 +338,7 @@ function InvoiceFormModal({ invoices, mode, invoice, companyId, onClose, onSaved
 
 // ── Invoice Detail / Print ────────────────────────────────────────────────────
 
-function InvoiceDetailModal({ invoice, onClose, onEdit, onDelete, onStatusChange }) {
+function InvoiceDetailModal({ invoice, company, onClose, onEdit, onDelete, onStatusChange }) {
   const items = invoice.invoice_item || []
   const [nudging, setNudging] = useState(false)
   const [nudgeMsg, setNudgeMsg] = useState(null)
@@ -375,7 +381,14 @@ function InvoiceDetailModal({ invoice, onClose, onEdit, onDelete, onStatusChange
       .status{display:inline-block;padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:#e8f5e9;color:#2e7d32}
     </style></head><body>
     <div class="header">
-      <div><div class="logo">POST<span>COMMAND</span></div><div style="font-size:11px;color:#888;margin-top:4px">Security Workforce Management</div></div>
+      <div>
+        ${company?.logo_url ? `<img src="${company.logo_url}" style="max-height:48px;max-width:160px;margin-bottom:8px;display:block" />` : `<div class="logo">${company?.name ? company.name.toUpperCase() : 'POST<span>COMMAND</span>'}</div>`}
+        ${company?.address ? `<div style="font-size:11px;color:#888;margin-top:4px">${company.address}</div>` : ''}
+        ${company?.phone ? `<div style="font-size:11px;color:#888">${company.phone}</div>` : ''}
+        ${company?.email ? `<div style="font-size:11px;color:#888">${company.email}</div>` : ''}
+        ${company?.license_number ? `<div style="font-size:11px;color:#888">Lic: ${company.license_number}</div>` : ''}
+        ${!company?.name && !company?.logo_url ? `<div style="font-size:11px;color:#888;margin-top:4px">Security Workforce Management</div>` : ''}
+      </div>
       <div style="text-align:right"><div class="inv-num">${invoice.invoice_number}</div><div class="status" style="margin-top:8px">${invoice.status}</div></div>
     </div>
     <div class="meta">
@@ -404,6 +417,7 @@ function InvoiceDetailModal({ invoice, onClose, onEdit, onDelete, onStatusChange
           <div>
             <div style={s.modalTitle}>{invoice.invoice_number}</div>
             <div style={{ fontSize:'12px', color:'var(--text-muted)', marginTop:'3px' }}>{invoice.client_name}</div>
+            {company?.name && <div style={{ fontSize:'11px', color:'var(--text-muted)', marginTop:'2px', fontFamily:'var(--font-condensed)', letterSpacing:'0.5px' }}>FROM: {company.name.toUpperCase()}</div>}
           </div>
           <div style={{ display:'flex', gap:'6px', alignItems:'center' }}>
             <button style={{ ...s.ghostBtn, height:'36px', padding:'0 12px', fontSize:'12px' }} onClick={() => exportInvoicePDF(invoice, items)}><Icon name="download" size={14} />PDF</button>

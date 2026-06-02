@@ -46,7 +46,7 @@ export default function Personnel() {
     setLoading(true)
     const { data, error } = await supabase
       .from('employee')
-      .select('id,first_name,middle_name,last_name,email,phone_number,role,status,employment_type,employment_classification,position_title,hire_date,is_armed,has_app_access,profile_photo_url,employee_id_number,invitation_status,terminated_date,probation_end_date,emergency_contact_name,emergency_contact_phone,emergency_contact_relation,notes')
+      .select('id,company_id,first_name,middle_name,last_name,email,phone_number,role,status,employment_type,employment_classification,position_title,hire_date,is_armed,has_app_access,profile_photo_url,employee_id_number,invitation_status,terminated_date,probation_end_date,emergency_contact_name,emergency_contact_phone,emergency_contact_relation,notes')
       .eq('company_id', profile.company_id)
       .order('last_name', { ascending: true })
     if (error) setError(error.message)
