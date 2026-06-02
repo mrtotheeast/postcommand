@@ -925,9 +925,6 @@ function RolePermissionsMatrix({ companyId, profile }) {
           </tbody>
         </table>
       </div>
-      <div style={{ fontSize:'10px', color:'var(--text-muted)', marginTop:'10px' }}>
-        SQL to create table: <code>CREATE TABLE role_permission (id UUID DEFAULT gen_random_uuid() PRIMARY KEY, company_id UUID NOT NULL, role TEXT NOT NULL, permission TEXT NOT NULL, enabled BOOLEAN DEFAULT true, updated_at TIMESTAMPTZ DEFAULT NOW(), UNIQUE(company_id,role,permission)); ALTER TABLE role_permission ENABLE ROW LEVEL SECURITY;</code>
-      </div>
     </div>
   )
 }
