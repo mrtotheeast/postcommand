@@ -61,7 +61,7 @@ export default function Personnel() {
       (tileFilter === 'unarmed' && !e.is_armed) ||
       (tileFilter === 'armed' && e.is_armed) ||
       (tileFilter === 'appAccess' && e.has_app_access) ||
-      (tileFilter === 'pendingInvite' && e.invitation_status === 'invited' && !e.has_app_access)
+      (tileFilter === 'pendingInvite' && e.invitation_status === 'sent' && !e.has_app_access)
     return matchSearch && matchTile && (filterRole==='all'||e.role===filterRole) && (filterStatus==='all'||e.status===filterStatus)
   }), [employees, search, filterRole, filterStatus, tileFilter])
 
@@ -70,7 +70,7 @@ export default function Personnel() {
     unarmed: employees.filter(e => !e.is_armed).length,
     armed: employees.filter(e => e.is_armed).length,
     appAccess: employees.filter(e => e.has_app_access).length,
-    pendingInvite: employees.filter(e => e.invitation_status === 'invited' && !e.has_app_access).length,
+    pendingInvite: employees.filter(e => e.invitation_status === 'sent' && !e.has_app_access).length,
   }), [employees])
 
   function initials(e) { return `${e.first_name?.[0]??''}${e.last_name?.[0]??''}`.toUpperCase() }
@@ -258,7 +258,7 @@ function CSVImportModal({ companyId, onClose, onImported }) {
         status:     ['active','inactive','terminated','probation'].includes(row.status) ? row.status : 'active',
         employment_type: ['full_time','part_time','contract'].includes(row.employment_type) ? row.employment_type : 'full_time',
         has_app_access: false,
-        invitation_status: 'not_invited',
+        invitation_status: 'pending',
       })
       if (error) failed++; else success++
     }
@@ -357,11 +357,13 @@ function EmpCard({emp,ini,canViewSensitive,onClick}) {
         <span style={{fontSize:'11px',fontWeight:600,padding:'2px 8px',borderRadius:'10px',background:rc.bg,color:rc.color}}>{ROLE_LABELS[emp.role]??emp.role}</span>
         <span style={{fontSize:'11px',fontWeight:600,padding:'2px 8px',borderRadius:'10px',background:sc.bg,color:sc.color}}>{emp.status??'Unknown'}</span>
         {emp.is_armed&&<span style={{fontSize:'11px',fontWeight:600,padding:'2px 8px',borderRadius:'10px',background:'rgba(201,162,39,0.12)',color:'var(--accent)'}}>Armed</span>}
-        {emp.has_app_access
+        {emp.has_app_access || emp.invitation_status==='accepted'
           ? <span style={{fontSize:'10px',fontWeight:700,padding:'2px 7px',borderRadius:'10px',background:'var(--color-success-bg)',color:'var(--color-success)'}}>APP ACCESS</span>
-          : emp.invitation_status==='invited'
+          : emp.invitation_status==='sent'
             ? <span style={{fontSize:'10px',fontWeight:700,padding:'2px 7px',borderRadius:'10px',background:'var(--color-warning-bg)',color:'var(--color-warning)'}}>INVITED</span>
-            : <span style={{fontSize:'10px',fontWeight:700,padding:'2px 7px',borderRadius:'10px',background:'var(--border)',color:'var(--text-muted)'}}>NOT INVITED</span>
+            : emp.invitation_status==='expired'
+              ? <span style={{fontSize:'10px',fontWeight:700,padding:'2px 7px',borderRadius:'10px',background:'var(--color-danger-bg)',color:'var(--color-danger)'}}>EXPIRED</span>
+              : <span style={{fontSize:'10px',fontWeight:700,padding:'2px 7px',borderRadius:'10px',background:'var(--border)',color:'var(--text-muted)'}}>NOT INVITED</span>
         }
       </div>
       {canViewSensitive&&emp.email&&<div style={{fontSize:'12px',color:'var(--text-muted)'}}>{emp.email}</div>}
@@ -415,7 +417,7 @@ function EmpDetail({emp,canViewSensitive,canEdit,onClose,onRefresh}) {
       const userId = data?.user?.id
       if (userId) {
         await supabase.from('user_profile').upsert({ id:userId, first_name:emp.first_name, last_name:emp.last_name, email:emp.email, phone:emp.phone_number, role:emp.role, company_id:emp.company_id, company_slug:emp.company_slug||'' })
-        await supabase.from('employee').update({ user_id:userId, has_app_access:true, invitation_status:'invited' }).eq('id',emp.id)
+        await supabase.from('employee').update({ user_id:userId, has_app_access:true, invitation_status:'sent' }).eq('id',emp.id)
       }
       setInviteMsg({ ok:true, text:`Invite sent to ${emp.email}. They'll receive an email to confirm and set their password.` })
       onRefresh?.()
@@ -642,7 +644,7 @@ function BulkActionBar({ count, companyId, selectedIds, onDone, onCancel }) {
         const { data: authData } = await supabase.auth.signUp({ email:emp.email, password:tempPass, options:{ data:{ first_name:emp.first_name, last_name:emp.last_name } } })
         if (authData?.user?.id) {
           await supabase.from('user_profile').upsert({ id:authData.user.id, first_name:emp.first_name, last_name:emp.last_name, email:emp.email, role:emp.role, company_id:emp.company_id, company_slug:'' })
-          await supabase.from('employee').update({ user_id:authData.user.id, has_app_access:true, invitation_status:'invited' }).eq('id', emp.id)
+          await supabase.from('employee').update({ user_id:authData.user.id, has_app_access:true, invitation_status:'sent' }).eq('id', emp.id)
         }
       } catch {}
     }
@@ -764,7 +766,7 @@ function AddEmployeeModal({ companyId, onClose, onSaved }) {
       employment_type:  form.employment_type,
       is_armed:         form.is_armed,
       has_app_access:   false,
-      invitation_status:'not_invited',
+      invitation_status:'pending',
     }).select().single()
 
     setSaving(false)
@@ -781,7 +783,7 @@ function AddEmployeeModal({ companyId, onClose, onSaved }) {
       await supabase.functions.invoke('send-email', {
         body: { type:'welcome', to:savedEmp.email, data:{ firstName:savedEmp.first_name, companyName:companyId } }
       })
-      await supabase.from('employee').update({ invitation_status:'invited' }).eq('id', savedEmp.id)
+      await supabase.from('employee').update({ invitation_status:'sent' }).eq('id', savedEmp.id)
     } catch {}
     setSendingInvite(false)
   }

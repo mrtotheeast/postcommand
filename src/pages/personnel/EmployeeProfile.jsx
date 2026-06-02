@@ -76,7 +76,7 @@ function OverviewTab({emp, canViewSensitive, canEdit, onRefresh, onEdit}) {
       const userId = data?.user?.id
       if (userId) {
         await supabase.from('user_profile').upsert({ id:userId, first_name:emp.first_name, last_name:emp.last_name, email:emp.email, phone:emp.phone_number, role:emp.role, company_id:emp.company_id, company_slug:emp.company_slug||'' })
-        await supabase.from('employee').update({ user_id:userId, has_app_access:true, invitation_status:'invited' }).eq('id',emp.id)
+        await supabase.from('employee').update({ user_id:userId, has_app_access:true, invitation_status:'sent' }).eq('id',emp.id)
       }
       setInviteMsg({ ok:true, text:`Invite sent to ${emp.email}.` })
       onRefresh?.()
@@ -430,11 +430,13 @@ export default function EmployeeProfile({ emp, allEmployees, activeTab, onTabCha
                 <span style={{fontSize:'11px',fontWeight:600,padding:'2px 8px',borderRadius:'10px',background:rc.bg,color:rc.color}}>{ROLE_LABELS[emp.role]??emp.role}</span>
                 <span style={{fontSize:'11px',fontWeight:600,padding:'2px 8px',borderRadius:'10px',background:sc.bg,color:sc.color}}>{emp.status}</span>
                 {emp.is_armed&&<span style={{fontSize:'11px',fontWeight:600,padding:'2px 8px',borderRadius:'10px',background:'rgba(201,162,39,0.12)',color:'var(--accent)'}}>Armed</span>}
-                {emp.has_app_access
+                {emp.has_app_access || emp.invitation_status==='accepted'
                   ? <span style={{fontSize:'10px',fontWeight:700,padding:'2px 7px',borderRadius:'10px',background:'var(--color-success-bg)',color:'var(--color-success)'}}>APP ACCESS</span>
-                  : emp.invitation_status==='invited'
+                  : emp.invitation_status==='sent'
                     ? <span style={{fontSize:'10px',fontWeight:700,padding:'2px 7px',borderRadius:'10px',background:'var(--color-warning-bg)',color:'var(--color-warning)'}}>INVITED</span>
-                    : null
+                    : emp.invitation_status==='expired'
+                      ? <span style={{fontSize:'10px',fontWeight:700,padding:'2px 7px',borderRadius:'10px',background:'var(--color-danger-bg)',color:'var(--color-danger)'}}>EXPIRED</span>
+                      : <span style={{fontSize:'10px',fontWeight:700,padding:'2px 7px',borderRadius:'10px',background:'var(--border)',color:'var(--text-muted)'}}>NOT INVITED</span>
                 }
               </div>
             </div>
