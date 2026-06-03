@@ -28,6 +28,7 @@ import SuperAdmin from './pages/admin/SuperAdmin'
 import More from './pages/more/More'
 import Help from './pages/help/Help'
 import AuditLog from './pages/audit/AuditLog'
+import Payroll from './pages/payroll/Payroll'
 import PerformanceReviews from './pages/reviews/PerformanceReviews'
 import ClientManagement from './pages/clients/ClientManagement'
 
@@ -82,6 +83,7 @@ export default function App() {
       <Route path="/clients"    element={<ProtectedRoute><ClientManagement /></ProtectedRoute>} />
       <Route path="/help"       element={<ProtectedRoute><Help /></ProtectedRoute>} />
       <Route path="/audit"      element={<ProtectedRoute><AuditLog /></ProtectedRoute>} />
+      <Route path="/payroll"    element={<ProtectedRoute><Payroll /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
     </>

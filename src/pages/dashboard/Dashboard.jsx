@@ -8,12 +8,13 @@ import Icon from '../../components/ui/Icon'
 import Badge from '../../components/ui/Badge'
 
 export default function Dashboard() {
-  const { profile, effectiveRole } = useAuth()
+  const { profile, effectiveRole, companyId } = useAuth()
   const { badges } = useNotifications()
   const navigate = useNavigate()
 
   // Route to role-specific dashboard
   if (effectiveRole === 'client')   return <ClientDashboard profile={profile} />
+
   if (effectiveRole === 'corporal') return <CorporalDashboard profile={profile} badges={badges} navigate={navigate} />
   if (effectiveRole === 'officer')  return <OfficerDashboard profile={profile} badges={badges} navigate={navigate} />
 
@@ -21,6 +22,67 @@ export default function Dashboard() {
 }
 
 // ── Main Dashboard (Chief / Lieutenant / Sergeant / HR / Accounting) ──────────
+
+function OnboardingChecklist({ companyId }) {
+  const [data, setData] = useState(null)
+  const navigate = useNavigate()
+  const DISMISSED_KEY = `pc-onboard-done-${companyId}`
+
+  useEffect(() => {
+    if (localStorage.getItem(DISMISSED_KEY)) { setData('dismissed'); return }
+    if (!companyId) return
+    Promise.all([
+      supabase.from('company').select('name').eq('id', companyId).single(),
+      supabase.from('site').select('id').eq('company_id', companyId).limit(1),
+      supabase.from('employee').select('id').eq('company_id', companyId).limit(1),
+      supabase.from('shift').select('id').eq('company_id', companyId).limit(1),
+    ]).then(([{ data: co }, { data: sites }, { data: emps }, { data: shifts }]) => {
+      setData({ hasCompanyName: !!co?.name?.trim(), hasSite: !!(sites?.length), hasEmployee: !!(emps?.length), hasSchedule: !!(shifts?.length) })
+    })
+  }, [companyId])
+
+  if (!data || data === 'dismissed') return null
+
+  const items = [
+    { done: data.hasCompanyName, label: 'Add your company info', path: '/settings', hint: 'Settings → Company Profile' },
+    { done: data.hasSite,        label: 'Add your first site',   path: '/sites',    hint: 'Site Management' },
+    { done: data.hasEmployee,    label: 'Add your first employee', path: '/personnel', hint: 'Personnel' },
+    { done: data.hasSchedule,    label: 'Set up your first schedule', path: '/scheduling', hint: 'Scheduling' },
+    { done: false,               label: 'Connect Gusto for payroll', path: '/payroll', hint: 'Optional — Payroll' },
+  ]
+  const allDone = items.filter(i => i.done).length >= 4
+
+  if (allDone) {
+    localStorage.setItem(DISMISSED_KEY, '1')
+    return null
+  }
+
+  return (
+    <div style={{ background:'var(--accent-bg)', border:'1px solid var(--accent-border)', borderRadius:'var(--radius-lg)', padding:'20px 24px', marginBottom:'24px' }}>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'14px' }}>
+        <div style={{ fontFamily:'var(--font-display)', fontSize:'16px', letterSpacing:'1.5px', color:'var(--accent)' }}>GETTING STARTED</div>
+        <button onClick={() => { localStorage.setItem(DISMISSED_KEY,'1'); setData('dismissed') }} style={{ background:'transparent', border:'none', color:'var(--text-muted)', cursor:'pointer', fontSize:'12px', fontFamily:'var(--font-condensed)' }}>DISMISS</button>
+      </div>
+      <div style={{ display:'flex', flexDirection:'column', gap:'8px' }}>
+        {items.map((item, i) => (
+          <div key={i} onClick={() => !item.done && navigate(item.path)} style={{ display:'flex', alignItems:'center', gap:'12px', padding:'10px 14px', background:item.done?'var(--color-success-bg)':'var(--bg-card)', border:`1px solid ${item.done?'rgba(58,170,106,0.3)':'var(--border-subtle)'}`, borderRadius:'var(--radius-md)', cursor:item.done?'default':'pointer', transition:'all 150ms ease' }}
+            onMouseEnter={e=>{ if (!item.done) e.currentTarget.style.borderColor='var(--accent-border)' }}
+            onMouseLeave={e=>{ if (!item.done) e.currentTarget.style.borderColor='var(--border-subtle)' }}
+          >
+            <div style={{ width:'20px', height:'20px', borderRadius:'50%', border:`2px solid ${item.done?'var(--color-success)':'var(--border)'}`, background:item.done?'var(--color-success)':'transparent', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+              {item.done && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5"/></svg>}
+            </div>
+            <div style={{ flex:1 }}>
+              <div style={{ fontSize:'13px', fontWeight:600, color:item.done?'var(--color-success)':'var(--text-primary)', textDecoration:item.done?'line-through':'none' }}>{item.label}</div>
+              <div style={{ fontSize:'11px', color:'var(--text-muted)' }}>{item.hint}</div>
+            </div>
+            {!item.done && <Icon name="chevron-right" size={14} color="var(--text-muted)"/>}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 function MainDashboard({ profile, effectiveRole, badges, navigate }) {
   const tiles = DASHBOARD_TILES.filter(t => t.roles.includes(effectiveRole))
@@ -42,6 +104,7 @@ function MainDashboard({ profile, effectiveRole, badges, navigate }) {
   return (
     <div style={{padding:'24px',maxWidth:'1100px',animation:'fadeIn 200ms ease'}}>
       <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}`}</style>
+      {['super_admin','chief','lieutenant'].includes(effectiveRole) && <OnboardingChecklist companyId={profile?.company_id}/>}
       <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:'28px',gap:'16px'}}>
         <div>
           <div style={{fontSize:'12px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)'}}>{greeting},</div>

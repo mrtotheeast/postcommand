@@ -110,7 +110,7 @@ function BillingNativeRedirect() {
 export default function Billing() {
   if (isNative()) return <BillingNativeRedirect />
 
-  const { profile, companyId } = useAuth()
+  const { profile, companyId, isNPS } = useAuth()
   const [subscription, setSubscription] = useState(null)
   const [usage, setUsage]               = useState({})
   const [loading, setLoading]           = useState(true)
@@ -135,17 +135,25 @@ export default function Billing() {
   }
 
   async function startCheckout(plan) {
+    if (isNPS) return
     if (!plan.stripePriceId) {
       window.open('mailto:sales@postcommand.app?subject=Enterprise Inquiry', '_blank')
       return
     }
     setCheckingOut(plan.id)
     try {
-      const { data, error } = await supabase.functions.invoke('create-checkout', {
-        body: { plan_id: plan.id, price_id: plan.stripePriceId, company_id: companyId, return_url: window.location.href }
+      const { data, error } = await supabase.functions.invoke('create-checkout-session', {
+        body: {
+          price_id: plan.stripePriceId,
+          company_id: companyId,
+          user_email: profile?.email,
+          success_url: `${window.location.origin}/billing?success=true`,
+          cancel_url: `${window.location.origin}/billing`,
+        }
       })
       if (error || !data?.url) throw new Error(error?.message || 'Checkout failed')
-      window.location.href = data.url
+      if (isNative()) { const { openBrowser } = await import('../../lib/platform'); openBrowser(data.url) }
+      else window.location.href = data.url
     } catch (e) {
       alert('Checkout error: ' + e.message)
     }
@@ -173,6 +181,48 @@ export default function Billing() {
 
   if (loading) return <div style={{ padding:'24px' }}>{[...Array(3)].map((_,i) => <div key={i} className="skeleton" style={{ height:'100px', borderRadius:'10px', marginBottom:'12px' }} />)}</div>
 
+  if (isNPS) return (
+    <div style={s.page}>
+      <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}`}</style>
+      <h2 style={s.heading}>BILLING & SUBSCRIPTION</h2>
+      <div style={{ background:'linear-gradient(135deg,rgba(201,162,39,0.15),rgba(201,162,39,0.05))', border:'1px solid var(--accent-border)', borderRadius:'var(--radius-lg)', padding:'32px', marginBottom:'24px', textAlign:'center' }}>
+        <div style={{ width:'56px', height:'56px', borderRadius:'50%', background:'var(--accent-bg)', border:'2px solid var(--accent)', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 16px' }}>
+          <Icon name="check-circle" size={26} color="var(--accent)"/>
+        </div>
+        <div style={{ fontFamily:'var(--font-display)', fontSize:'24px', letterSpacing:'2px', color:'var(--accent)', marginBottom:'8px' }}>PARTNER ACCOUNT</div>
+        <div style={{ fontSize:'14px', color:'var(--text-secondary)', lineHeight:1.7, maxWidth:'440px', margin:'0 auto' }}>
+          Nationwide Police Services has full access to all PostCommand features — including AI, multi-location, and client portal — at no charge.
+        </div>
+        <div style={{ marginTop:'20px', display:'flex', gap:'16px', justifyContent:'center', flexWrap:'wrap' }}>
+          {['AI Features','Multi-Location','Client Portal','Payroll Export','All Reports','CCW Map'].map(f => (
+            <span key={f} style={{ display:'inline-flex', alignItems:'center', gap:'6px', fontSize:'12px', color:'var(--accent)', fontFamily:'var(--font-condensed)', letterSpacing:'0.5px' }}>
+              <Icon name="check" size={12} color="var(--accent)"/>{f}
+            </span>
+          ))}
+        </div>
+      </div>
+      {invoices.length > 0 && (
+        <div style={{ background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-md)', padding:'20px' }}>
+          <div style={{ fontSize:'11px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1.5px', fontFamily:'var(--font-condensed)', marginBottom:'14px' }}>Recent Client Invoices</div>
+          {invoices.map(inv => {
+            const stColor = inv.status==='paid'?'var(--color-success)':inv.status==='overdue'?'var(--color-danger)':'var(--color-warning)'
+            const stBg = inv.status==='paid'?'var(--color-success-bg)':inv.status==='overdue'?'var(--color-danger-bg)':'var(--color-warning-bg)'
+            return (
+              <div key={inv.id} style={s.histRow}>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontWeight:600, color:'var(--text-primary)' }}>{inv.invoice_number}</div>
+                  <div style={{ fontSize:'11px', color:'var(--text-muted)' }}>{inv.client_name} · {fmtDate(inv.created_at)}</div>
+                </div>
+                <div style={{ fontFamily:'var(--font-condensed)', fontWeight:700, color:'var(--text-primary)' }}>{fmtMoney(inv.total)}</div>
+                <span style={{ ...s.pill, background:stBg, color:stColor }}>{inv.status?.toUpperCase()}</span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+
   return (
     <div style={s.page}>
       <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}`}</style>
@@ -180,7 +230,7 @@ export default function Billing() {
       <p style={s.sub}>Manage your PostCommand plan, usage, and payment details.</p>
 
       {/* Trial countdown banner */}
-      {isTrialing && (
+      {isTrialing && !isNPS && (
         <div style={{ background:'var(--color-warning-bg)', border:'1px solid rgba(232,148,58,0.4)', borderRadius:'var(--radius-md)', padding:'14px 20px', marginBottom:'20px', display:'flex', alignItems:'center', justifyContent:'space-between', gap:'16px', flexWrap:'wrap' }}>
           <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
             <Icon name="clock" size={18} color="var(--color-warning)"/>

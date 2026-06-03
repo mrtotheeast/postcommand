@@ -1,77 +1,74 @@
-// Stripe Webhook Handler
-// Env vars: STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET
-
-import Stripe from 'npm:stripe@14.21.0'
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-Deno.serve(async (req) => {
-  const signature = req.headers.get('stripe-signature')
-  const body      = await req.text()
-
-  const stripe   = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!, { apiVersion:'2023-10-16' })
+serve(async (req) => {
+  const sig    = req.headers.get('stripe-signature') || ''
+  const body   = await req.text()
   const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
 
-  let event: Stripe.Event
+  let event: any
   try {
-    event = stripe.webhooks.constructEvent(body, signature!, Deno.env.get('STRIPE_WEBHOOK_SECRET')!)
-  } catch (e) {
-    return new Response(`Webhook signature failed: ${e.message}`, { status:400 })
+    event = JSON.parse(body)
+  } catch (err) {
+    return new Response(JSON.stringify({ error: 'Invalid JSON' }), { status: 400 })
   }
 
-  const sub = event.data.object as any
+  const obj = event.data?.object
+  const companyId = obj?.metadata?.company_id
 
-  switch (event.type) {
-    case 'checkout.session.completed': {
-      const session = sub as Stripe.CheckoutSession
-      if (session.mode === 'subscription') {
-        const { company_id, plan_id } = session.subscription_data?.metadata || {}
-        if (company_id) {
+  async function getCompanyByCustomer(customerId: string): Promise<string | null> {
+    if (!customerId) return null
+    const { data } = await supabase.from('company_subscription').select('company_id').eq('stripe_customer_id', customerId).maybeSingle()
+    return data?.company_id || null
+  }
+
+  try {
+    switch (event.type) {
+      case 'checkout.session.completed': {
+        const cid = companyId
+        if (cid) {
           await supabase.from('company_subscription').upsert({
-            company_id,
-            stripe_customer_id: session.customer as string,
-            stripe_subscription_id: session.subscription as string,
-            plan_id: plan_id || 'growth',
+            company_id: cid,
+            stripe_subscription_id: obj.subscription,
+            stripe_customer_id: obj.customer,
             status: 'active',
-            updated_at: new Date().toISOString(),
-          }, { onConflict:'company_id' })
+          }, { onConflict: 'company_id' })
         }
+        break
       }
-      break
-    }
-    case 'customer.subscription.updated': {
-      const { company_id, plan_id } = sub.metadata || {}
-      if (company_id) {
-        await supabase.from('company_subscription').update({
-          status: sub.status,
-          plan_id: plan_id || sub.items?.data?.[0]?.price?.metadata?.plan_id,
-          current_period_end: new Date(sub.current_period_end * 1000).toISOString(),
-          cancel_at_period_end: sub.cancel_at_period_end,
-          updated_at: new Date().toISOString(),
-        }).eq('company_id', company_id)
+      case 'customer.subscription.updated': {
+        const cid = companyId || await getCompanyByCustomer(obj.customer)
+        if (cid) {
+          await supabase.from('company_subscription').upsert({
+            company_id: cid,
+            stripe_subscription_id: obj.id,
+            status: obj.status,
+            cancel_at_period_end: obj.cancel_at_period_end,
+            current_period_end: new Date(obj.current_period_end * 1000).toISOString(),
+          }, { onConflict: 'company_id' })
+        }
+        break
       }
-      break
-    }
-    case 'customer.subscription.deleted': {
-      const { company_id } = sub.metadata || {}
-      if (company_id) {
-        await supabase.from('company_subscription').update({
-          status: 'cancelled',
-          updated_at: new Date().toISOString(),
-        }).eq('company_id', company_id)
+      case 'customer.subscription.deleted': {
+        const cid = companyId || await getCompanyByCustomer(obj.customer)
+        if (cid) {
+          await supabase.from('company_subscription').update({ status: 'cancelled' }).eq('company_id', cid)
+          await supabase.from('notifications').insert({ company_id: cid, type: 'general', title: 'Subscription Cancelled', message: 'Your subscription has been cancelled. Some features may be restricted.', target_url: '/billing', created_at: new Date().toISOString() })
+        }
+        break
       }
-      break
+      case 'invoice.payment_failed': {
+        const cid = await getCompanyByCustomer(obj.customer)
+        if (cid) {
+          await supabase.from('company_subscription').update({ status: 'past_due' }).eq('company_id', cid)
+          await supabase.from('notifications').insert({ company_id: cid, type: 'general', title: 'Payment Failed', message: `Payment of $${(obj.amount_due/100).toFixed(2)} failed. Update your payment method.`, target_url: '/billing', created_at: new Date().toISOString() })
+        }
+        break
+      }
     }
-    case 'invoice.payment_failed': {
-      const customerId = sub.customer as string
-      await supabase.from('company_subscription').update({ status:'past_due', updated_at:new Date().toISOString() }).eq('stripe_customer_id', customerId)
-      break
-    }
-    case 'invoice.paid': {
-      const customerId = sub.customer as string
-      await supabase.from('company_subscription').update({ status:'active', updated_at:new Date().toISOString() }).eq('stripe_customer_id', customerId)
-      break
-    }
+  } catch (err) {
+    return new Response(JSON.stringify({ error: err.message }), { status: 500 })
   }
 
-  return new Response(JSON.stringify({ received: true }), { headers: { 'Content-Type':'application/json' } })
+  return new Response(JSON.stringify({ received: true }), { headers: { 'Content-Type': 'application/json' } })
 })

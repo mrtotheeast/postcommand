@@ -12,6 +12,7 @@ const TABS = [
   { id:'uniforms',     label:'Uniforms',     icon:'shield' },
   { id:'reviews',      label:'Reviews',      icon:'star' },
   { id:'notes',        label:'Notes',        icon:'message-square' },
+  { id:'paystubs',     label:'Pay Stubs',    icon:'dollar-sign' },
 ]
 
 const ROLE_COLORS = {
@@ -464,6 +465,7 @@ export default function EmployeeProfile({ emp, allEmployees, activeTab, onTabCha
           {activeTab === 'uniforms'    && <UniformsTab emp={emp} canEdit={canEdit}/>}
           {activeTab === 'reviews'     && <ReviewsTab emp={emp}/>}
           {activeTab === 'notes'       && <NotesTab emp={emp} canEdit={canEdit}/>}
+          {activeTab === 'paystubs'    && <EmpPayStubsTab emp={emp} canEdit={canEdit}/>}
         </div>
       </div>
     </>
@@ -897,6 +899,86 @@ function ReviewsTab({ emp }) {
               {rev.comments && <div style={{fontSize:'13px',color:'var(--text-secondary)',lineHeight:1.6}}>{rev.comments}</div>}
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Pay Stubs Tab ─────────────────────────────────────────────────────────────
+
+function EmpPayStubsTab({ emp, canEdit }) {
+  const [runs, setRuns]           = useState([])
+  const [connected, setConnected] = useState(false)
+  const [loading, setLoading]     = useState(true)
+
+  useEffect(() => { load() }, [emp.id])
+
+  async function load() {
+    setLoading(true)
+    const [{ data: gustoConn }, { data: payrollRuns }] = await Promise.all([
+      supabase.from('gusto_connection').select('gusto_company_id').eq('company_id', emp.company_id).maybeSingle(),
+      supabase.from('payroll_run').select('*').eq('company_id', emp.company_id).order('pay_period_end', {ascending:false}).limit(20),
+    ])
+    setConnected(!!gustoConn?.gusto_company_id)
+    setRuns(payrollRuns || [])
+    setLoading(false)
+  }
+
+  async function viewStub(run) {
+    try {
+      const { data, error } = await supabase.functions.invoke('gusto-proxy', {
+        body: { action:'pay-stub-url', company_id:emp.company_id, payroll_id:run.gusto_payroll_id }
+      })
+      if (error || !data?.url) throw new Error(error?.message || 'No stub URL')
+      window.open(data.url, '_blank')
+    } catch(e) {
+      alert('Could not load pay stub: ' + e.message)
+    }
+  }
+
+  const fmtD = d => d ? new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—'
+  const fmtM = n => n != null ? new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(n) : '—'
+
+  if (loading) return <div style={{padding:'24px',color:'var(--text-muted)',fontSize:'12px'}}>Loading...</div>
+
+  if (!connected) return (
+    <div style={{padding:'24px',textAlign:'center'}}>
+      <Icon name="dollar-sign" size={32} color="var(--border-subtle)"/>
+      <div style={{marginTop:'14px',fontSize:'14px',color:'var(--text-primary)',fontWeight:600}}>Gusto not connected</div>
+      <div style={{marginTop:'6px',fontSize:'12px',color:'var(--text-muted)',lineHeight:1.6}}>Connect Gusto in the Payroll page to view pay stubs and run payroll.</div>
+      <a href="/payroll" style={{display:'inline-flex',alignItems:'center',gap:'6px',marginTop:'16px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-sm)',padding:'0 16px',height:'36px',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,letterSpacing:'1px',textDecoration:'none'}}>
+        <Icon name="link" size={13}/>CONNECT GUSTO
+      </a>
+    </div>
+  )
+
+  return (
+    <div style={{padding:'24px'}}>
+      <div style={{fontSize:'12px',color:'var(--text-muted)',marginBottom:'14px'}}>{runs.length} payroll run{runs.length!==1?'s':''} on record</div>
+      {runs.length === 0 ? (
+        <div style={{textAlign:'center',padding:'40px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:'var(--text-muted)',fontSize:'13px'}}>No payroll runs yet. Submit payroll in the Payroll page.</div>
+      ) : (
+        <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+          {runs.map(run => {
+            const statusBg = run.status==='processed'?'var(--color-success-bg)':run.status==='submitted'?'var(--color-info-bg)':'var(--border)'
+            const statusC  = run.status==='processed'?'var(--color-success)':run.status==='submitted'?'var(--color-info)':'var(--text-muted)'
+            return (
+              <div key={run.id} style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'12px 16px',display:'flex',alignItems:'center',gap:'12px'}}>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-primary)'}}>{fmtD(run.pay_period_start)} – {fmtD(run.pay_period_end)}</div>
+                  <div style={{fontSize:'11px',color:'var(--text-muted)',marginTop:'2px'}}>Submitted {fmtD(run.submitted_at)}</div>
+                </div>
+                {run.total_gross != null && <div style={{fontFamily:'var(--font-condensed)',fontWeight:700,color:'var(--text-primary)'}}>{fmtM(run.total_gross)}</div>}
+                <span style={{fontSize:'11px',fontWeight:700,padding:'2px 8px',borderRadius:'10px',background:statusBg,color:statusC,fontFamily:'var(--font-condensed)',textTransform:'uppercase'}}>{run.status}</span>
+                {run.gusto_payroll_id && (
+                  <button onClick={()=>viewStub(run)} style={{display:'inline-flex',alignItems:'center',gap:'5px',background:'var(--accent-bg)',border:'1px solid var(--accent-border)',borderRadius:'var(--radius-sm)',color:'var(--accent)',fontFamily:'var(--font-condensed)',fontSize:'11px',fontWeight:700,cursor:'pointer',padding:'0 10px',height:'30px'}}>
+                    <Icon name="eye" size={11}/>STUB
+                  </button>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
     </div>

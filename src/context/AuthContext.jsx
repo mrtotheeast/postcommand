@@ -4,6 +4,7 @@ import { subscribeToPush, requestNotificationPermission } from '../lib/pushNotif
 import { requestPushPermission } from '../lib/pushPermission'
 
 const AuthContext = createContext(null)
+export const NPS_COMPANY_ID = '9af02c98-04f3-4dbd-9f7e-07e7f9bbdc6c'
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
@@ -30,6 +31,7 @@ export function AuthProvider({ children }) {
   }
 
   const effectiveRole = viewRole || profile?.role
+  const isNPS = profile?.company_id === NPS_COMPANY_ID
 
   function loadProfile(userId) {
     return supabase
@@ -121,6 +123,7 @@ export function AuthProvider({ children }) {
       switchViewAs,
       exitViewAs,
       companyId: profile?.company_id,
+      isNPS,
       isAuthenticated: !!user
     }}>
       {children}

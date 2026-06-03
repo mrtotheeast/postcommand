@@ -22,6 +22,7 @@ export const NAV_ITEMS = [
     { id:'sites', label:'Site Management', path:'/sites', icon:'map', roles:['super_admin','chief','lieutenant','office_staff'] },
     { id:'hr', label:'HR & Documents', path:'/hr', icon:'star', roles:['super_admin','chief','lieutenant','hr','office_staff'] },
     { id:'invoices', label:'Invoices', path:'/invoices', icon:'credit-card', roles:['super_admin','chief','accounting'] },
+    { id:'payroll',  label:'Payroll',  path:'/payroll',  icon:'dollar-sign', roles:['super_admin','chief','lieutenant','accounting'] },
     { id:'uniforms', label:'Uniforms', path:'/uniforms', icon:'shield', roles:['super_admin','chief','lieutenant','sergeant','corporal','officer','office_staff'] },
     { id:'reports',  label:'Reports',  path:'/reports',  icon:'bar-chart-2', roles:['super_admin','chief','lieutenant','hr','accounting'] },
     { id:'messaging', label:'Messaging', path:'/messaging', icon:'message-circle', badge:true, roles:['super_admin','chief','lieutenant','sergeant','corporal','officer','hr','accounting','office_staff'] },
