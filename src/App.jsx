@@ -1,5 +1,8 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
+import { useEffect } from 'react'
 import { useAuth } from './context/AuthContext'
+import { supabase } from './lib/supabase'
+import { isNative } from './lib/platform'
 import AppLayout from './components/layout/AppLayout'
 import PrivacyBanner from './components/ui/PrivacyBanner'
 import Login from './pages/auth/Login'
@@ -48,14 +51,62 @@ function ClientRoute({ children }) {
   if (!isAuthenticated) return <Navigate to="/login" replace />
   return children
 }
+// Handles the OAuth deep link redirect on native iOS
+// When the user completes Apple/Google OAuth in the system browser,
+// iOS redirects to postcommand://auth which triggers this listener.
+function OAuthCallbackHandler() {
+  const navigate = useNavigate()
+  useEffect(() => {
+    if (!isNative()) return
+    let appListener
+    async function setup() {
+      try {
+        const { App } = await import('@capacitor/app')
+        const { Browser } = await import('@capacitor/browser')
+        appListener = await App.addListener('appUrlOpen', async ({ url }) => {
+          if (!url.startsWith('postcommand://auth')) return
+          // Close the system browser
+          await Browser.close().catch(() => {})
+          // Exchange the OAuth token — Supabase reads the hash/params from the URL
+          const { data, error } = await supabase.auth.getSessionFromUrl({ url })
+          if (data?.session) {
+            navigate('/dashboard', { replace: true })
+          }
+        })
+      } catch {}
+    }
+    setup()
+    return () => { appListener?.remove?.() }
+  }, [navigate])
+  return null
+}
+
+// Simple callback page for web OAuth redirect
+function AuthCallback() {
+  const navigate = useNavigate()
+  useEffect(() => {
+    // Supabase auth state listener in AuthContext picks up the session automatically.
+    // Just redirect to dashboard after a brief moment.
+    const t = setTimeout(() => navigate('/dashboard', { replace: true }), 500)
+    return () => clearTimeout(t)
+  }, [navigate])
+  return (
+    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'Barlow Condensed, sans-serif', fontSize:'20px', letterSpacing:'2px', color:'#c8a84b', background:'#0d0f14' }}>
+      SIGNING IN...
+    </div>
+  )
+}
+
 export default function App() {
   const { isAuthenticated, loading, role } = useAuth()
   if (loading) return <div style={{minHeight:'100vh',backgroundColor:'var(--bg-base)',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'var(--font-display)',fontSize:'22px',color:'var(--accent)',letterSpacing:'3px'}}>LOADING...</div>
   return (
     <>
+    <OAuthCallbackHandler />
     <PrivacyBanner />
     <Routes>
       <Route path="/reciprocity" element={<CCWMap />} />
+      <Route path="/auth/callback" element={<AuthCallback />} />
       <Route path="/login" element={isAuthenticated ? <Navigate to={role === 'client' ? '/portal' : '/dashboard'} replace /> : <Login />} />
       <Route path="/portal" element={<ClientRoute><ClientPortal /></ClientRoute>} />
       <Route path="/dashboard"  element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
