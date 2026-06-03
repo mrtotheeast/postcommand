@@ -109,15 +109,13 @@ export default function AppLayout({ children }) {
         <div style={s.logo}>POST<span style={{color:'var(--text-primary)'}}>COMMAND</span></div>
         <div style={s.logoSub}>Security Workforce Management</div>
         {profile?.company_slug && (
-          <div style={{display:'flex',alignItems:'center',gap:'6px',marginTop:'6px',flexWrap:'wrap'}}>
-            <div style={{display:'inline-block',fontSize:'10px',fontFamily:'var(--font-condensed)',letterSpacing:'1.5px',color:'var(--accent)',background:'var(--accent-bg)',border:'1px solid var(--accent-border)',borderRadius:'var(--radius-sm)',padding:'2px 8px'}}>
-              {profile.company_slug.toUpperCase()}
-            </div>
-            {profile?.company_id && (
-              <span style={{fontSize:'9px',color:'var(--text-muted)',fontFamily:'monospace',letterSpacing:'0.5px',opacity:0.7}}>
-                {profile.company_id.slice(0,8)}…
-              </span>
-            )}
+          <div style={{display:'inline-block',marginTop:'6px',fontSize:'10px',fontFamily:'var(--font-condensed)',letterSpacing:'1.5px',color:'var(--accent)',background:'var(--accent-bg)',border:'1px solid var(--accent-border)',borderRadius:'var(--radius-sm)',padding:'2px 8px'}}>
+            {profile.company_slug.toUpperCase()}
+          </div>
+        )}
+        {profile?.company_id && (
+          <div style={{marginTop:'4px',fontSize:'10px',color:'var(--text-muted)',fontFamily:'var(--font-condensed)',letterSpacing:'0.5px'}}>
+            Company ID: {profile.company_id}
           </div>
         )}
       </div>
