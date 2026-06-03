@@ -1,7 +1,113 @@
+// ── Core role constants ────────────────────────────────────────────────────────
+
 export const ROLES = { SUPER_ADMIN:'super_admin', CHIEF:'chief', LIEUTENANT:'lieutenant', SERGEANT:'sergeant', CORPORAL:'corporal', OFFICER:'officer', HR:'hr', ACCOUNTING:'accounting', OFFICE_STAFF:'office_staff', CLIENT:'client' }
-export const ROLE_LEVELS = { super_admin:6, chief:5, lieutenant:4, sergeant:3, corporal:2, officer:1, hr:0, accounting:0, office_staff:0, client:-1 }
+
+// Numeric access levels — drives all permission gates (keep existing scale for compatibility)
+export const ROLE_LEVELS = { super_admin:6, chief:5, lieutenant:4, sergeant:3, corporal:2, officer:1, hr:1, accounting:1, office_staff:1, client:0 }
+
+// Human-readable role labels
 export const ROLE_LABELS = { super_admin:'Chief App Admin', chief:'Chief', lieutenant:'Lieutenant', sergeant:'Sergeant', corporal:'Corporal', officer:'Officer', hr:'HR', accounting:'Accounting', office_staff:'Office Staff', client:'Client' }
-export function atLeast(role, minRole) { return (ROLE_LEVELS[role]??0) >= (ROLE_LEVELS[minRole]??0) }
+
+// Display title styles — read from company.role_style
+export const ROLE_TITLES = {
+  military: {
+    6: 'Super Admin',
+    5: 'Chief',
+    4: 'Lieutenant',
+    3: 'Sergeant',
+    2: 'Corporal',
+    1: 'Officer',
+    0: 'Client',
+  },
+  standard: {
+    6: 'Super Admin',
+    5: 'Admin',
+    4: 'Manager',
+    3: 'Supervisor',
+    2: 'Lead',
+    1: 'Employee',
+    0: 'Client',
+  },
+}
+
+// ── Helper functions ───────────────────────────────────────────────────────────
+
+export function getRoleLevel(role) { return ROLE_LEVELS[role] ?? 1 }
+
+// meetsLevel: accepts both string role names and numeric minLevel
+export function meetsLevel(role, minLevel) {
+  if (typeof minLevel === 'string') minLevel = ROLE_LEVELS[minLevel] ?? 1
+  return getRoleLevel(role) >= minLevel
+}
+
+// Backward-compatible alias — all existing atLeast(role, 'role') calls keep working
+export function atLeast(role, minRole) {
+  const min = typeof minRole === 'string' ? (ROLE_LEVELS[minRole] ?? 1) : minRole
+  return (ROLE_LEVELS[role] ?? 0) >= min
+}
+
+// Get display title for a role given company style and optional overrides
+export function getRoleTitle(role, style = 'military', customTitles = {}) {
+  const level = getRoleLevel(role)
+  return customTitles[role] || customTitles[level] || ROLE_TITLES[style]?.[level] || ROLE_LABELS[role] || role
+}
+
+// Check if user has a specific named permission (falls back to role level)
+export function hasPermission(profile, permissionKey) {
+  if (!profile) return false
+  if (getRoleLevel(profile.role) >= 5) return true  // super_admin has everything
+  if (getRoleLevel(profile.role) >= 4 && profile.role !== 'client') return true  // chief has everything
+  return profile.custom_permissions?.[permissionKey] === true
+}
+
+// ── Permission keys for per-person overrides ──────────────────────────────────
+
+export const PERMISSION_KEYS = {
+  'can_view_reports':       { label:'View Reports',        minGrantLevel:4 },
+  'can_approve_timesheets': { label:'Approve Timesheets',  minGrantLevel:4 },
+  'can_manage_schedules':   { label:'Manage Schedules',    minGrantLevel:3 },
+  'can_view_personnel':     { label:'View Personnel',      minGrantLevel:3 },
+  'can_edit_personnel':     { label:'Edit Personnel',      minGrantLevel:4 },
+  'can_view_incidents':     { label:'View All Incidents',  minGrantLevel:3 },
+  'can_manage_billing':     { label:'Manage Billing',      minGrantLevel:4 },
+  'can_manage_sites':       { label:'Manage Sites',        minGrantLevel:3 },
+  'can_export_data':        { label:'Export Data',         minGrantLevel:3 },
+  'can_send_invites':       { label:'Send Invites',        minGrantLevel:3 },
+  'can_view_audit_log':     { label:'View Audit Log',      minGrantLevel:4 },
+  'can_run_payroll':        { label:'Run Payroll',         minGrantLevel:4 },
+}
+
+// ── Feature access map ────────────────────────────────────────────────────────
+
+export const FEATURE_ACCESS = {
+  dashboard:        { minLevel:1, description:'View your personal dashboard' },
+  schedule_view:    { minLevel:1, description:'View your assigned schedule' },
+  clock_in:         { minLevel:1, description:'Clock in and out of shifts' },
+  incidents_file:   { minLevel:1, description:'File incident reports' },
+  sos:              { minLevel:1, description:'Trigger SOS emergency alert' },
+  patrol:           { minLevel:1, description:'Log patrol checkpoints' },
+  messaging:        { minLevel:1, description:'Send and receive messages' },
+  pto_request:      { minLevel:1, description:'Submit PTO requests' },
+  uniforms_request: { minLevel:1, description:'Submit uniform requests' },
+  training_view:    { minLevel:1, description:'View and complete training courses' },
+  incidents_review: { minLevel:2, description:'Review and approve incident reports' },
+  timesheet_view:   { minLevel:2, description:'View team timesheets' },
+  schedule_manage:  { minLevel:3, description:'Create and manage schedules' },
+  timesheets:       { minLevel:3, description:'Approve timesheets and close pay periods' },
+  personnel_view:   { minLevel:3, description:'View employee profiles and credentials' },
+  reports:          { minLevel:3, description:'Access reports and analytics' },
+  live_map:         { minLevel:4, description:'View real-time officer locations' },
+  personnel_edit:   { minLevel:4, description:'Edit employee records and status' },
+  personnel_invite: { minLevel:4, description:'Invite employees to the app' },
+  hr_management:    { minLevel:4, description:'Manage HR documents and onboarding' },
+  billing:          { minLevel:4, description:'Manage billing and subscription' },
+  settings:         { minLevel:4, description:'Manage company settings' },
+  audit_log:        { minLevel:4, description:'View system audit log' },
+  payroll:          { minLevel:4, description:'Run payroll via Gusto' },
+  super_admin:      { minLevel:6, description:'Platform-wide administration' },
+}
+
+// ── Navigation ─────────────────────────────────────────────────────────────────
 
 export const NAV_ITEMS = [
   { section:'Operations', items:[

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { ROLE_LABELS, atLeast } from '../../config/roles'
 import { logChange, logFieldChanges } from '../../lib/changeLog'
+import { meetsLevel, PERMISSION_KEYS } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
 
 const TABS = [
@@ -63,7 +64,7 @@ function ComingSoonTab({name}) {
 
 // ── Overview Tab ──────────────────────────────────────────────────────────────
 
-function OverviewTab({emp, canViewSensitive, canEdit, onRefresh, onEdit}) {
+function OverviewTab({emp, canViewSensitive, canEdit, onRefresh, onEdit, viewerProfile}) {
   const [inviting, setInviting] = useState(false)
   const [inviteMsg, setInviteMsg] = useState(null)
   const rc = ROLE_COLORS[emp.role] || ROLE_COLORS.officer
@@ -119,6 +120,7 @@ function OverviewTab({emp, canViewSensitive, canEdit, onRefresh, onEdit}) {
           <InfoRow label="Relation" value={emp.emergency_contact_relation}/>
         </Section>
       )}
+      <PermissionsSection emp={emp} viewerProfile={viewerProfile} onRefresh={onRefresh}/>
       {canEdit && (
         <div style={{display:'flex',gap:'8px',flexWrap:'wrap',marginTop:'8px'}}>
           <button onClick={onEdit} style={{display:'inline-flex',alignItems:'center',gap:'8px',background:'var(--accent-bg)',border:'1px solid var(--accent-border)',borderRadius:'var(--radius-md)',color:'var(--accent)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',padding:'0 18px',height:'40px'}}>
@@ -132,6 +134,51 @@ function OverviewTab({emp, canViewSensitive, canEdit, onRefresh, onEdit}) {
         </div>
       )}
     </div>
+  )
+}
+
+// ── Permissions Section (within Overview Tab) ─────────────────────────────────
+
+function PermissionsSection({ emp, viewerProfile, onRefresh }) {
+  const canGrant = meetsLevel(viewerProfile?.role, 4)
+  const [perms, setPerms] = useState({})
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved]   = useState(false)
+
+  useEffect(() => {
+    if (!canGrant || !emp.user_id) return
+    supabase.from('user_profile').select('custom_permissions').eq('id', emp.user_id).single()
+      .then(({ data }) => setPerms(data?.custom_permissions || {}))
+  }, [emp.user_id, canGrant])
+
+  async function save() {
+    if (!emp.user_id) return
+    setSaving(true)
+    await supabase.from('user_profile').update({ custom_permissions: perms }).eq('id', emp.user_id)
+    setSaving(false); setSaved(true); setTimeout(()=>setSaved(false),2500)
+  }
+
+  if (!canGrant || !emp.user_id) return null
+
+  return (
+    <Section title="Permission Overrides (Admin)">
+      <div style={{fontSize:'11px',color:'var(--text-muted)',marginBottom:'10px',lineHeight:1.5}}>
+        Grant specific permissions above this employee's default role level. These are not logged in the change log.
+      </div>
+      {Object.entries(PERMISSION_KEYS).map(([key, meta]) => (
+        <div key={key} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'6px 0',borderBottom:'1px solid var(--border)'}}>
+          <span style={{fontSize:'12px',color:'var(--text-secondary)'}}>{meta.label}</span>
+          <label style={{display:'flex',alignItems:'center',gap:'6px',cursor:'pointer'}}>
+            <span style={{fontSize:'11px',color:perms[key]?'var(--accent)':'var(--text-muted)'}}>{perms[key]?'Granted':'Default'}</span>
+            <input type="checkbox" checked={!!perms[key]} onChange={e=>setPerms(p=>({...p,[key]:e.target.checked||undefined}))}
+              style={{accentColor:'var(--accent)',width:'15px',height:'15px',cursor:'pointer'}}/>
+          </label>
+        </div>
+      ))}
+      <button onClick={save} disabled={saving} style={{marginTop:'10px',display:'inline-flex',alignItems:'center',gap:'6px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-sm)',padding:'0 14px',height:'34px',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,cursor:'pointer',opacity:saving?0.6:1}}>
+        <Icon name="save" size={13}/>{saving?'SAVING...':saved?'SAVED ✓':'SAVE PERMISSIONS'}
+      </button>
+    </Section>
   )
 }
 
@@ -399,7 +446,7 @@ function EmpEditModal({ emp, onClose, onSaved }) {
 
 // ── Main EmployeeProfile Component ────────────────────────────────────────────
 
-export default function EmployeeProfile({ emp, allEmployees, activeTab, onTabChange, onNavigate, onClose, canViewSensitive, canEdit, onRefresh }) {
+export default function EmployeeProfile({ emp, allEmployees, activeTab, onTabChange, onNavigate, onClose, canViewSensitive, canEdit, onRefresh, profile }) {
   const [editing, setEditing] = useState(false)
   const rc = ROLE_COLORS[emp.role] || ROLE_COLORS.officer
   const sc = STATUS_COLORS[emp.status] || STATUS_COLORS.inactive
@@ -471,7 +518,7 @@ export default function EmployeeProfile({ emp, allEmployees, activeTab, onTabCha
 
         {/* Tab Content */}
         <div style={{flex:1,overflowY:'auto'}}>
-          {activeTab === 'overview'    && <OverviewTab emp={emp} canViewSensitive={canViewSensitive} canEdit={canEdit} onRefresh={onRefresh} onEdit={()=>setEditing(true)}/>}
+          {activeTab === 'overview'    && <OverviewTab emp={emp} canViewSensitive={canViewSensitive} canEdit={canEdit} onRefresh={onRefresh} onEdit={()=>setEditing(true)} viewerProfile={profile}/>}
           {activeTab === 'credentials' && <CredentialsTab emp={emp} canEdit={canEdit}/>}
           {activeTab === 'training'    && <TrainingTab emp={emp} canEdit={canEdit}/>}
           {activeTab === 'documents'   && <DocumentsTab emp={emp} canEdit={canEdit}/>}

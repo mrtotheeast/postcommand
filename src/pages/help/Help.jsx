@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { useAuth } from '../../context/AuthContext'
+import { getRoleLevel, FEATURE_ACCESS, ROLE_LABELS } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
 
 const SECTIONS = [
@@ -95,6 +97,7 @@ const SECTIONS = [
 ]
 
 export default function Help() {
+  const { profile } = useAuth()
   const [search, setSearch] = useState('')
   const [open, setOpen]     = useState({})
 
@@ -113,11 +116,45 @@ export default function Help() {
     setOpen(prev => ({ ...prev, [key]: !prev[key] }))
   }
 
+  const level = getRoleLevel(profile?.role)
+  const myFeatures = Object.entries(FEATURE_ACCESS).filter(([,f]) => f.minLevel <= level).map(([k,f]) => ({ key:k, ...f }))
+
   return (
     <div style={{ padding:'24px', maxWidth:'820px', animation:'fadeIn 200ms ease' }}>
       <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}`}</style>
       <h2 style={{ fontFamily:'var(--font-display)', fontSize:'28px', letterSpacing:'2px', color:'var(--text-primary)', lineHeight:1, marginBottom:'4px' }}>HELP CENTER</h2>
       <p style={{ fontSize:'12px', color:'var(--text-muted)', marginBottom:'24px' }}>Answers to common questions about PostCommand.</p>
+
+      {/* Tour launcher */}
+      <div style={{ background:'var(--accent-bg)', border:'1px solid var(--accent-border)', borderRadius:'var(--radius-md)', padding:'16px 20px', marginBottom:'20px', display:'flex', alignItems:'center', gap:'16px', flexWrap:'wrap' }}>
+        <div style={{ flex:1 }}>
+          <div style={{ fontFamily:'var(--font-condensed)', fontSize:'13px', fontWeight:700, color:'var(--accent)', letterSpacing:'1px', marginBottom:'3px' }}>GUIDED TOUR</div>
+          <div style={{ fontSize:'12px', color:'var(--text-secondary)' }}>Interactive tour of key features for your access level. Takes about 60 seconds.</div>
+        </div>
+        <button onClick={() => window.dispatchEvent(new Event('start-tour'))} style={{ display:'inline-flex', alignItems:'center', gap:'8px', background:'var(--accent)', color:'var(--text-inverse)', border:'none', borderRadius:'var(--radius-sm)', padding:'0 18px', height:'40px', fontFamily:'var(--font-condensed)', fontSize:'13px', fontWeight:700, letterSpacing:'1px', cursor:'pointer', flexShrink:0 }}>
+          <Icon name="play-circle" size={15}/>LAUNCH TOUR
+        </button>
+      </div>
+
+      {/* My features */}
+      {profile && (
+        <div style={{ background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-md)', padding:'18px 20px', marginBottom:'24px' }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'12px', flexWrap:'wrap', gap:'8px' }}>
+            <div>
+              <div style={{ fontFamily:'var(--font-condensed)', fontSize:'13px', fontWeight:700, color:'var(--text-primary)', letterSpacing:'1px' }}>YOUR FEATURES</div>
+              <div style={{ fontSize:'11px', color:'var(--text-muted)', marginTop:'2px' }}>{ROLE_LABELS[profile.role]||profile.role} · {myFeatures.length} features available</div>
+            </div>
+            <a href="/features" target="_blank" rel="noreferrer" style={{ display:'inline-flex', alignItems:'center', gap:'6px', fontSize:'12px', color:'var(--accent)', fontFamily:'var(--font-condensed)', letterSpacing:'0.5px', textDecoration:'none' }}>
+              VIEW FULL GUIDE →
+            </a>
+          </div>
+          <div style={{ display:'flex', flexWrap:'wrap', gap:'6px' }}>
+            {myFeatures.map(f => (
+              <span key={f.key} style={{ fontSize:'11px', color:'var(--text-secondary)', background:'var(--bg-surface)', border:'1px solid var(--border)', borderRadius:'6px', padding:'3px 10px' }}>{f.description}</span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Search */}
       <div style={{ position:'relative', marginBottom:'28px' }}>

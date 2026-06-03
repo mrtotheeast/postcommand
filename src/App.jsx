@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useAuth } from './context/AuthContext'
+import { GuidedTour } from './components/ui/GuidedTour'
 import { supabase } from './lib/supabase'
 import { isNative } from './lib/platform'
 import AppLayout from './components/layout/AppLayout'
@@ -34,6 +35,10 @@ import AuditLog from './pages/audit/AuditLog'
 import Payroll from './pages/payroll/Payroll'
 import PerformanceReviews from './pages/reviews/PerformanceReviews'
 import ClientManagement from './pages/clients/ClientManagement'
+import Features from './pages/features/Features'
+import PrivacyPolicy from './pages/legal/PrivacyPolicy'
+import TermsOfService from './pages/legal/TermsOfService'
+import Support from './pages/legal/Support'
 
 function ComingSoon({ name }) {
   return <div style={{padding:'40px 24px',fontFamily:'var(--font-display)',fontSize:'24px',letterSpacing:'2px',color:'var(--accent)'}}>{name.toUpperCase()} — COMING SOON</div>
@@ -98,14 +103,34 @@ function AuthCallback() {
 }
 
 export default function App() {
-  const { isAuthenticated, loading, role } = useAuth()
+  const { isAuthenticated, loading, role, profile } = useAuth()
+  const [showTour, setShowTour] = useState(false)
+
+  useEffect(() => {
+    if (!profile?.id) return
+    const seen  = localStorage.getItem(`pc-tour-seen-${profile.id}`)
+    const never = localStorage.getItem(`pc-tour-never-${profile.id}`)
+    if (!seen && !never) setShowTour(true)
+  }, [profile?.id])
+
+  useEffect(() => {
+    const handler = () => setShowTour(true)
+    window.addEventListener('start-tour', handler)
+    return () => window.removeEventListener('start-tour', handler)
+  }, [])
+
   if (loading) return <div style={{minHeight:'100vh',backgroundColor:'var(--bg-base)',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'var(--font-display)',fontSize:'22px',color:'var(--accent)',letterSpacing:'3px'}}>LOADING...</div>
   return (
     <>
+    {showTour && profile && <GuidedTour profile={profile} onDone={() => setShowTour(false)} />}
     <OAuthCallbackHandler />
     <PrivacyBanner />
     <Routes>
       <Route path="/reciprocity" element={<CCWMap />} />
+      <Route path="/features"    element={<Features />} />
+      <Route path="/privacy"     element={<PrivacyPolicy />} />
+      <Route path="/terms"       element={<TermsOfService />} />
+      <Route path="/support"     element={<Support />} />
       <Route path="/auth/callback" element={<AuthCallback />} />
       <Route path="/login" element={isAuthenticated ? <Navigate to={role === 'client' ? '/portal' : '/dashboard'} replace /> : <Login />} />
       <Route path="/portal" element={<ClientRoute><ClientPortal /></ClientRoute>} />

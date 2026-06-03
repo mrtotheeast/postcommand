@@ -137,7 +137,8 @@ export default function AppLayout({ children }) {
                 return (
                   <button key={item.id} style={{...s.navItem,...(active?s.navItemActive:{})}}
                     onClick={() => { navigate(item.path); document.getElementById('main-content')?.scrollTo(0,0) }}
-                    aria-current={active?'page':undefined}>
+                    aria-current={active?'page':undefined}
+                    data-tour={item.id}>
                     <Icon name={item.icon} size={17} />
                     <span style={s.navLabel}>{item.label}</span>
                     {count > 0 && <Badge count={count} />}
@@ -179,7 +180,7 @@ export default function AppLayout({ children }) {
 
   return (
     <div style={s.shell}>
-      {!isMobile && <aside style={s.sidebar} className="sidebar"><SidebarContent /></aside>}
+      {!isMobile && <aside style={s.sidebar} className="sidebar" data-tour="sidebar"><SidebarContent /></aside>}
       {isMobile && drawerOpen && <div style={s.overlay} onClick={() => setDrawerOpen(false)} />}
       {isMobile && (
         <aside style={{...s.drawer,...(drawerOpen?s.drawerOpen:{})}} className="sidebar">

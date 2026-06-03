@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useTheme } from '../../context/ThemeContext'
 import { supabase } from '../../lib/supabase'
-import { ROLE_LABELS, ROLE_LEVELS, atLeast } from '../../config/roles'
+import { ROLE_LABELS, ROLE_LEVELS, atLeast, ROLE_TITLES } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
 
 // ── Shared primitives ─────────────────────────────────────────────────────────
@@ -119,14 +119,19 @@ export default function Settings() {
 // ── Tab 1 — Company Profile ───────────────────────────────────────────────────
 
 function CompanyTab({ profile, companyId }) {
-  const [form, setForm]   = useState({ name:'', logo_url:'', primary_color:'#c8a84b', address:'', phone:'', email:'', license_number:'' })
+  const [form, setForm]   = useState({ name:'', logo_url:'', primary_color:'#c8a84b', address:'', phone:'', email:'', license_number:'', role_style:'military' })
+  const [customRanks, setCustomRanks] = useState([])
+  const [newRank, setNewRank]         = useState({ title:'', level:'' })
   const [saving, setSaving] = useState(false)
   const [msg, setMsg]     = useState(null)
 
   useEffect(() => {
     if (!companyId) return
     supabase.from('company').select('*').eq('id', companyId).single().then(({ data }) => {
-      if (data) setForm(f => ({ ...f, name:data.name||'', logo_url:data.logo_url||'', primary_color:data.primary_color||'#c8a84b', address:data.address||'', phone:data.phone||'', email:data.email||'', license_number:data.license_number||'' }))
+      if (data) {
+        setForm(f => ({ ...f, name:data.name||'', logo_url:data.logo_url||'', primary_color:data.primary_color||'#c8a84b', address:data.address||'', phone:data.phone||'', email:data.email||'', license_number:data.license_number||'', role_style:data.role_style||'military' }))
+        setCustomRanks(data.custom_ranks||[])
+      }
     })
     // Also load from localStorage as fallback
     const saved = getKey(`pc-company-${companyId}`)
@@ -142,7 +147,7 @@ function CompanyTab({ profile, companyId }) {
     document.documentElement.style.setProperty('--accent', form.primary_color)
     setKey(`pc-company-${companyId}`, { primaryColor:form.primary_color, logoUrl:form.logo_url, displayName:form.name })
     // Upsert to company table
-    const { error } = await supabase.from('company').upsert({ id:companyId, name:form.name.trim()||null, logo_url:form.logo_url.trim()||null, primary_color:form.primary_color, address:form.address.trim()||null, phone:form.phone.trim()||null, email:form.email.trim()||null, license_number:form.license_number.trim()||null }, { onConflict:'id' })
+    const { error } = await supabase.from('company').upsert({ id:companyId, name:form.name.trim()||null, logo_url:form.logo_url.trim()||null, primary_color:form.primary_color, address:form.address.trim()||null, phone:form.phone.trim()||null, email:form.email.trim()||null, license_number:form.license_number.trim()||null, role_style:form.role_style, custom_ranks:customRanks }, { onConflict:'id' })
     setSaving(false)
     setMsg(error ? { type:'err', text:error.message } : { type:'ok', text:'Company profile saved.' })
     setTimeout(() => setMsg(null), 3000)
@@ -191,6 +196,44 @@ function CompanyTab({ profile, companyId }) {
         <button style={{ ...s.btn, opacity:saving?0.6:1 }} onClick={save} disabled={saving}>
           <Icon name="save" size={14}/>{saving?'SAVING...':'SAVE CHANGES'}
         </button>
+      </div>
+
+      {/* Role Style */}
+      <div style={s.card}>
+        <div style={s.cardTitle}>Role Display Style</div>
+        <div style={{ fontSize:'13px', color:'var(--text-secondary)', marginBottom:'14px', lineHeight:1.6 }}>Choose how role titles are displayed throughout the app.</div>
+        <div style={{ display:'flex', gap:'12px', flexWrap:'wrap' }}>
+          {[['military','Military — Officer, Corporal, Sergeant, Lieutenant, Chief'],['standard','Standard — Employee, Lead, Supervisor, Manager, Admin']].map(([v,l])=>(
+            <label key={v} style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer',padding:'12px 16px',border:`2px solid ${form.role_style===v?'var(--accent)':'var(--border-subtle)'}`,borderRadius:'var(--radius-md)',background:form.role_style===v?'var(--accent-bg)':'transparent',flex:1,minWidth:'220px',transition:'all 150ms ease'}}>
+              <input type="radio" value={v} checked={form.role_style===v} onChange={()=>setForm(p=>({...p,role_style:v}))} style={{accentColor:'var(--accent)'}}/>
+              <span style={{fontSize:'13px',color:form.role_style===v?'var(--accent)':'var(--text-primary)',fontWeight:form.role_style===v?600:400}}>{l}</span>
+            </label>
+          ))}
+        </div>
+        <div style={{marginTop:'14px',fontSize:'11px',color:'var(--text-muted)'}}>
+          Current titles: {Object.entries(ROLE_TITLES[form.role_style]||ROLE_TITLES.military).filter(([k])=>k!=='0'&&k!=='6').map(([,v])=>v).join(' → ')}
+        </div>
+      </div>
+
+      {/* Custom Ranks */}
+      <div style={s.card}>
+        <div style={s.cardTitle}>Custom Ranks</div>
+        <div style={{fontSize:'13px',color:'var(--text-secondary)',marginBottom:'14px',lineHeight:1.6}}>
+          Add intermediate ranks between standard levels. Example: Captain (level 3.5) sits between Sergeant and Lieutenant.
+        </div>
+        {customRanks.sort((a,b)=>a.level-b.level).map((r,i)=>(
+          <div key={i} style={{display:'flex',alignItems:'center',gap:'12px',padding:'8px 0',borderBottom:'1px solid var(--border)'}}>
+            <span style={{fontSize:'13px',fontWeight:600,color:'var(--text-primary)',flex:1}}>{r.title}</span>
+            <span style={{fontSize:'11px',color:'var(--text-muted)',fontFamily:'var(--font-condensed)'}}>Level {r.level}</span>
+            <button onClick={()=>setCustomRanks(prev=>prev.filter((_,j)=>j!==i))} style={{background:'transparent',border:'none',color:'var(--text-muted)',cursor:'pointer',padding:'2px',display:'flex'}}><Icon name="x" size={13}/></button>
+          </div>
+        ))}
+        <div style={{display:'flex',gap:'8px',marginTop:'12px'}}>
+          <input placeholder="Rank title (e.g. Captain)" value={newRank.title} onChange={e=>setNewRank(p=>({...p,title:e.target.value}))} style={{...s.inp,flex:1}}/>
+          <input type="number" min="1" max="5.9" step="0.1" placeholder="Level (1-5.9)" value={newRank.level} onChange={e=>setNewRank(p=>({...p,level:e.target.value}))} style={{...s.inp,width:'130px'}}/>
+          <button onClick={()=>{ if(!newRank.title||!newRank.level)return; setCustomRanks(p=>[...p,{title:newRank.title.trim(),level:parseFloat(newRank.level)}]); setNewRank({title:'',level:''}) }} style={{...s.ghost,height:'44px',padding:'0 14px',flexShrink:0}}>ADD</button>
+        </div>
+        <div style={{marginTop:'10px',fontSize:'11px',color:'var(--text-muted)'}}>Custom ranks are saved when you click Save Changes above.</div>
       </div>
     </>
   )
