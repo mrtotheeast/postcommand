@@ -1,223 +1,248 @@
-// PostCommand Email Service — Resend API
-// Env vars: RESEND_API_KEY, FROM_EMAIL (default: noreply@postcommand.app)
-// Docs: https://resend.com/docs/api-reference/emails/send-email
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const cors = {
+const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-const FROM = 'PostCommand <noreply@postcommand.app>'
+serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
-// ── HTML email template ───────────────────────────────────────────────────────
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+  )
 
-function template(title: string, body: string, cta?: { label: string; url: string }) {
-  return `<!DOCTYPE html>
+  const { type, to, data } = await req.json()
+
+  // Load company branding
+  const { data: company } = await supabase
+    .from('company')
+    .select('name, logo_url, email, phone, primary_color')
+    .eq('id', data.company_id)
+    .single()
+
+  const companyName    = company?.name        || data.companyName || 'PostCommand'
+  const companyLogo    = company?.logo_url    || null
+  const companyEmail   = company?.email       || 'noreply@postcommand.app'
+  const companyPhone   = company?.phone       || null
+  const primaryColor   = company?.primary_color || '#1a2e4a'
+
+  function branded(subject: string, body: string) {
+    return {
+      subject,
+      html: `
+<!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<style>
-  * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; background:#f0f2f5; color:#1a1a2e; }
-  .wrap { max-width:560px; margin:32px auto; background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 4px 24px rgba(0,0,0,0.08); }
-  .header { background:#0d0f14; padding:24px 32px; display:flex; align-items:center; gap:12px; }
-  .logo { font-size:22px; font-weight:900; letter-spacing:4px; color:#c8a84b; }
-  .logo span { color:#f0f2f8; }
-  .body { padding:32px; }
-  h1 { font-size:22px; font-weight:700; color:#0d1f35; margin-bottom:12px; line-height:1.3; }
-  p { font-size:15px; color:#4a5568; line-height:1.7; margin-bottom:12px; }
-  .cta { display:inline-block; background:#c8a84b; color:#0d0f14; text-decoration:none; padding:13px 28px; border-radius:8px; font-weight:700; font-size:14px; letter-spacing:0.5px; margin-top:8px; }
-  .divider { height:1px; background:#e8edf3; margin:24px 0; }
-  .meta { font-size:12px; color:#8899aa; background:#f7f9fc; padding:16px 32px; }
-  .badge { display:inline-block; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; letter-spacing:0.5px; }
-  .badge-success { background:#d1fae5; color:#065f46; }
-  .badge-warning { background:#fef3c7; color:#92400e; }
-  .badge-danger { background:#fee2e2; color:#991b1b; }
-  .badge-info { background:#dbeafe; color:#1e40af; }
-</style>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>${subject}</title>
 </head>
-<body>
-<div class="wrap">
-  <div class="header">
-    <div class="logo">POST<span>COMMAND</span></div>
-  </div>
-  <div class="body">
-    <h1>${title}</h1>
-    ${body}
-    ${cta ? `<br/><a class="cta" href="${cta.url}">${cta.label}</a>` : ''}
-  </div>
-  <div class="meta">
-    <strong>PostCommand</strong> · Security Workforce Management ·
-    <a href="https://postcommand.app" style="color:#8899aa;">postcommand.app</a>
-    <br/>You're receiving this because you have a PostCommand account.
-  </div>
-</div>
+<body style="margin:0;padding:0;background:#f0f4f8;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f0f4f8;padding:40px 20px;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+        
+        <!-- Header -->
+        <tr><td style="background:${primaryColor};border-radius:12px 12px 0 0;padding:32px 40px;text-align:center;">
+          ${companyLogo
+            ? `<img src="${companyLogo}" alt="${companyName}" style="max-height:60px;max-width:200px;object-fit:contain;margin-bottom:8px;"/>`
+            : `<div style="font-size:24px;font-weight:800;color:#ffffff;letter-spacing:2px;text-transform:uppercase;">${companyName}</div>`
+          }
+          <div style="font-size:11px;color:rgba(255,255,255,0.6);letter-spacing:2px;text-transform:uppercase;margin-top:4px;">Powered by PostCommand</div>
+        </td></tr>
+
+        <!-- Body -->
+        <tr><td style="background:#ffffff;padding:40px;">
+          ${body}
+        </td></tr>
+
+        <!-- Footer -->
+        <tr><td style="background:#f8fafc;border-radius:0 0 12px 12px;padding:24px 40px;text-align:center;border-top:1px solid #e2e8f0;">
+          <div style="font-size:12px;color:#94a3b8;line-height:1.6;">
+            ${companyName}
+            ${companyPhone ? ` · ${companyPhone}` : ''}
+            ${companyEmail !== 'noreply@postcommand.app' ? ` · <a href="mailto:${companyEmail}" style="color:#94a3b8;">${companyEmail}</a>` : ''}
+          </div>
+          <div style="font-size:11px;color:#cbd5e1;margin-top:8px;">
+            This email was sent via PostCommand Workforce Management
+          </div>
+        </td></tr>
+
+      </table>
+    </td></tr>
+  </table>
 </body>
 </html>`
-}
-
-// ── Email templates ───────────────────────────────────────────────────────────
-
-const templates = {
-  timesheet_approved: (d: any) => ({
-    subject: `✅ Timesheet Approved — ${d.date}`,
-    html: template(
-      'Your timesheet has been approved.',
-      `<p>Hi ${d.firstName},</p>
-       <p>Your timesheet for <strong>${d.date}</strong> at <strong>${d.siteName}</strong> has been reviewed and approved.</p>
-       <div class="divider"></div>
-       <p><strong>Date:</strong> ${d.date}</p>
-       <p><strong>Hours:</strong> ${d.hours}</p>
-       <p><strong>Site:</strong> ${d.siteName}</p>`,
-      { label: 'View Timesheets →', url: `${d.appUrl}/timesheets` }
-    ),
-  }),
-
-  timesheet_rejected: (d: any) => ({
-    subject: `⚠️ Timesheet Rejected — ${d.date}`,
-    html: template(
-      'Your timesheet was not approved.',
-      `<p>Hi ${d.firstName},</p>
-       <p>Your timesheet for <strong>${d.date}</strong> has been rejected.</p>
-       ${d.reason ? `<p><strong>Reason:</strong> ${d.reason}</p>` : ''}
-       <p>Please review and resubmit if needed, or contact your supervisor.</p>`,
-      { label: 'View Timesheets →', url: `${d.appUrl}/timesheets` }
-    ),
-  }),
-
-  schedule_published: (d: any) => ({
-    subject: `📅 Your Schedule Has Been Published`,
-    html: template(
-      'New shifts posted to your schedule.',
-      `<p>Hi ${d.firstName},</p>
-       <p>Your supervisor has published ${d.shiftCount} shift${d.shiftCount !== 1 ? 's' : ''} to your schedule.</p>
-       <p><strong>Period:</strong> ${d.period}</p>
-       <p>Log in to view your full schedule, request swaps, or set your availability.</p>`,
-      { label: 'View My Schedule →', url: `${d.appUrl}/scheduling` }
-    ),
-  }),
-
-  training_assigned: (d: any) => ({
-    subject: `📚 Training Assigned: ${d.courseTitle}`,
-    html: template(
-      `New training assigned: ${d.courseTitle}`,
-      `<p>Hi ${d.firstName},</p>
-       <p>You've been assigned a training course:</p>
-       <div class="divider"></div>
-       <p><strong>Course:</strong> ${d.courseTitle}</p>
-       ${d.dueDate ? `<p><strong>Due Date:</strong> ${d.dueDate}</p>` : ''}
-       ${d.duration ? `<p><strong>Duration:</strong> ${d.duration} minutes</p>` : ''}
-       <div class="divider"></div>
-       <p>Complete this training to stay compliant with your organization's requirements.</p>`,
-      { label: 'Start Training →', url: `${d.appUrl}/training` }
-    ),
-  }),
-
-  pto_approved: (d: any) => ({
-    subject: `✅ PTO Approved — ${d.startDate} to ${d.endDate}`,
-    html: template(
-      'Your PTO request has been approved.',
-      `<p>Hi ${d.firstName},</p>
-       <p>Your <strong>${d.ptoType}</strong> request has been approved.</p>
-       <div class="divider"></div>
-       <p><strong>Dates:</strong> ${d.startDate} → ${d.endDate}</p>
-       <p><strong>Days:</strong> ${d.days}</p>`,
-      { label: 'View Timesheets →', url: `${d.appUrl}/timesheets` }
-    ),
-  }),
-
-  pto_denied: (d: any) => ({
-    subject: `❌ PTO Request Denied — ${d.startDate}`,
-    html: template(
-      'Your PTO request was not approved.',
-      `<p>Hi ${d.firstName},</p>
-       <p>Your <strong>${d.ptoType}</strong> request for <strong>${d.startDate} → ${d.endDate}</strong> was denied.</p>
-       <p>Please speak with your supervisor for more information.</p>`,
-      { label: 'View Timesheets →', url: `${d.appUrl}/timesheets` }
-    ),
-  }),
-
-  sos_alert: (d: any) => ({
-    subject: `🚨 SOS ALERT — ${d.officerName} at ${d.siteName}`,
-    html: template(
-      `SOS triggered by ${d.officerName}`,
-      `<p>An SOS alert has been triggered by <strong>${d.officerName}</strong>.</p>
-       <div class="divider"></div>
-       <p><strong>Officer:</strong> ${d.officerName}</p>
-       <p><strong>Site:</strong> ${d.siteName || 'Unknown'}</p>
-       <p><strong>Time:</strong> ${d.time}</p>
-       ${d.location ? `<p><strong>Location:</strong> ${d.location}</p>` : ''}
-       <p style="color:#c0392b;font-weight:bold;">Take immediate action. Log in to PostCommand to view the live alert.</p>`,
-      { label: 'View SOS Dashboard →', url: `${d.appUrl}/sos` }
-    ),
-  }),
-
-  incident_submitted: (d: any) => ({
-    subject: `🔔 New Incident Report — ${d.cadNumber} (${d.incidentType})`,
-    html: template(
-      `Incident report submitted for review`,
-      `<p>A new incident report has been submitted and is awaiting your review.</p>
-       <div class="divider"></div>
-       <p><strong>CAD #:</strong> ${d.cadNumber}</p>
-       <p><strong>Type:</strong> ${d.incidentType}</p>
-       <p><strong>Site:</strong> ${d.siteName || '—'}</p>
-       <p><strong>Submitted by:</strong> ${d.officerName}</p>
-       <p><strong>Time:</strong> ${d.time}</p>`,
-      { label: 'Review Incident →', url: `${d.appUrl}/incidents` }
-    ),
-  }),
-
-  welcome: (d: any) => ({
-    subject: `Welcome to PostCommand — ${d.companyName}`,
-    html: template(
-      `Welcome to PostCommand, ${d.firstName}!`,
-      `<p>Your account has been created for <strong>${d.companyName}</strong>.</p>
-       <div class="divider"></div>
-       <p>To get started:</p>
-       <ol style="padding-left:20px;margin:12px 0;line-height:2">
-         <li>Check your email for a confirmation link from Supabase</li>
-         <li>Click the link to verify your account</li>
-         <li>Use the "Forgot Password" link to set your password</li>
-         <li>Log in at postcommand.app</li>
-       </ol>`,
-      { label: 'Go to PostCommand →', url: `${d.appUrl}/login` }
-    ),
-  }),
-}
-
-// ── Handler ───────────────────────────────────────────────────────────────────
-
-Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
-
-  try {
-    const { type, to, data } = await req.json()
-    const apiKey = Deno.env.get('RESEND_API_KEY')
-    if (!apiKey) throw new Error('RESEND_API_KEY not set')
-    if (!to || !type) throw new Error('Missing required fields: to, type')
-
-    const templateFn = templates[type as keyof typeof templates]
-    if (!templateFn) throw new Error(`Unknown email type: ${type}`)
-
-    const appUrl = Deno.env.get('APP_URL') || 'https://postcommand.app'
-    const { subject, html } = templateFn({ ...data, appUrl })
-
-    const res = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ from: FROM, to: Array.isArray(to) ? to : [to], subject, html }),
-    })
-
-    const result = await res.json()
-    if (!res.ok) throw new Error(result.message || 'Resend API error')
-
-    return new Response(JSON.stringify({ id: result.id }), { headers: { ...cors, 'Content-Type': 'application/json' } })
-  } catch (e) {
-    console.error('send-email error:', e.message)
-    return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: { ...cors, 'Content-Type': 'application/json' } })
+    }
   }
+
+  let emailPayload: { subject: string; html: string } | null = null
+
+  switch (type) {
+
+    case 'invite': {
+      const { firstName, inviteUrl } = data
+      emailPayload = branded(
+        `You've been invited to join ${companyName}`,
+        `
+        <h2 style="margin:0 0 8px;font-size:24px;color:#0f172a;">Welcome to the team, ${firstName}!</h2>
+        <p style="margin:0 0 24px;font-size:15px;color:#475569;line-height:1.6;">
+          ${companyName} has invited you to join their workforce management platform. 
+          Click below to set up your account and get started.
+        </p>
+        <div style="text-align:center;margin:32px 0;">
+          <a href="${inviteUrl}" 
+             style="display:inline-block;background:${primaryColor};color:#ffffff;font-weight:700;
+                    font-size:14px;letter-spacing:1px;text-transform:uppercase;text-decoration:none;
+                    padding:16px 40px;border-radius:8px;">
+            Set Up My Account
+          </a>
+        </div>
+        <p style="margin:24px 0 0;font-size:13px;color:#94a3b8;text-align:center;">
+          This link expires in 24 hours. If you didn't expect this invitation, you can ignore this email.
+        </p>
+        `
+      )
+      break
+    }
+
+    case 'welcome': {
+      const { firstName, loginUrl } = data
+      emailPayload = branded(
+        `Welcome to ${companyName}`,
+        `
+        <h2 style="margin:0 0 8px;font-size:24px;color:#0f172a;">You're all set, ${firstName}!</h2>
+        <p style="margin:0 0 24px;font-size:15px;color:#475569;line-height:1.6;">
+          Your account has been confirmed. You can now log in to access your schedule, 
+          timesheets, incident reports, and more.
+        </p>
+        <div style="text-align:center;margin:32px 0;">
+          <a href="${loginUrl || 'https://postcommand.app'}" 
+             style="display:inline-block;background:${primaryColor};color:#ffffff;font-weight:700;
+                    font-size:14px;letter-spacing:1px;text-transform:uppercase;text-decoration:none;
+                    padding:16px 40px;border-radius:8px;">
+            Log In Now
+          </a>
+        </div>
+        `
+      )
+      break
+    }
+
+    case 'sos_alert': {
+      const { officerName, siteName, timestamp, mapUrl } = data
+      emailPayload = branded(
+        `🚨 SOS Alert — ${officerName} at ${siteName}`,
+        `
+        <div style="background:#fef2f2;border:2px solid #fca5a5;border-radius:8px;padding:20px;margin-bottom:24px;">
+          <div style="font-size:18px;font-weight:800;color:#dc2626;margin-bottom:4px;">⚠ EMERGENCY SOS TRIGGERED</div>
+          <div style="font-size:14px;color:#b91c1c;">Immediate response required</div>
+        </div>
+        <table style="width:100%;font-size:14px;color:#475569;">
+          <tr><td style="padding:8px 0;border-bottom:1px solid #f1f5f9;font-weight:600;color:#0f172a;width:40%;">Officer</td><td style="padding:8px 0;border-bottom:1px solid #f1f5f9;">${officerName}</td></tr>
+          <tr><td style="padding:8px 0;border-bottom:1px solid #f1f5f9;font-weight:600;color:#0f172a;">Site</td><td style="padding:8px 0;border-bottom:1px solid #f1f5f9;">${siteName}</td></tr>
+          <tr><td style="padding:8px 0;font-weight:600;color:#0f172a;">Time</td><td style="padding:8px 0;">${timestamp}</td></tr>
+        </table>
+        ${mapUrl ? `
+        <div style="text-align:center;margin:24px 0;">
+          <a href="${mapUrl}" style="display:inline-block;background:#dc2626;color:#ffffff;font-weight:700;font-size:14px;letter-spacing:1px;text-transform:uppercase;text-decoration:none;padding:14px 32px;border-radius:8px;">
+            View Location
+          </a>
+        </div>` : ''}
+        `
+      )
+      break
+    }
+
+    case 'incident_filed': {
+      const { officerName, incidentType, siteName, reportUrl } = data
+      emailPayload = branded(
+        `New Incident Report — ${incidentType} at ${siteName}`,
+        `
+        <h2 style="margin:0 0 8px;font-size:22px;color:#0f172a;">Incident Report Filed</h2>
+        <p style="margin:0 0 24px;font-size:15px;color:#475569;">A new incident report has been submitted and requires your review.</p>
+        <table style="width:100%;font-size:14px;color:#475569;">
+          <tr><td style="padding:8px 0;border-bottom:1px solid #f1f5f9;font-weight:600;color:#0f172a;width:40%;">Type</td><td style="padding:8px 0;border-bottom:1px solid #f1f5f9;text-transform:capitalize;">${incidentType?.replace(/_/g,' ')}</td></tr>
+          <tr><td style="padding:8px 0;border-bottom:1px solid #f1f5f9;font-weight:600;color:#0f172a;">Site</td><td style="padding:8px 0;border-bottom:1px solid #f1f5f9;">${siteName}</td></tr>
+          <tr><td style="padding:8px 0;font-weight:600;color:#0f172a;">Filed By</td><td style="padding:8px 0;">${officerName}</td></tr>
+        </table>
+        ${reportUrl ? `
+        <div style="text-align:center;margin:24px 0;">
+          <a href="${reportUrl}" style="display:inline-block;background:${primaryColor};color:#ffffff;font-weight:700;font-size:14px;letter-spacing:1px;text-transform:uppercase;text-decoration:none;padding:14px 32px;border-radius:8px;">
+            Review Report
+          </a>
+        </div>` : ''}
+        `
+      )
+      break
+    }
+
+    case 'schedule_published': {
+      const { weekOf, shiftCount, viewUrl } = data
+      emailPayload = branded(
+        `Your Schedule is Ready — Week of ${weekOf}`,
+        `
+        <h2 style="margin:0 0 8px;font-size:22px;color:#0f172a;">Schedule Published</h2>
+        <p style="margin:0 0 24px;font-size:15px;color:#475569;line-height:1.6;">
+          Your schedule for the week of <strong>${weekOf}</strong> has been published. 
+          You have <strong>${shiftCount} shift${shiftCount !== 1 ? 's' : ''}</strong> assigned.
+        </p>
+        <div style="text-align:center;margin:32px 0;">
+          <a href="${viewUrl || 'https://postcommand.app/scheduling'}" 
+             style="display:inline-block;background:${primaryColor};color:#ffffff;font-weight:700;
+                    font-size:14px;letter-spacing:1px;text-transform:uppercase;text-decoration:none;
+                    padding:16px 40px;border-radius:8px;">
+            View My Schedule
+          </a>
+        </div>
+        `
+      )
+      break
+    }
+
+    default:
+      return new Response(JSON.stringify({ error: `Unknown email type: ${type}` }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+  }
+
+  // Send via Resend
+  const resendKey = Deno.env.get('RESEND_API_KEY')
+  if (!resendKey) {
+    return new Response(JSON.stringify({ error: 'RESEND_API_KEY not set' }), {
+      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    })
+  }
+
+  const fromName  = companyName
+  const fromEmail = `noreply@postcommand.app`
+
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${resendKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: `${fromName} <${fromEmail}>`,
+      to: [to],
+      subject: emailPayload.subject,
+      html: emailPayload.html,
+    }),
+  })
+
+  const result = await res.json()
+
+  if (!res.ok) {
+    return new Response(JSON.stringify({ error: result }), {
+      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    })
+  }
+
+  return new Response(JSON.stringify({ ok: true, id: result.id }), {
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+  })
 })
