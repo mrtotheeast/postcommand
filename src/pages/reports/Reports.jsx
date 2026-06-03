@@ -223,7 +223,7 @@ export default function Reports() {
 
       <div style={s.toolbar}>
         <div style={{ display:'flex', gap:'2px', background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-sm)', padding:'3px', flexWrap:'wrap' }}>
-          {[['ops','Operations'],['financial','Financial'],['performance','Performance'],['ai','AI Summary'],['automation','Automation'],['site','Site Reports']].map(([v,l]) => (
+          {[['ops','Operations'],['financial','Financial'],['performance','Performance'],['ai','AI Summary'],['automation','Automation'],['site','Site Reports'],['audit','Audit Report']].map(([v,l]) => (
             <button key={v} onClick={() => setMainSection(v)} style={{ padding:'0 14px', height:'34px', border:'none', borderRadius:'4px', background:mainSection===v?'var(--accent-bg)':'transparent', color:mainSection===v?'var(--accent)':'var(--text-muted)', cursor:'pointer', fontSize:'11px', fontFamily:'var(--font-condensed)', fontWeight:mainSection===v?700:400, letterSpacing:'1px' }}>{l.toUpperCase()}</button>
           ))}
         </div>
@@ -247,6 +247,7 @@ export default function Reports() {
       {mainSection === 'ai'          && <AIReportTab companyId={profile?.company_id} computed={computed} period={period} periodLabel={periodLabel} />}
       {mainSection === 'automation'  && <ReportAutomationTab companyId={profile?.company_id} />}
       {mainSection === 'site'        && <SiteReportsTab companyId={profile?.company_id} />}
+      {mainSection === 'audit'       && <AuditReportTab companyId={profile?.company_id} />}
       {mainSection === 'ops' && <>
 
 
@@ -919,6 +920,180 @@ function SiteReportsTab({ companyId }) {
                   <span style={{ color:'var(--text-muted)' }}>{new Date(inc.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric'})}</span>
                 </div>
               ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── AI Audit Report Tab ───────────────────────────────────────────────────────
+
+function AuditReportTab({ companyId }) {
+  const [employees, setEmployees] = useState([])
+  const [dateFrom, setDateFrom]   = useState(() => { const d=new Date(); d.setMonth(d.getMonth()-1); return d.toISOString().slice(0,10) })
+  const [dateTo, setDateTo]       = useState(() => new Date().toISOString().slice(0,10))
+  const [filterEditor, setFilterEditor]   = useState('')
+  const [filterEmployee, setFilterEmployee] = useState('')
+  const [changeTypes, setChangeTypes]     = useState([])
+  const [loading, setLoading]     = useState(false)
+  const [report, setReport]       = useState(null)
+  const [error, setError]         = useState(null)
+  const [rawLogs, setRawLogs]     = useState([])
+
+  const ALL_TYPES = ['field_update','status_change','pay_change','document_upload','training_assigned','invite_sent','note_added']
+
+  useEffect(() => {
+    if (!companyId) return
+    supabase.from('employee').select('id,first_name,last_name').eq('company_id', companyId).eq('status','active').then(({data})=>setEmployees(data||[]))
+  }, [companyId])
+
+  async function generate() {
+    setLoading(true); setError(null); setReport(null)
+    try {
+      let q = supabase.from('employee_change_log').select('*').eq('company_id', companyId)
+        .gte('created_at', dateFrom+'T00:00:00').lte('created_at', dateTo+'T23:59:59')
+        .order('created_at', {ascending:false}).limit(200)
+      if (filterEditor) q = q.eq('changed_by_id', filterEditor)
+      if (filterEmployee) q = q.eq('employee_id', filterEmployee)
+      if (changeTypes.length) q = q.in('change_type', changeTypes)
+      const { data: logs } = await q
+      setRawLogs(logs||[])
+      if (!logs?.length) { setError('No changes found for the selected filters.'); setLoading(false); return }
+
+      const prompt = `You are an HR compliance auditor. Analyze this employee change log and generate a structured audit report.
+
+Period: ${dateFrom} to ${dateTo}
+Total changes: ${logs.length}
+Change data: ${JSON.stringify(logs.slice(0,100))}
+
+Generate a compliance audit report as JSON:
+{
+  "summary": "2-3 sentence executive overview",
+  "byEditor": [{"name":"...","role":"...","count":N,"types":["..."]}],
+  "topModified": [{"name":"...","changes":N,"mostCommon":"..."}],
+  "payChanges": [{"employee":"...","from":"...","to":"...","by":"...","date":"..."}],
+  "statusChanges": [{"employee":"...","from":"...","to":"...","by":"...","date":"...","reason":"..."}],
+  "flags": ["Flag 1: ...", "Flag 2: ..."],
+  "recommendations": ["Recommendation 1", "Recommendation 2"]
+}`
+
+      const { data, error: fnErr } = await supabase.functions.invoke('ai-assistant', {
+        body: { messages: [{ role:'user', content: prompt }], model:'claude-sonnet-4-6' }
+      })
+      if (fnErr) throw new Error(fnErr.message)
+      const text = data?.content?.[0]?.text || data?.text || ''
+      const match = text.match(/\{[\s\S]*\}/)
+      if (!match) throw new Error('Could not parse AI response')
+      setReport(JSON.parse(match[0]))
+    } catch(e) {
+      setError(`${e.message}. Make sure the ai-assistant edge function is deployed.`)
+    }
+    setLoading(false)
+  }
+
+  function exportPDF() {
+    if (!report) return
+    const w = window.open('', '_blank', 'width=900,height=1100')
+    w.document.write(`<!DOCTYPE html><html><head><title>Audit Report ${dateFrom} to ${dateTo}</title>
+    <style>body{font-family:sans-serif;padding:40px;color:#1a1a2e}h1{font-size:22px;letter-spacing:2px}h2{font-size:14px;text-transform:uppercase;letter-spacing:1px;color:#888;margin:24px 0 8px}p{font-size:13px;line-height:1.7;color:#333}table{width:100%;border-collapse:collapse;margin:8px 0}th,td{padding:8px 10px;text-align:left;font-size:12px;border-bottom:1px solid #eee}th{color:#888;font-weight:600}li{font-size:13px;line-height:1.7;margin:3px 0}</style></head>
+    <body><h1>EMPLOYEE AUDIT REPORT</h1><p style="color:#888;font-size:12px">${dateFrom} – ${dateTo} · Generated ${new Date().toLocaleString()}</p>
+    <h2>Executive Summary</h2><p>${report.summary||''}</p>
+    ${report.payChanges?.length?`<h2>Pay Rate Changes</h2><table><thead><tr><th>Employee</th><th>From</th><th>To</th><th>By</th><th>Date</th></tr></thead><tbody>${report.payChanges.map(r=>`<tr><td>${r.employee}</td><td>${r.from}</td><td>${r.to}</td><td>${r.by}</td><td>${r.date}</td></tr>`).join('')}</tbody></table>`:''}
+    ${report.statusChanges?.length?`<h2>Status Changes</h2><table><thead><tr><th>Employee</th><th>From</th><th>To</th><th>By</th><th>Reason</th></tr></thead><tbody>${report.statusChanges.map(r=>`<tr><td>${r.employee}</td><td>${r.from}</td><td>${r.to}</td><td>${r.by}</td><td>${r.reason||'—'}</td></tr>`).join('')}</tbody></table>`:''}
+    ${report.flags?.length?`<h2>Flags</h2><ul>${report.flags.map(f=>`<li>${f}</li>`).join('')}</ul>`:''}
+    ${report.recommendations?.length?`<h2>Recommendations</h2><ul>${report.recommendations.map(r=>`<li>${r}</li>`).join('')}</ul>`:''}
+    <p style="color:#aaa;font-size:11px;margin-top:40px">Generated by PostCommand AI Audit System</p></body></html>`)
+    w.document.close(); setTimeout(()=>w.print(),400)
+  }
+
+  const selStyle = { background:'var(--bg-input)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', padding:'9px 12px', fontSize:'13px', color:'var(--text-primary)', outline:'none', cursor:'pointer', fontFamily:'var(--font-body)' }
+
+  return (
+    <div>
+      <div style={{ fontFamily:'var(--font-display)', fontSize:'20px', letterSpacing:'2px', color:'var(--text-primary)', marginBottom:'4px' }}>AI AUDIT REPORT</div>
+      <div style={{ fontSize:'12px', color:'var(--text-muted)', marginBottom:'16px' }}>AI-powered compliance audit based on the employee change log</div>
+
+      <div style={{ ...s.chartCard, marginBottom:'16px' }}>
+        <div style={{ display:'flex', gap:'12px', flexWrap:'wrap', marginBottom:'14px' }}>
+          <div><div style={{ fontSize:'10px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', marginBottom:'4px' }}>From</div><input type="date" style={selStyle} value={dateFrom} onChange={e=>setDateFrom(e.target.value)}/></div>
+          <div><div style={{ fontSize:'10px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', marginBottom:'4px' }}>To</div><input type="date" style={selStyle} value={dateTo} onChange={e=>setDateTo(e.target.value)}/></div>
+          <div><div style={{ fontSize:'10px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', marginBottom:'4px' }}>Employee</div>
+            <select style={selStyle} value={filterEmployee} onChange={e=>setFilterEmployee(e.target.value)}>
+              <option value="">All Employees</option>
+              {employees.map(e=><option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>)}
+            </select>
+          </div>
+        </div>
+        <div style={{ marginBottom:'14px' }}>
+          <div style={{ fontSize:'10px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', marginBottom:'6px' }}>Change Types (leave all unchecked = include all)</div>
+          <div style={{ display:'flex', gap:'12px', flexWrap:'wrap' }}>
+            {ALL_TYPES.map(t=>(
+              <label key={t} style={{display:'flex',alignItems:'center',gap:'6px',fontSize:'12px',color:'var(--text-secondary)',cursor:'pointer'}}>
+                <input type="checkbox" checked={changeTypes.includes(t)} onChange={()=>setChangeTypes(prev=>prev.includes(t)?prev.filter(x=>x!==t):[...prev,t])} style={{accentColor:'var(--accent)',width:'14px',height:'14px'}}/>
+                {t.replace(/_/g,' ')}
+              </label>
+            ))}
+          </div>
+        </div>
+        <div style={{ display:'flex', gap:'10px' }}>
+          <button onClick={generate} disabled={loading} style={{ display:'inline-flex', alignItems:'center', gap:'8px', background:'var(--accent)', color:'var(--text-inverse)', border:'none', borderRadius:'var(--radius-sm)', padding:'0 20px', height:'42px', fontFamily:'var(--font-condensed)', fontSize:'13px', fontWeight:700, letterSpacing:'1px', cursor:'pointer', opacity:loading?0.6:1 }}>
+            <Icon name="zap" size={15}/>{loading?'GENERATING...':'GENERATE AUDIT REPORT'}
+          </button>
+          {report && <button onClick={exportPDF} style={{ ...s.exportBtn }}><Icon name="printer" size={14}/>PRINT PDF</button>}
+        </div>
+        {error && <div style={{ marginTop:'12px', fontSize:'12px', color:'var(--color-danger)', padding:'8px 12px', background:'var(--color-danger-bg)', borderRadius:'var(--radius-sm)', border:'1px solid rgba(192,57,43,0.3)' }}>{error}</div>}
+      </div>
+
+      {report && (
+        <div style={{ display:'flex', flexDirection:'column', gap:'12px' }}>
+          <div style={s.chartCard}>
+            <div style={s.chartTitle}>Executive Summary</div>
+            <div style={{ fontSize:'13px', color:'var(--text-secondary)', lineHeight:1.7 }}>{report.summary}</div>
+            <div style={{ marginTop:'10px', fontSize:'12px', color:'var(--text-muted)' }}>{rawLogs.length} change events analyzed · {dateFrom} to {dateTo}</div>
+          </div>
+
+          {report.payChanges?.length > 0 && (
+            <div style={s.chartCard}>
+              <div style={s.chartTitle}>Pay Rate Changes ({report.payChanges.length})</div>
+              {report.payChanges.map((r,i)=>(
+                <div key={i} style={{ display:'flex', gap:'12px', padding:'7px 0', borderBottom:'1px solid var(--border)', fontSize:'12px', flexWrap:'wrap' }}>
+                  <span style={{ color:'var(--text-primary)', fontWeight:600, minWidth:'120px' }}>{r.employee}</span>
+                  <span style={{ color:'var(--text-muted)' }}>{r.from} → <strong style={{color:'var(--accent)'}}>{r.to}</strong></span>
+                  <span style={{ color:'var(--text-muted)', marginLeft:'auto' }}>by {r.by} · {r.date}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {report.statusChanges?.length > 0 && (
+            <div style={s.chartCard}>
+              <div style={s.chartTitle}>Status Changes ({report.statusChanges.length})</div>
+              {report.statusChanges.map((r,i)=>(
+                <div key={i} style={{ display:'flex', gap:'12px', padding:'7px 0', borderBottom:'1px solid var(--border)', fontSize:'12px', flexWrap:'wrap' }}>
+                  <span style={{ color:'var(--text-primary)', fontWeight:600, minWidth:'120px' }}>{r.employee}</span>
+                  <span style={{ color:'var(--text-muted)' }}>{r.from} → <strong style={{color:'var(--color-danger)'}}>{r.to}</strong></span>
+                  {r.reason && <span style={{ color:'var(--text-muted)', fontStyle:'italic' }}>"{r.reason}"</span>}
+                  <span style={{ color:'var(--text-muted)', marginLeft:'auto' }}>by {r.by}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {report.flags?.length > 0 && (
+            <div style={{ ...s.chartCard, border:'1px solid rgba(232,148,58,0.3)', background:'var(--color-warning-bg)' }}>
+              <div style={{ ...s.chartTitle, color:'var(--color-warning)' }}>⚠ Compliance Flags ({report.flags.length})</div>
+              {report.flags.map((f,i)=><div key={i} style={{ fontSize:'13px', color:'var(--color-warning)', padding:'4px 0', lineHeight:1.5 }}>{f}</div>)}
+            </div>
+          )}
+
+          {report.recommendations?.length > 0 && (
+            <div style={s.chartCard}>
+              <div style={s.chartTitle}>Recommendations</div>
+              <ol style={{ margin:0, paddingLeft:'18px', display:'flex', flexDirection:'column', gap:'6px' }}>
+                {report.recommendations.map((r,i)=><li key={i} style={{ fontSize:'13px', color:'var(--text-secondary)', lineHeight:1.6 }}>{r}</li>)}
+              </ol>
             </div>
           )}
         </div>

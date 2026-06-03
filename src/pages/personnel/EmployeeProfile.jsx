@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { ROLE_LABELS, atLeast } from '../../config/roles'
+import { logChange, logFieldChanges } from '../../lib/changeLog'
 import Icon from '../../components/ui/Icon'
 
 const TABS = [
@@ -13,6 +14,7 @@ const TABS = [
   { id:'reviews',      label:'Reviews',      icon:'star' },
   { id:'notes',        label:'Notes',        icon:'message-square' },
   { id:'paystubs',     label:'Pay Stubs',    icon:'dollar-sign' },
+  { id:'changelog',    label:'Change Log',   icon:'clock' },
 ]
 
 const ROLE_COLORS = {
@@ -335,6 +337,23 @@ function EmpEditModal({ emp, onClose, onSaved }) {
       hire_date:form.hire_date||null, notes:form.notes.trim()||null,
       employee_id_number:form.employee_id_number.trim()||null,
     }).eq('id', emp.id)
+    // Log changed fields
+    if (emp.company_id) {
+      const { data: viewer } = await supabase.from('user_profile').select('id,first_name,last_name,role').single().then ? { data: null } : { data: null }
+      await logFieldChanges(
+        { companyId:emp.company_id, employeeId:emp.id, changedById:'', changedByName:'Admin', changedByRole:'' },
+        emp,
+        { ...emp, ...form },
+        {
+          email:           { label:'Email',           changeType:'field_update' },
+          phone_number:    { label:'Phone',            changeType:'field_update' },
+          role:            { label:'Role',             changeType:'field_update' },
+          status:          { label:'Status',           changeType:'status_change' },
+          position_title:  { label:'Position Title',   changeType:'field_update' },
+          employment_type: { label:'Employment Type',  changeType:'field_update' },
+        }
+      )
+    }
     setSaving(false); onSaved()
   }
 
@@ -440,11 +459,11 @@ export default function EmployeeProfile({ emp, allEmployees, activeTab, onTabCha
         </div>
 
         {/* Tab Bar */}
-        <div style={{display:'flex',overflowX:'auto',borderBottom:'1px solid var(--border)',flexShrink:0,scrollbarWidth:'none'}}>
+        <div style={{display:'flex',overflowX:'auto',borderBottom:'1px solid var(--border)',flexShrink:0,scrollbarWidth:'none',WebkitOverflowScrolling:'touch'}}>
           {TABS.map(tab => (
             <button key={tab.id} onClick={()=>onTabChange(tab.id)}
-              style={{display:'flex',alignItems:'center',gap:'6px',padding:'0 14px',height:'44px',background:'transparent',border:'none',borderBottom:`2px solid ${activeTab===tab.id?'var(--accent)':'transparent'}`,color:activeTab===tab.id?'var(--accent)':'var(--text-muted)',fontSize:'12px',fontFamily:'var(--font-condensed)',letterSpacing:'0.5px',cursor:'pointer',whiteSpace:'nowrap',transition:'all 150ms ease',fontWeight:activeTab===tab.id?700:400}}>
-              <Icon name={tab.icon} size={13}/>
+              style={{flex:'1',minWidth:'70px',display:'flex',alignItems:'center',justifyContent:'center',gap:'5px',padding:'0 10px',height:'44px',background:'transparent',border:'none',borderBottom:`2px solid ${activeTab===tab.id?'var(--accent)':'transparent'}`,color:activeTab===tab.id?'var(--accent)':'var(--text-muted)',fontSize:'11px',fontFamily:'var(--font-condensed)',letterSpacing:'0.3px',cursor:'pointer',whiteSpace:'nowrap',transition:'all 150ms ease',fontWeight:activeTab===tab.id?700:400,textAlign:'center'}}>
+              <Icon name={tab.icon} size={12}/>
               {tab.label}
             </button>
           ))}
@@ -461,6 +480,7 @@ export default function EmployeeProfile({ emp, allEmployees, activeTab, onTabCha
           {activeTab === 'reviews'     && <ReviewsTab emp={emp}/>}
           {activeTab === 'notes'       && <NotesTab emp={emp} canEdit={canEdit}/>}
           {activeTab === 'paystubs'    && <EmpPayStubsTab emp={emp} canEdit={canEdit}/>}
+          {activeTab === 'changelog'   && <ChangeLogTab emp={emp}/>}
         </div>
       </div>
     </>
@@ -975,6 +995,100 @@ function EmpPayStubsTab({ emp, canEdit }) {
             )
           })}
         </div>
+      )}
+    </div>
+  )
+}
+
+// ── Change Log Tab ────────────────────────────────────────────────────────────
+
+const CHANGE_TYPE_META = {
+  field_update:       { color:'var(--text-muted)',      label:'Field Update' },
+  status_change:      { color:'var(--color-danger)',    label:'Status Change' },
+  pay_change:         { color:'var(--accent)',          label:'Pay Change' },
+  document_upload:    { color:'var(--color-info)',      label:'Document' },
+  training_assigned:  { color:'var(--color-success)',   label:'Training' },
+  invite_sent:        { color:'#a07ae0',                label:'Invite' },
+  note_added:         { color:'var(--text-secondary)',  label:'Note' },
+}
+
+function ChangeLogTab({ emp }) {
+  const [logs, setLogs]     = useState([])
+  const [loading, setLoading] = useState(true)
+  const [filter, setFilter] = useState('all')
+
+  useEffect(() => { load() }, [emp.id])
+
+  async function load() {
+    setLoading(true)
+    const since = new Date()
+    since.setMonth(since.getMonth() - 24)
+    const { data } = await supabase
+      .from('employee_change_log')
+      .select('*')
+      .eq('employee_id', emp.id)
+      .gte('created_at', since.toISOString())
+      .order('created_at', { ascending: false })
+    setLogs(data||[])
+    setLoading(false)
+  }
+
+  const filtered = filter === 'all' ? logs : logs.filter(l => l.change_type === filter)
+
+  // Group by date
+  const groups = filtered.reduce((acc, log) => {
+    const date = new Date(log.created_at).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'})
+    if (!acc[date]) acc[date] = []
+    acc[date].push(log)
+    return acc
+  }, {})
+
+  const fmtTime = iso => new Date(iso).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})
+
+  if (loading) return <div style={{padding:'24px',color:'var(--text-muted)',fontSize:'12px'}}>Loading...</div>
+
+  return (
+    <div style={{padding:'24px'}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'14px',flexWrap:'wrap',gap:'8px'}}>
+        <div style={{fontSize:'12px',color:'var(--text-muted)'}}>{logs.length} change{logs.length!==1?'s':''} · last 24 months</div>
+        <select value={filter} onChange={e=>setFilter(e.target.value)}
+          style={{background:'var(--bg-input)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',padding:'5px 10px',fontSize:'12px',color:'var(--text-primary)',cursor:'pointer',outline:'none'}}>
+          <option value="all">All Changes</option>
+          {Object.entries(CHANGE_TYPE_META).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
+        </select>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div style={{textAlign:'center',padding:'40px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:'var(--text-muted)',fontSize:'13px'}}>No changes recorded yet.</div>
+      ) : (
+        Object.entries(groups).map(([date, dateLogs]) => (
+          <div key={date} style={{marginBottom:'16px'}}>
+            <div style={{fontSize:'10px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1.5px',fontFamily:'var(--font-condensed)',marginBottom:'8px',padding:'4px 0',borderBottom:'1px solid var(--border)'}}>{date}</div>
+            {dateLogs.map(log => {
+              const meta = CHANGE_TYPE_META[log.change_type] || CHANGE_TYPE_META.field_update
+              return (
+                <div key={log.id} style={{display:'flex',alignItems:'flex-start',gap:'10px',padding:'8px 0',borderBottom:'1px solid var(--border)'}}>
+                  <div style={{width:'8px',height:'8px',borderRadius:'50%',background:meta.color,flexShrink:0,marginTop:'5px'}}/>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:'12px',color:'var(--text-primary)',lineHeight:1.5}}>
+                      <strong>{log.changed_by_name||'System'}</strong>
+                      {' '}changed <strong>{log.field_label}</strong>
+                      {log.old_value && log.new_value && (
+                        <> from <span style={{color:'var(--text-muted)'}}>"{log.old_value}"</span> → <span style={{color:meta.color}}>"{log.new_value}"</span></>
+                      )}
+                      {!log.old_value && log.new_value && <> → <span style={{color:meta.color}}>"{log.new_value}"</span></>}
+                    </div>
+                    {log.notes && <div style={{fontSize:'11px',color:'var(--text-muted)',marginTop:'2px',fontStyle:'italic'}}>Note: {log.notes}</div>}
+                    <div style={{fontSize:'11px',color:'var(--text-muted)',marginTop:'2px',display:'flex',gap:'8px'}}>
+                      <span>{fmtTime(log.created_at)}</span>
+                      <span style={{background:`${meta.color}22`,color:meta.color,padding:'0 6px',borderRadius:'6px',fontSize:'10px',fontWeight:700,fontFamily:'var(--font-condensed)'}}>{meta.label.toUpperCase()}</span>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        ))
       )}
     </div>
   )

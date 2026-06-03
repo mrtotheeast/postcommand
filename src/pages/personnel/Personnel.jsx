@@ -36,6 +36,8 @@ export default function Personnel() {
   const [showAdd, setShowAdd]       = useState(false)
   const [tileFilter, setTileFilter] = useState(null)
   const [profileTab, setProfileTab] = useState('overview')
+  const [statusModal, setStatusModal] = useState(null)   // emp object or null
+  const [statusTab, setStatusTab]     = useState('active') // active|suspended|terminated|archived
   const canViewSensitive = atLeast(profile?.role, 'lieutenant')
   const canEdit = atLeast(profile?.role, 'chief')
 
@@ -62,8 +64,12 @@ export default function Personnel() {
       (tileFilter === 'armed' && e.is_armed) ||
       (tileFilter === 'appAccess' && e.has_app_access) ||
       (tileFilter === 'pendingInvite' && e.invitation_status === 'sent' && !e.has_app_access)
-    return matchSearch && matchTile && (filterRole==='all'||e.role===filterRole) && (filterStatus==='all'||e.status===filterStatus)
-  }), [employees, search, filterRole, filterStatus, tileFilter])
+    // Status tab filter: active tab hides suspended/terminated/archived unless explicitly shown
+    const matchStatusTab = statusTab === 'active'
+      ? (e.status === 'active' || e.status === 'inactive' || e.status === 'probation')
+      : e.status === statusTab
+    return matchSearch && matchTile && matchStatusTab && (filterRole==='all'||e.role===filterRole) && (filterStatus==='all'||e.status===filterStatus)
+  }), [employees, search, filterRole, filterStatus, tileFilter, statusTab])
 
   const stats = useMemo(() => ({
     total: employees.length,
@@ -111,6 +117,18 @@ export default function Personnel() {
             <button onClick={() => setShowAdd(true)} style={{display:'flex',alignItems:'center',gap:'8px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-md)',padding:'0 20px',height:'44px',fontFamily:'var(--font-condensed)',fontSize:'14px',fontWeight:700,letterSpacing:'1px',cursor:'pointer'}}><Icon name="plus" size={16}/>ADD EMPLOYEE</button>
           </div>
         )}
+      </div>
+
+      {/* Status filter tabs */}
+      <div style={{display:'flex',gap:'2px',marginBottom:'16px',borderBottom:'1px solid var(--border)',paddingBottom:0}}>
+        {[['active','Active'],['suspended','Suspended'],['terminated','Terminated'],['archived','Archived']].map(([v,l])=>(
+          <button key={v} onClick={()=>setStatusTab(v)} style={{padding:'8px 16px',fontSize:'12px',background:'transparent',border:'none',cursor:'pointer',fontFamily:'var(--font-condensed)',letterSpacing:'0.5px',borderBottom:`2px solid ${statusTab===v?'var(--accent)':'transparent'}`,color:statusTab===v?'var(--accent)':'var(--text-muted)',transition:'all 150ms ease',fontWeight:statusTab===v?700:400,marginBottom:'-1px'}}>
+            {l}
+            <span style={{marginLeft:'6px',fontSize:'11px',background:statusTab===v?'var(--accent-bg)':'var(--border)',color:statusTab===v?'var(--accent)':'var(--text-muted)',padding:'1px 6px',borderRadius:'10px'}}>
+              {employees.filter(e=>e.status===(v==='archived'?'archived':v)).length}
+            </span>
+          </button>
+        ))}
       </div>
 
       <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:'10px',marginBottom:'20px'}}>
@@ -169,7 +187,7 @@ export default function Personnel() {
       )}
 
       {view==='grid' && filtered.length>0 && (
-        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))',gap:'12px'}}>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:'12px'}}>
           {filtered.map(emp=>(
             <div key={emp.id} style={{position:'relative'}}>
               {bulkMode && (
@@ -177,7 +195,7 @@ export default function Personnel() {
                   <input type="checkbox" checked={bulkSelected.has(emp.id)} onChange={()=>{ setBulkSelected(prev=>{ const n=new Set(prev); n.has(emp.id)?n.delete(emp.id):n.add(emp.id); return n }) }} style={{width:'18px',height:'18px',accentColor:'var(--accent)',cursor:'pointer'}}/>
                 </div>
               )}
-              <EmpCard emp={emp} ini={initials(emp)} canViewSensitive={canViewSensitive} onClick={()=>bulkMode ? setBulkSelected(prev=>{ const n=new Set(prev); n.has(emp.id)?n.delete(emp.id):n.add(emp.id); return n }) : setSelected(emp)} selected={bulkMode && bulkSelected.has(emp.id)}/>
+              <EmpCard emp={emp} ini={initials(emp)} canViewSensitive={canViewSensitive} onStatusAction={canEdit?(emp)=>setStatusModal(emp):null} onClick={()=>bulkMode ? setBulkSelected(prev=>{ const n=new Set(prev); n.has(emp.id)?n.delete(emp.id):n.add(emp.id); return n }) : setSelected(emp)} selected={bulkMode && bulkSelected.has(emp.id)}/>
             </div>
           ))}
         </div>
@@ -192,9 +210,10 @@ export default function Personnel() {
         </div>
       )}
 
-      {selected && <EmployeeProfile emp={selected} allEmployees={filtered} activeTab={profileTab} onTabChange={setProfileTab} onNavigate={setSelected} canViewSensitive={canViewSensitive} canEdit={canEdit} onClose={()=>setSelected(null)} onRefresh={loadEmployees}/>}
+      {selected && <EmployeeProfile emp={selected} allEmployees={filtered} activeTab={profileTab} onTabChange={setProfileTab} onNavigate={setSelected} canViewSensitive={canViewSensitive} canEdit={canEdit} onClose={()=>setSelected(null)} onRefresh={loadEmployees} profile={profile}/>}
       {showAdd && <AddEmployeeModal companyId={profile.company_id} onClose={()=>setShowAdd(false)} onSaved={()=>{setShowAdd(false);loadEmployees()}}/>}
       {showImport && <CSVImportModal companyId={profile.company_id} onClose={() => setShowImport(false)} onImported={() => { setShowImport(false); loadEmployees() }} />}
+      {statusModal && <EmployeeStatusModal emp={statusModal} profile={profile} onClose={()=>setStatusModal(null)} onDone={()=>{setStatusModal(null);loadEmployees()}}/>}
       </>
       )}
     </div>
@@ -337,14 +356,19 @@ function CSVImportModal({ companyId, onClose, onImported }) {
   )
 }
 
-function EmpCard({emp,ini,canViewSensitive,onClick}) {
+function EmpCard({emp,ini,canViewSensitive,onClick,onStatusAction}) {
   const rc=ROLE_COLORS[emp.role]||ROLE_COLORS.officer
   const sc=STATUS_COLORS[emp.status]||STATUS_COLORS.inactive
   const [hover,setHover]=useState(false)
   return (
-    <button onClick={onClick} onMouseEnter={()=>setHover(true)} onMouseLeave={()=>setHover(false)}
-      style={{background:'var(--bg-card)',border:`1px solid ${hover?'var(--accent-border)':'var(--border-subtle)'}`,borderRadius:'var(--radius-md)',padding:'18px',textAlign:'left',cursor:'pointer',transition:'all 150ms ease',display:'flex',flexDirection:'column',gap:'10px'}}>
-      <div style={{display:'flex',alignItems:'center',gap:'12px'}}>
+    <div style={{position:'relative',background:'var(--bg-card)',border:`1px solid ${hover?'var(--accent-border)':'var(--border-subtle)'}`,borderRadius:'var(--radius-md)',padding:'18px',transition:'all 150ms ease',display:'flex',flexDirection:'column',gap:'10px',minHeight:'160px',cursor:'pointer'}}
+      onMouseEnter={()=>setHover(true)} onMouseLeave={()=>setHover(false)} onClick={onClick}>
+      {onStatusAction && (
+        <button onClick={e=>{e.stopPropagation();onStatusAction(emp)}} style={{position:'absolute',top:'12px',right:'12px',background:'transparent',border:'none',color:'var(--text-muted)',cursor:'pointer',padding:'4px',borderRadius:'var(--radius-sm)',fontSize:'16px',lineHeight:1,display:'flex',alignItems:'center',justifyContent:'center',width:'28px',height:'28px'}} title="Status actions">
+          ⋯
+        </button>
+      )}
+      <div style={{display:'flex',alignItems:'center',gap:'12px',paddingRight:onStatusAction?'24px':0}}>
         <div style={{width:'44px',height:'44px',borderRadius:'50%',background:'var(--accent)',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'var(--font-condensed)',fontSize:'15px',fontWeight:700,color:'var(--text-inverse)',flexShrink:0,overflow:'hidden'}}>
           {emp.profile_photo_url?<img src={emp.profile_photo_url} alt="" style={{width:'100%',height:'100%',objectFit:'cover'}}/>:ini}
         </div>
@@ -366,8 +390,8 @@ function EmpCard({emp,ini,canViewSensitive,onClick}) {
               : <span style={{fontSize:'10px',fontWeight:700,padding:'2px 7px',borderRadius:'10px',background:'var(--border)',color:'var(--text-muted)'}}>NOT INVITED</span>
         }
       </div>
-      {canViewSensitive&&emp.email&&<div style={{fontSize:'12px',color:'var(--text-muted)'}}>{emp.email}</div>}
-    </button>
+      {canViewSensitive&&emp.email&&<div style={{fontSize:'12px',color:'var(--text-muted)',marginTop:'auto'}}>{emp.email}</div>}
+    </div>
   )
 }
 
@@ -821,5 +845,108 @@ function AddEmployeeModal({ companyId, onClose, onSaved }) {
         )}
       </div>
     </div>
+  )
+}
+
+// ── Employee Status / Delete Modal ────────────────────────────────────────────
+
+const STATUS_OPTIONS = [
+  { id:'suspended',  label:'Suspend Employee',        description:'Temporarily suspends access. Employee remains in the system and can be reinstated.',                     color:'var(--color-warning)',  icon:'⏸', requiresNote:true,  noteLabel:'Reason for suspension', reversible:true },
+  { id:'terminated', label:'Terminate Employment',     description:'Ends employment. Employee record is retained for legal and payroll compliance.',                        color:'var(--color-danger)',   icon:'✕',  requiresNote:true,  noteLabel:'Reason for termination', reversible:false },
+  { id:'archived',   label:'Archive Employee',         description:'Hides from active lists. Record is preserved and can be restored at any time.',                         color:'var(--text-muted)',     icon:'📁', requiresNote:false, reversible:true },
+  { id:'deleted',    label:'Permanently Delete',       description:'IRREVERSIBLE. All data will be permanently deleted and cannot be recovered. This cannot be undone.',     color:'#dc2626',               icon:'🗑', requiresNote:true,  noteLabel:'Type DELETE to confirm', reversible:false, requiresConfirmText:'DELETE' },
+]
+
+function EmployeeStatusModal({ emp, profile, onClose, onDone }) {
+  const [selected, setSelected] = useState(null)
+  const [note, setNote]         = useState('')
+  const [saving, setSaving]     = useState(false)
+  const [error, setError]       = useState(null)
+  const opt = STATUS_OPTIONS.find(o => o.id === selected)
+
+  const canConfirm = opt && (
+    !opt.requiresNote || note.trim().length > 0
+  ) && (
+    !opt.requiresConfirmText || note.trim() === opt.requiresConfirmText
+  )
+
+  async function confirm() {
+    if (!opt) return
+    setSaving(true); setError(null)
+    try {
+      if (opt.id === 'deleted') {
+        const { error: delErr } = await supabase.from('employee').delete().eq('id', emp.id)
+        if (delErr) throw new Error(delErr.message)
+      } else {
+        const { error: updErr } = await supabase.from('employee')
+          .update({ status: opt.id, [`${opt.id}_reason`]: note||null, [`${opt.id}_at`]: new Date().toISOString() })
+          .eq('id', emp.id)
+        if (updErr) throw new Error(updErr.message)
+      }
+      // Log the change
+      const { logChange } = await import('../../lib/changeLog.js')
+      await logChange({
+        companyId: emp.company_id, employeeId: emp.id,
+        changedById: profile.id, changedByName: `${profile.first_name} ${profile.last_name}`, changedByRole: profile.role,
+        fieldName: 'status', fieldLabel: 'Employment Status',
+        oldValue: emp.status, newValue: opt.id,
+        changeType: 'status_change', notes: note||null,
+      })
+      onDone()
+    } catch(e) {
+      setError(e.message)
+      setSaving(false)
+    }
+  }
+
+  return (
+    <>
+      <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:500,backdropFilter:'blur(2px)'}}/>
+      <div style={{position:'fixed',top:'50%',left:'50%',transform:'translate(-50%,-50%)',width:'min(520px,95vw)',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-lg)',padding:'28px',zIndex:501,boxShadow:'var(--shadow-modal)',maxHeight:'90vh',overflowY:'auto'}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'20px'}}>
+          <div style={{fontFamily:'var(--font-display)',fontSize:'18px',letterSpacing:'2px',color:'var(--text-primary)'}}>CHANGE STATUS</div>
+          <button onClick={onClose} style={{background:'transparent',border:'none',color:'var(--text-muted)',cursor:'pointer',padding:'4px',display:'flex'}}><Icon name="x" size={18}/></button>
+        </div>
+        <div style={{fontSize:'13px',color:'var(--text-secondary)',marginBottom:'18px'}}>
+          <strong style={{color:'var(--text-primary)'}}>{emp.first_name} {emp.last_name}</strong> · {emp.position_title||emp.role} · Current status: <strong>{emp.status}</strong>
+        </div>
+
+        <div style={{display:'flex',flexDirection:'column',gap:'8px',marginBottom:'18px'}}>
+          {STATUS_OPTIONS.map(opt => (
+            <button key={opt.id} onClick={()=>{setSelected(opt.id);setNote('')}}
+              style={{textAlign:'left',padding:'14px 16px',borderRadius:'var(--radius-md)',border:`2px solid ${selected===opt.id?opt.color:'var(--border-subtle)'}`,background:selected===opt.id?`${opt.color}11`:'var(--bg-surface)',cursor:'pointer',transition:'all 150ms ease',display:'flex',alignItems:'flex-start',gap:'12px'}}>
+              <span style={{fontSize:'18px',lineHeight:1,flexShrink:0,marginTop:'1px'}}>{opt.icon}</span>
+              <div>
+                <div style={{fontSize:'13px',fontWeight:700,color:selected===opt.id?opt.color:'var(--text-primary)',marginBottom:'3px'}}>{opt.label}</div>
+                <div style={{fontSize:'12px',color:'var(--text-muted)',lineHeight:1.5}}>{opt.description}</div>
+                {!opt.reversible && <div style={{fontSize:'11px',color:'var(--color-danger)',marginTop:'4px',fontWeight:600}}>⚠ NOT REVERSIBLE</div>}
+              </div>
+            </button>
+          ))}
+        </div>
+
+        {opt?.requiresNote && (
+          <div style={{marginBottom:'16px'}}>
+            <div style={{fontSize:'11px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',marginBottom:'6px'}}>{opt.noteLabel}</div>
+            {opt.requiresConfirmText
+              ? <input value={note} onChange={e=>setNote(e.target.value)} placeholder={`Type ${opt.requiresConfirmText} to confirm`}
+                  style={{width:'100%',padding:'10px 12px',background:'var(--bg-input)',border:`1px solid ${note===opt.requiresConfirmText?'var(--color-danger)':'var(--border)'}`,borderRadius:'var(--radius-sm)',color:'var(--text-primary)',fontSize:'13px',outline:'none',boxSizing:'border-box',fontFamily:'var(--font-condensed)',letterSpacing:'1px'}}/>
+              : <textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="Required..." rows={2}
+                  style={{width:'100%',padding:'10px 12px',background:'var(--bg-input)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',color:'var(--text-primary)',fontSize:'13px',outline:'none',resize:'vertical',lineHeight:1.5,boxSizing:'border-box',fontFamily:'var(--font-body)'}}/>
+            }
+          </div>
+        )}
+
+        {error && <div style={{padding:'8px 12px',borderRadius:'var(--radius-sm)',marginBottom:'12px',fontSize:'12px',background:'var(--color-danger-bg)',color:'var(--color-danger)',border:'1px solid rgba(192,57,43,0.3)'}}>{error}</div>}
+
+        <div style={{display:'flex',gap:'10px'}}>
+          <button onClick={confirm} disabled={!canConfirm||saving}
+            style={{flex:1,height:'44px',background:opt?.color||'var(--accent)',color:'#fff',border:'none',borderRadius:'var(--radius-md)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',opacity:(!canConfirm||saving)?0.5:1}}>
+            {saving?'SAVING...':opt?`CONFIRM: ${opt.label.toUpperCase()}`:'SELECT AN ACTION'}
+          </button>
+          <button onClick={onClose} style={{height:'44px',background:'transparent',border:'1px solid var(--border)',borderRadius:'var(--radius-md)',color:'var(--text-secondary)',fontFamily:'var(--font-condensed)',fontSize:'13px',cursor:'pointer',padding:'0 20px'}}>CANCEL</button>
+        </div>
+      </div>
+    </>
   )
 }

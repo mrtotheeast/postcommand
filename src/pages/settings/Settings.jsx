@@ -71,6 +71,7 @@ const TABS = [
   { id:'security',      label:'Security',          icon:'lock' },
   { id:'ai',            label:'AI Settings',       icon:'zap' },
   { id:'licensing',     label:'State Licensing',   icon:'map-pin' },
+  { id:'supervisors',   label:'Supervisors',        icon:'users' },
 ]
 
 // ── Main export ───────────────────────────────────────────────────────────────
@@ -108,6 +109,7 @@ export default function Settings() {
           {tab === 'security'      && <SecurityTab      profile={profile} companyId={companyId} />}
           {tab === 'ai'            && <AITab            companyId={companyId} />}
           {tab === 'licensing'     && <StateLicensingTab companyId={companyId} />}
+          {tab === 'supervisors'   && <SupervisorAssignmentTab companyId={companyId} />}
         </div>
       </div>
     </div>
@@ -1040,6 +1042,115 @@ function StateLicensingTab({ companyId }) {
             </tbody>
           </table>
         )}
+      </div>
+    </>
+  )
+}
+
+// ── Supervisor Assignment Tab ─────────────────────────────────────────────────
+
+function SupervisorAssignmentTab({ companyId }) {
+  const [employees, setEmployees]     = useState([])
+  const [supervisors, setSupervisors] = useState([])
+  const [selectedSup, setSelectedSup] = useState('')
+  const [assignments, setAssignments] = useState(new Set()) // employee IDs assigned to selectedSup
+  const [loading, setLoading]         = useState(true)
+  const [saving, setSaving]           = useState(false)
+  const [msg, setMsg]                 = useState(null)
+
+  const SUP_ROLES = ['sergeant','lieutenant','chief','super_admin','corporal']
+
+  useEffect(() => { if (companyId) load() }, [companyId])
+
+  async function load() {
+    setLoading(true)
+    const { data } = await supabase.from('employee').select('id,first_name,last_name,role,position_title').eq('company_id', companyId).eq('status','active').order('last_name')
+    const emps = data||[]
+    setEmployees(emps)
+    setSupervisors(emps.filter(e => SUP_ROLES.includes(e.role)))
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    if (!selectedSup || !companyId) return
+    supabase.from('supervisor_assignment').select('employee_id').eq('company_id', companyId).eq('supervisor_id', selectedSup)
+      .then(({ data }) => setAssignments(new Set((data||[]).map(r=>r.employee_id))))
+  }, [selectedSup, companyId])
+
+  function toggle(empId) {
+    setAssignments(prev => {
+      const next = new Set(prev)
+      next.has(empId) ? next.delete(empId) : next.add(empId)
+      return next
+    })
+  }
+
+  async function save() {
+    if (!selectedSup) return
+    setSaving(true); setMsg(null)
+    // Delete existing, re-insert selected
+    await supabase.from('supervisor_assignment').delete().eq('company_id', companyId).eq('supervisor_id', selectedSup)
+    if (assignments.size > 0) {
+      const rows = [...assignments].map(empId => ({ company_id:companyId, supervisor_id:selectedSup, employee_id:empId }))
+      await supabase.from('supervisor_assignment').insert(rows)
+    }
+    setSaving(false)
+    setMsg({ type:'ok', text:'Assignments saved.' })
+    setTimeout(()=>setMsg(null), 3000)
+  }
+
+  const sup = employees.find(e=>e.id===selectedSup)
+  const foc = e=>{e.target.style.borderColor='var(--border-focus)'}
+  const blr = e=>{e.target.style.borderColor='var(--border)'}
+
+  if (loading) return <div style={{...s.card,color:'var(--text-muted)',fontSize:'12px'}}>Loading...</div>
+
+  return (
+    <>
+      <div style={s.card}>
+        <div style={s.cardTitle}>Supervisor Assignment</div>
+        <div style={{fontSize:'13px',color:'var(--text-secondary)',marginBottom:'16px',lineHeight:1.6}}>
+          Assign employees to supervisors for reporting visibility and change log access. Sergeants and Corporals can only view records of employees assigned to them.
+        </div>
+        {msg && <Toast msg={msg.text} type={msg.type}/>}
+        <div style={{marginBottom:'16px'}}>
+          <div style={s.lbl}>Select Supervisor</div>
+          <select style={{...s.inp,cursor:'pointer'}} value={selectedSup} onChange={e=>setSelectedSup(e.target.value)} onFocus={foc} onBlur={blr}>
+            <option value="">Choose a supervisor...</option>
+            {supervisors.map(e=><option key={e.id} value={e.id}>{e.first_name} {e.last_name} ({ROLE_LABELS[e.role]||e.role})</option>)}
+          </select>
+        </div>
+
+        {selectedSup && (
+          <>
+            <div style={{fontSize:'11px',color:'var(--text-muted)',fontFamily:'var(--font-condensed)',textTransform:'uppercase',letterSpacing:'1px',marginBottom:'8px'}}>
+              Employees assigned to {sup?.first_name} {sup?.last_name} ({assignments.size} selected)
+            </div>
+            <div style={{border:'1px solid var(--border)',borderRadius:'var(--radius-md)',maxHeight:'300px',overflowY:'auto',marginBottom:'16px'}}>
+              {employees.filter(e=>e.id!==selectedSup).map((emp,i) => (
+                <label key={emp.id} style={{display:'flex',alignItems:'center',gap:'10px',padding:'10px 14px',borderBottom:i<employees.length-2?'1px solid var(--border)':'none',cursor:'pointer',background:assignments.has(emp.id)?'var(--accent-bg)':'transparent',transition:'background 150ms ease'}}>
+                  <input type="checkbox" checked={assignments.has(emp.id)} onChange={()=>toggle(emp.id)} style={{accentColor:'var(--accent)',width:'16px',height:'16px',cursor:'pointer',flexShrink:0}}/>
+                  <div>
+                    <div style={{fontSize:'13px',fontWeight:500,color:'var(--text-primary)'}}>{emp.first_name} {emp.last_name}</div>
+                    <div style={{fontSize:'11px',color:'var(--text-muted)'}}>{emp.position_title||ROLE_LABELS[emp.role]||emp.role}</div>
+                  </div>
+                </label>
+              ))}
+              {employees.filter(e=>e.id!==selectedSup).length===0 && (
+                <div style={{padding:'20px',textAlign:'center',color:'var(--text-muted)',fontSize:'13px'}}>No other active employees found.</div>
+              )}
+            </div>
+            <button style={{...s.btn,opacity:saving?0.6:1}} onClick={save} disabled={saving}>
+              <Icon name="save" size={14}/>{saving?'SAVING...':'SAVE ASSIGNMENTS'}
+            </button>
+          </>
+        )}
+      </div>
+      <div style={{...s.card,background:'var(--bg-surface)',border:'1px solid var(--border)'}}>
+        <div style={s.cardTitle}>SQL — Create supervisor_assignment table</div>
+        <div style={{fontSize:'11px',color:'var(--text-muted)',lineHeight:1.6}}>
+          Run in Supabase dashboard: <code>CREATE TABLE IF NOT EXISTS supervisor_assignment (id UUID DEFAULT gen_random_uuid() PRIMARY KEY, company_id UUID NOT NULL, supervisor_id UUID NOT NULL, employee_id UUID NOT NULL, assigned_at TIMESTAMPTZ DEFAULT NOW(), UNIQUE(company_id,supervisor_id,employee_id)); ALTER TABLE supervisor_assignment ENABLE ROW LEVEL SECURITY; CREATE POLICY "company scope" ON supervisor_assignment USING (company_id = (SELECT company_id FROM user_profile WHERE id = auth.uid()));</code>
+        </div>
       </div>
     </>
   )
