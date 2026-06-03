@@ -6,6 +6,18 @@ import { requestLocationPermission, getCurrentPosition } from '../../lib/locatio
 import { isNative } from '../../lib/platform'
 import { takePhoto } from '../../lib/cameraPermission'
 
+async function haptic(type = 'medium') {
+  if (!isNative()) return
+  try {
+    const { Haptics, ImpactStyle, NotificationType } = await import('@capacitor/haptics')
+    if (type === 'heavy')   await Haptics.impact({ style: ImpactStyle.Heavy })
+    else if (type === 'light') await Haptics.impact({ style: ImpactStyle.Light })
+    else if (type === 'success') await Haptics.notification({ type: NotificationType.Success })
+    else if (type === 'error')   await Haptics.notification({ type: NotificationType.Error })
+    else if (type === 'warn')    await Haptics.notification({ type: NotificationType.Warning })
+  } catch {}
+}
+
 const DEFAULT_GEOFENCE_RADIUS = 150
 
 function getDistance(lat1, lon1, lat2, lon2) {
@@ -160,13 +172,15 @@ export default function ClockIn() {
   }
 
   async function clockIn(loc, override=false, reason='') {
+    haptic('heavy')
     setSaving(true); setError(null)
     try {
       const { data: empData } = await supabase.from('employee').select('id').eq('user_id', profile.id).eq('company_id', profile.company_id).single()
       const photoUrl = photoIn ? await uploadPhoto(photoIn, `${empData.id}-in-${Date.now()}.jpg`) : null
       const now = new Date()
       const { data: ts, error: tsErr } = await supabase.from('timesheet').insert({ company_id: profile.company_id, employee_id: empData.id, site_id: shift.site_id, shift_id: shift.id, date: now.toISOString().split('T')[0], clock_in: now.toISOString(), clock_in_location: loc, clock_in_photo_url: photoUrl, status: 'pending', device_type: 'web', notes: override ? `Geofence override: ${reason}. Distance: ${distance}m` : null }).select().single()
-      if (tsErr) { setError(tsErr.message); setSaving(false); return }
+      if (tsErr) { haptic('error'); setError(tsErr.message); setSaving(false); return }
+      haptic('success')
       setTimesheet(ts)
       if (override) {
         await supabase.from('notifications').insert({ company_id: profile.company_id, type: 'geofence_override', title: 'Geofence Override', message: `${profile.first_name} ${profile.last_name} clocked in ${distance}m outside geofence at ${site?.name}. Reason: ${reason}`, badge_key: 'open_incidents' }).catch(()=>{})
@@ -179,13 +193,15 @@ export default function ClockIn() {
 
   async function clockOut(loc) {
     if (!timesheet) return
+    haptic('heavy')
     setSaving(true); setError(null)
     try {
       const photoUrl = photoOut ? await uploadPhoto(photoOut, `${timesheet.employee_id}-out-${Date.now()}.jpg`) : null
       const now = new Date()
       const totalHours = (now - new Date(timesheet.clock_in)) / 3600000
       const { error: tsErr } = await supabase.from('timesheet').update({ clock_out: now.toISOString(), clock_out_location: loc, clock_out_photo_url: photoUrl, total_hours: Number(totalHours.toFixed(2)), status: 'pending' }).eq('id', timesheet.id)
-      if (tsErr) { setError(tsErr.message); setSaving(false); return }
+      if (tsErr) { haptic('error'); setError(tsErr.message); setSaving(false); return }
+      haptic('success')
       setStep(STEPS.COMPLETE)
     } catch(e) { setError(e.message) }
     setSaving(false)

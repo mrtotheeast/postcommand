@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
 import { atLeast } from '../../config/roles'
+import { isNative } from '../../lib/platform'
 import Icon from '../../components/ui/Icon'
 
 const INCIDENT_TYPES = [
@@ -429,6 +430,22 @@ function IncidentForm({profile,onClose,onSaved}) {
   const [saving,setSaving]=useState(false)
   const [showVoid,setShowVoid]=useState(false)
 
+  async function shareReport() {
+    const text = `PostCommand Incident Report\nCAD: ${report.cad_number}\nType: ${report.incident_type}\nFiled: ${new Date(report.created_at).toLocaleDateString()}`
+    if (isNative()) {
+      try {
+        const { Share } = await import('@capacitor/share')
+        await Share.share({
+          title: `Incident Report — ${report.incident_type}`,
+          text,
+          dialogTitle: 'Share Incident Report',
+        })
+      } catch {}
+    } else {
+      try { navigator.clipboard.writeText(text) } catch {}
+    }
+  }
+
   async function updateStatus(status) {
     setSaving(true)
     const {data:empData}=await supabase.from('employee').select('id').eq('user_id',profile.id).eq('company_id',profile.company_id).maybeSingle()
@@ -503,6 +520,7 @@ function IncidentForm({profile,onClose,onSaved}) {
           {report.status==='submitted'&&canReview&&<button onClick={()=>updateStatus('reviewed')} disabled={saving} style={{height:'44px',background:'var(--color-warning-bg)',border:'1px solid rgba(232,148,58,0.3)',borderRadius:'var(--radius-md)',color:'var(--color-warning)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}><Icon name="eye" size={15}/>MARK REVIEWED</button>}
           {report.status==='reviewed'&&canApprove&&<button onClick={()=>updateStatus('approved')} disabled={saving} style={{height:'44px',background:'var(--color-success-bg)',border:'1px solid rgba(58,170,106,0.3)',borderRadius:'var(--radius-md)',color:'var(--color-success)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}><Icon name="check" size={15}/>APPROVE REPORT</button>}
           {canVoid&&report.status!=='void'&&!showVoid&&<button onClick={()=>setShowVoid(true)} style={{height:'44px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:'var(--text-muted)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}><Icon name="x" size={15}/>VOID REPORT</button>}
+          {(report.status==='approved'||report.status==='submitted')&&<button onClick={shareReport} style={{height:'44px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:'var(--text-muted)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}><Icon name="send" size={15}/>SHARE</button>}
         </div>
       </div>
     </>

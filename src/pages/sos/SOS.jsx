@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext'
 import { useNotifications } from '../../context/NotificationContext'
 import { supabase } from '../../lib/supabase'
 import { atLeast } from '../../config/roles'
+import { isNative } from '../../lib/platform'
 import Icon from '../../components/ui/Icon'
 
 const HOLD_MS = 3000
@@ -110,6 +111,18 @@ export default function SOS() {
     if (holdAnim.current) cancelAnimationFrame(holdAnim.current)
   }
 
+  async function triggerHaptics() {
+    if (!isNative()) return
+    try {
+      const { Haptics, ImpactStyle, NotificationType } = await import('@capacitor/haptics')
+      await Haptics.impact({ style: ImpactStyle.Heavy })
+      await new Promise(r => setTimeout(r, 100))
+      await Haptics.vibrate()
+      await new Promise(r => setTimeout(r, 200))
+      await Haptics.notification({ type: NotificationType.Warning })
+    } catch {}
+  }
+
   function playAlertSound() {
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)()
@@ -130,6 +143,7 @@ export default function SOS() {
     stopHold()
     if (!employee || !profile?.company_id) return
     playAlertSound()
+    triggerHaptics()
     // Flash the body red briefly
     document.body.style.backgroundColor = '#c0392b'
     setTimeout(() => { document.body.style.backgroundColor = '' }, 600)
