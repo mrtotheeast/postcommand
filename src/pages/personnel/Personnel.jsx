@@ -410,19 +410,14 @@ function EmpDetail({emp,canViewSensitive,canEdit,onClose,onRefresh}) {
   async function sendInvite() {
     if (!emp.email) return
     setInviting(true); setInviteMsg(null)
-    try {
-      const tempPass = Math.random().toString(36).slice(2,10)+'Aa1!'
-      const { data, error } = await supabase.auth.signUp({ email:emp.email, password:tempPass, options:{ data:{ first_name:emp.first_name, last_name:emp.last_name } } })
-      if (error) throw error
-      const userId = data?.user?.id
-      if (userId) {
-        await supabase.from('user_profile').upsert({ id:userId, first_name:emp.first_name, last_name:emp.last_name, email:emp.email, phone:emp.phone_number, role:emp.role, company_id:emp.company_id, company_slug:emp.company_slug||'' })
-        await supabase.from('employee').update({ user_id:userId, has_app_access:true, invitation_status:'sent' }).eq('id',emp.id)
-      }
-      setInviteMsg({ ok:true, text:`Invite sent to ${emp.email}. They'll receive an email to confirm and set their password.` })
+    const { error } = await supabase.functions.invoke('invite-user', {
+      body: { email:emp.email, first_name:emp.first_name, last_name:emp.last_name, employee_id:emp.id, company_id:emp.company_id, role:emp.role }
+    })
+    if (error) {
+      setInviteMsg({ ok:false, text: error.message || 'Invite failed.' })
+    } else {
+      setInviteMsg({ ok:true, text:`Invite sent to ${emp.email}. They'll receive a branded email with a link to set their password.` })
       onRefresh?.()
-    } catch(e) {
-      setInviteMsg({ ok:false, text: e.message.includes('already registered') ? 'This email already has an account.' : e.message })
     }
     setInviting(false)
   }
@@ -485,7 +480,7 @@ function EmpDetail({emp,canViewSensitive,canEdit,onClose,onRefresh}) {
         {canEdit&&(
           <div style={{padding:'16px 20px',borderTop:'1px solid var(--border)',display:'flex',gap:'8px',flexWrap:'wrap',flexShrink:0}}>
             <button onClick={()=>setEditing(true)} style={{flex:1,height:'44px',background:'var(--accent-bg)',border:'1px solid var(--accent-border)',borderRadius:'var(--radius-md)',color:'var(--accent)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}><Icon name="edit-2" size={15}/>EDIT</button>
-            {canInvite&&<button onClick={sendInvite} disabled={inviting} style={{flex:1,height:'44px',background:'var(--color-success-bg)',border:'1px solid rgba(58,170,106,0.3)',borderRadius:'var(--radius-md)',color:'var(--color-success)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px',opacity:inviting?0.6:1}}><Icon name="mail" size={15}/>{inviting?'SENDING...':'INVITE'}</button>}
+            {canInvite&&<button onClick={sendInvite} disabled={inviting} style={{flex:1,height:'44px',background:'var(--color-success-bg)',border:'1px solid rgba(58,170,106,0.3)',borderRadius:'var(--radius-md)',color:'var(--color-success)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px',opacity:inviting?0.6:1}}><Icon name="mail" size={15}/>{inviting?'SENDING...':emp.invitation_status==='sent'?'RESEND INVITE':'INVITE'}</button>}
           </div>
         )}
       </div>
@@ -639,14 +634,9 @@ function BulkActionBar({ count, companyId, selectedIds, onDone, onCancel }) {
     const { data: emps } = await supabase.from('employee').select('id,first_name,last_name,email,role,company_id').in('id', selectedIds)
     for (const emp of (emps||[])) {
       if (!emp.email || emp.has_app_access) continue
-      try {
-        const tempPass = Math.random().toString(36).slice(2,10)+'Aa1!'
-        const { data: authData } = await supabase.auth.signUp({ email:emp.email, password:tempPass, options:{ data:{ first_name:emp.first_name, last_name:emp.last_name } } })
-        if (authData?.user?.id) {
-          await supabase.from('user_profile').upsert({ id:authData.user.id, first_name:emp.first_name, last_name:emp.last_name, email:emp.email, role:emp.role, company_id:emp.company_id, company_slug:'' })
-          await supabase.from('employee').update({ user_id:authData.user.id, has_app_access:true, invitation_status:'sent' }).eq('id', emp.id)
-        }
-      } catch {}
+      await supabase.functions.invoke('invite-user', {
+        body: { email:emp.email, first_name:emp.first_name, last_name:emp.last_name, employee_id:emp.id, company_id:emp.company_id, role:emp.role }
+      }).catch(() => {})
     }
     setInviting(false); onDone()
   }
@@ -779,12 +769,9 @@ function AddEmployeeModal({ companyId, onClose, onSaved }) {
   async function sendInvite() {
     if (!savedEmp?.email) return
     setSendingInvite(true)
-    try {
-      await supabase.functions.invoke('send-email', {
-        body: { type:'welcome', to:savedEmp.email, data:{ firstName:savedEmp.first_name, companyName:companyId } }
-      })
-      await supabase.from('employee').update({ invitation_status:'sent' }).eq('id', savedEmp.id)
-    } catch {}
+    await supabase.functions.invoke('invite-user', {
+      body: { email:savedEmp.email, first_name:savedEmp.first_name, last_name:savedEmp.last_name, employee_id:savedEmp.id, company_id:companyId, role:savedEmp.role }
+    }).catch(() => {})
     setSendingInvite(false)
   }
 

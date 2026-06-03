@@ -70,19 +70,14 @@ function OverviewTab({emp, canViewSensitive, canEdit, onRefresh, onEdit}) {
 
   async function sendInvite() {
     setInviting(true); setInviteMsg(null)
-    try {
-      const tempPass = Math.random().toString(36).slice(2,10)+'Aa1!'
-      const { data, error } = await supabase.auth.signUp({ email:emp.email, password:tempPass, options:{ data:{ first_name:emp.first_name, last_name:emp.last_name } } })
-      if (error) throw error
-      const userId = data?.user?.id
-      if (userId) {
-        await supabase.from('user_profile').upsert({ id:userId, first_name:emp.first_name, last_name:emp.last_name, email:emp.email, phone:emp.phone_number, role:emp.role, company_id:emp.company_id, company_slug:emp.company_slug||'' })
-        await supabase.from('employee').update({ user_id:userId, has_app_access:true, invitation_status:'sent' }).eq('id',emp.id)
-      }
-      setInviteMsg({ ok:true, text:`Invite sent to ${emp.email}.` })
+    const { error } = await supabase.functions.invoke('invite-user', {
+      body: { email:emp.email, first_name:emp.first_name, last_name:emp.last_name, employee_id:emp.id, company_id:emp.company_id, role:emp.role }
+    })
+    if (error) {
+      setInviteMsg({ ok:false, text: error.message || 'Invite failed.' })
+    } else {
+      setInviteMsg({ ok:true, text:`Invite sent to ${emp.email}. They'll receive a branded email with a secure sign-in link.` })
       onRefresh?.()
-    } catch(e) {
-      setInviteMsg({ ok:false, text: e.message.includes('already registered') ? 'This email already has an account.' : e.message })
     }
     setInviting(false)
   }
@@ -129,7 +124,7 @@ function OverviewTab({emp, canViewSensitive, canEdit, onRefresh, onEdit}) {
           </button>
           {canInvite && (
             <button onClick={sendInvite} disabled={inviting} style={{display:'inline-flex',alignItems:'center',gap:'8px',background:'var(--color-success-bg)',border:'1px solid rgba(58,170,106,0.3)',borderRadius:'var(--radius-md)',color:'var(--color-success)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',padding:'0 18px',height:'40px',opacity:inviting?0.6:1}}>
-              <Icon name="mail" size={14}/>{inviting?'SENDING...':'INVITE TO APP'}
+              <Icon name="mail" size={14}/>{inviting?'SENDING...':emp.invitation_status==='sent'?'RESEND INVITE':'INVITE TO APP'}
             </button>
           )}
         </div>
