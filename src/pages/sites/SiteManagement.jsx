@@ -202,7 +202,7 @@ export default function SiteManagement() {
               <div style={s.cardTop}>
                 <div style={{ minWidth:0 }}>
                   <div style={s.cardName}>{site.name}</div>
-                  <div style={s.cardAddr}>{site.address && `${site.address}, `}{site.city}, {site.state}</div>
+                  <div style={s.cardAddr}>{site.address && `${site.address}${site.address_line_2 ? ', ' + site.address_line_2 : ''}, `}{site.city}, {site.state}</div>
                 </div>
                 {canEdit && (
                   <div style={s.cardActions} onClick={e => e.stopPropagation()}>
@@ -302,7 +302,7 @@ export default function SiteManagement() {
 
 // ── Site Form Modal ──────────────────────────────────────────────────────────
 
-const EMPTY_FORM = { name:'', address:'', city:'', state:'DC', zip_code:'', description:'', contact_name:'', contact_phone:'', latitude:'', longitude:'', geofence_radius:150, is_active:true }
+const EMPTY_FORM = { name:'', address:'', address_line_2:'', city:'', state:'DC', zip_code:'', description:'', contact_name:'', contact_phone:'', latitude:'', longitude:'', geofence_radius:150, is_active:true }
 
 function SiteFormModal({ site, companyId, onClose, onSaved }) {
   const [form, setForm]     = useState(site ? { ...EMPTY_FORM, ...site, geofence_radius: site.geofence_radius ?? 150, is_active: site.is_active !== false } : { ...EMPTY_FORM })
@@ -349,6 +349,7 @@ function SiteFormModal({ site, companyId, onClose, onSaved }) {
       company_id: companyId,
       name: form.name.trim(),
       address: form.address.trim() || null,
+      address_line_2: form.address_line_2?.trim() || null,
       city: form.city.trim() || null,
       state: form.state || null,
       zip_code: form.zip_code || null,
@@ -412,6 +413,10 @@ function SiteFormModal({ site, companyId, onClose, onSaved }) {
               {US_STATES.map(st => <option key={st} value={st}>{st}</option>)}
             </select>
           </div>
+        </div>
+        <div style={{ ...s.fieldFull, marginBottom:'8px' }}>
+          <div style={s.label}>Address Line 2 <span style={{ color:'var(--text-muted)', fontWeight:400 }}>(Suite, Floor, Unit)</span></div>
+          <input style={s.input} value={form.address_line_2 || ''} onChange={e => setF('address_line_2', e.target.value)} onFocus={inputF} onBlur={inputB} placeholder="Suite 200, Floor 3, Unit B..." />
         </div>
         <div style={{ display:'flex', gap:'12px', alignItems:'flex-end', marginBottom:'12px', flexWrap:'wrap' }}>
           <div style={{ ...s.field, flex:1 }}>
@@ -526,7 +531,7 @@ function DetailPanel({ site, onDuty, tab, setTab, onClose, onEdit, canEdit }) {
           {tab === 'info' && (
             <div style={{ display:'flex', flexDirection:'column', gap:'14px' }}>
               {[
-                { label:'Address', value: [site.address, site.city, site.state, site.zip_code].filter(Boolean).join(', ') || '—' },
+                { label:'Address', value: [site.address, site.address_line_2, site.city, site.state, site.zip_code].filter(Boolean).join(', ') || '—' },
                 { label:'Geofence Radius', value: `${site.geofence_radius ?? 150}m` },
                 { label:'Status', value: site.is_active !== false ? 'Active' : 'Inactive' },
                 { label:'Coordinates', value: site.latitude && site.longitude ? `${Number(site.latitude).toFixed(5)}, ${Number(site.longitude).toFixed(5)}` : 'Not set' },
