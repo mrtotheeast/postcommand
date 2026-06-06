@@ -434,14 +434,20 @@ function EmpDetail({emp,canViewSensitive,canEdit,onClose,onRefresh}) {
   async function sendInvite() {
     if (!emp.email) return
     setInviting(true); setInviteMsg(null)
-    const { error } = await supabase.functions.invoke('invite-user', {
-      body: { email:emp.email, first_name:emp.first_name, last_name:emp.last_name, employee_id:emp.id, company_id:emp.company_id, role:emp.role }
+    const { error } = await supabase.auth.signInWithOtp({
+      email: emp.email,
+      options: {
+        shouldCreateUser: true,
+        emailRedirectTo: 'https://postcommand.app',
+        data: { first_name: emp.first_name, last_name: emp.last_name, company_id: emp.company_id, employee_id: emp.id }
+      }
     })
-    if (error) {
-      setInviteMsg({ ok:false, text: error.message || 'Invite failed.' })
-    } else {
-      setInviteMsg({ ok:true, text:`Invite sent to ${emp.email}. They'll receive a branded email with a link to set their password.` })
+    if (!error) {
+      await supabase.from('employee').update({ invitation_status: 'sent' }).eq('id', emp.id)
       onRefresh?.()
+      setInviteMsg({ ok:true, text:`Invite sent to ${emp.email}.` })
+    } else {
+      setInviteMsg({ ok:false, text: 'Invite failed: ' + error.message })
     }
     setInviting(false)
   }
@@ -657,10 +663,18 @@ function BulkActionBar({ count, companyId, selectedIds, onDone, onCancel }) {
     setInviting(true)
     const { data: emps } = await supabase.from('employee').select('id,first_name,last_name,email,role,company_id').in('id', selectedIds)
     for (const emp of (emps||[])) {
-      if (!emp.email || emp.has_app_access) continue
-      await supabase.functions.invoke('invite-user', {
-        body: { email:emp.email, first_name:emp.first_name, last_name:emp.last_name, employee_id:emp.id, company_id:emp.company_id, role:emp.role }
-      }).catch(() => {})
+      if (!emp.email) continue
+      const { error } = await supabase.auth.signInWithOtp({
+        email: emp.email,
+        options: {
+          shouldCreateUser: true,
+          emailRedirectTo: 'https://postcommand.app',
+          data: { first_name: emp.first_name, last_name: emp.last_name, company_id: emp.company_id, employee_id: emp.id }
+        }
+      })
+      if (!error) {
+        await supabase.from('employee').update({ invitation_status: 'sent' }).eq('id', emp.id)
+      }
     }
     setInviting(false); onDone()
   }
@@ -793,9 +807,17 @@ function AddEmployeeModal({ companyId, onClose, onSaved }) {
   async function sendInvite() {
     if (!savedEmp?.email) return
     setSendingInvite(true)
-    await supabase.functions.invoke('invite-user', {
-      body: { email:savedEmp.email, first_name:savedEmp.first_name, last_name:savedEmp.last_name, employee_id:savedEmp.id, company_id:companyId, role:savedEmp.role }
-    }).catch(() => {})
+    const { error } = await supabase.auth.signInWithOtp({
+      email: savedEmp.email,
+      options: {
+        shouldCreateUser: true,
+        emailRedirectTo: 'https://postcommand.app',
+        data: { first_name: savedEmp.first_name, last_name: savedEmp.last_name, company_id: companyId, employee_id: savedEmp.id }
+      }
+    })
+    if (!error) {
+      await supabase.from('employee').update({ invitation_status: 'sent' }).eq('id', savedEmp.id)
+    }
     setSendingInvite(false)
   }
 

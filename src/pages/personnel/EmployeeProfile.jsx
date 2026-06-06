@@ -73,14 +73,20 @@ function OverviewTab({emp, canViewSensitive, canEdit, onRefresh, onEdit, viewerP
 
   async function sendInvite() {
     setInviting(true); setInviteMsg(null)
-    const { error } = await supabase.functions.invoke('invite-user', {
-      body: { email:emp.email, first_name:emp.first_name, last_name:emp.last_name, employee_id:emp.id, company_id:emp.company_id, role:emp.role }
+    const { error } = await supabase.auth.signInWithOtp({
+      email: emp.email,
+      options: {
+        shouldCreateUser: true,
+        emailRedirectTo: 'https://postcommand.app',
+        data: { first_name: emp.first_name, last_name: emp.last_name, company_id: emp.company_id, employee_id: emp.id }
+      }
     })
-    if (error) {
-      setInviteMsg({ ok:false, text: error.message || 'Invite failed.' })
-    } else {
-      setInviteMsg({ ok:true, text:`Invite sent to ${emp.email}. They'll receive a branded email with a secure sign-in link.` })
+    if (!error) {
+      await supabase.from('employee').update({ invitation_status: 'sent' }).eq('id', emp.id)
       onRefresh?.()
+      setInviteMsg({ ok:true, text:`Invite sent to ${emp.email}.` })
+    } else {
+      setInviteMsg({ ok:false, text: 'Invite failed: ' + error.message })
     }
     setInviting(false)
   }
