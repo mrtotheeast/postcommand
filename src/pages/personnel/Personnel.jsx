@@ -39,7 +39,7 @@ export default function Personnel() {
   const [statusModal, setStatusModal] = useState(null)   // emp object or null
   const [statusTab, setStatusTab]     = useState('active') // active|suspended|terminated|archived
   const canViewSensitive = atLeast(profile?.role, 'lieutenant')
-  const canEdit = atLeast(profile?.role, 'chief')
+  const canEdit = atLeast(profile?.role, 'lieutenant')
 
   useEffect(() => { loadEmployees() }, [profile])
 
