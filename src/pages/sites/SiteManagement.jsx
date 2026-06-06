@@ -307,6 +307,7 @@ const EMPTY_FORM = { name:'', address:'', address_line_2:'', city:'', state:'DC'
 function SiteFormModal({ site, companyId, onClose, onSaved }) {
   const [form, setForm]     = useState(site ? { ...EMPTY_FORM, ...site, geofence_radius: site.geofence_radius ?? 150, is_active: site.is_active !== false } : { ...EMPTY_FORM })
   const [saving, setSaving] = useState(false)
+  const [error, setError]   = useState(null)
   const [geocoding, setGeocoding] = useState(false)
   const [geoError, setGeoError]   = useState(null)
   const [mapPos, setMapPos]       = useState({ lat: site?.latitude ? Number(site.latitude) : null, lng: site?.longitude ? Number(site.longitude) : null })
@@ -343,7 +344,10 @@ function SiteFormModal({ site, companyId, onClose, onSaved }) {
   }
 
   async function save() {
-    if (!form.name.trim()) return
+    if (!form.name?.trim())    { setError('Site name is required.'); return }
+    if (!form.address?.trim()) { setError('Street address is required.'); return }
+    if (!form.city?.trim())    { setError('City is required.'); return }
+    setError(null)
     setSaving(true)
     const payload = {
       company_id: companyId,
@@ -400,11 +404,11 @@ function SiteFormModal({ site, companyId, onClose, onSaved }) {
         <div style={s.sectionLbl}>Location</div>
         <div style={{ ...s.row3, marginBottom:'8px' }}>
           <div style={s.field}>
-            <div style={s.label}>Street Address</div>
+            <div style={s.label}>Street Address *</div>
             <input style={s.input} value={form.address} onChange={e => setF('address', e.target.value)} onFocus={inputF} onBlur={inputB} placeholder="123 Main St" />
           </div>
           <div style={s.field}>
-            <div style={s.label}>City</div>
+            <div style={s.label}>City *</div>
             <input style={s.input} value={form.city} onChange={e => setF('city', e.target.value)} onFocus={inputF} onBlur={inputB} placeholder="Washington" />
           </div>
           <div style={s.field}>
@@ -470,8 +474,9 @@ function SiteFormModal({ site, companyId, onClose, onSaved }) {
           </div>
         </div>
 
+        {error && <div style={{ fontSize:'12px', color:'var(--color-danger)', marginBottom:'10px', marginTop:'4px' }}>{error}</div>}
         <div style={{ display:'flex', gap:'10px', marginTop:'24px' }}>
-          <button style={{ ...s.saveBtn, opacity: saving || !form.name.trim() ? 0.6 : 1 }} onClick={save} disabled={saving || !form.name.trim()}>
+          <button style={{ ...s.saveBtn, opacity: saving || !form.name.trim() || !form.address?.trim() || !form.city?.trim() ? 0.6 : 1 }} onClick={save} disabled={saving || !form.name.trim() || !form.address?.trim() || !form.city?.trim()}>
             <Icon name="save" size={14} />{saving ? 'SAVING...' : site ? 'SAVE CHANGES' : 'CREATE SITE'}
           </button>
           <button style={s.ghostBtn} onClick={onClose}>CANCEL</button>
