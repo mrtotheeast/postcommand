@@ -69,7 +69,7 @@ function OverviewTab({emp, canViewSensitive, canEdit, onRefresh, onEdit, viewerP
   const [inviteMsg, setInviteMsg] = useState(null)
   const rc = ROLE_COLORS[emp.role] || ROLE_COLORS.officer
   const sc = STATUS_COLORS[emp.status] || STATUS_COLORS.inactive
-  const canInvite = canEdit && emp.email && !emp.has_app_access
+  const canInvite = canEdit && emp.email && emp.invitation_status !== 'accepted'
 
   async function sendInvite() {
     setInviting(true); setInviteMsg(null)

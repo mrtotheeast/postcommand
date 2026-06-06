@@ -429,7 +429,7 @@ function EmpDetail({emp,canViewSensitive,canEdit,onClose,onRefresh}) {
   const sc=STATUS_COLORS[emp.status]||STATUS_COLORS.inactive
   const ini=`${emp.first_name?.[0]??''}${emp.last_name?.[0]??''}`.toUpperCase()
   const fmt=d=>d?new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'—'
-  const canInvite = canEdit && emp.email && !emp.has_app_access
+  const canInvite = canEdit && emp.email && emp.invitation_status !== 'accepted'
 
   async function sendInvite() {
     if (!emp.email) return
