@@ -183,7 +183,7 @@ export default function AppLayout({ children }) {
       {!isMobile && <aside style={s.sidebar} className="sidebar" data-tour="sidebar"><SidebarContent /></aside>}
       {isMobile && drawerOpen && <div style={s.overlay} onClick={() => setDrawerOpen(false)} />}
       {isMobile && (
-        <aside style={{...s.drawer,...(drawerOpen?s.drawerOpen:{})}} className="sidebar">
+        <aside style={{...s.drawer,...(drawerOpen?s.drawerOpen:{})}} className="sidebar" data-tour="sidebar">
           <SidebarContent />
         </aside>
       )}
@@ -266,7 +266,7 @@ export default function AppLayout({ children }) {
             <Icon name="eye" size={13}/>VIEWING AS {ROLE_LABELS[viewRole]?.toUpperCase() || viewRole.toUpperCase()} — CLICK TO EXIT
           </button>
         )}
-        <main style={s.content} id="main-content">{children}</main>
+        <main style={s.content} id="main-content" data-tour="main">{children}</main>
       </div>
     </div>
   )
