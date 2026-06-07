@@ -692,7 +692,7 @@ function DocumentsTab({ emp, canEdit }) {
     const { data:{ publicUrl } } = supabase.storage.from('employee-documents').getPublicUrl(upData.path)
     const { error: insErr } = await supabase.from('employee_document').insert({ company_id:emp.company_id, employee_id:emp.id, doc_type:form.doc_type, file_name:fname, file_url:publicUrl, uploaded_at:new Date().toISOString() })
     if (insErr) setError(insErr.message)
-    else { setShowAdd(false); setForm({ doc_type:'I-9', file_name:'' }) }
+    else { setShowAdd(false); setForm({ doc_type:'I-9', file_name:'' }); toast('Document uploaded') }
     setUploading(false); load()
   }
 

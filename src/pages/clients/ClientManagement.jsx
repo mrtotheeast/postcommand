@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
 import Icon from '../../components/ui/Icon'
+import { useToast } from '../../components/ui/Toast'
 
 const CONTRACT_STATUS = { active:{label:'Active',color:'var(--color-success)',bg:'var(--color-success-bg)'}, expired:{label:'Expired',color:'var(--color-danger)',bg:'var(--color-danger-bg)'}, pending:{label:'Pending',color:'var(--color-warning)',bg:'var(--color-warning-bg)'} }
 const ONBOARDING_STEPS = ['Contract Signed','Site Survey Complete','Post Orders Drafted','Staff Assigned','Go-Live Date Set','First Billing Invoice Sent']
@@ -264,6 +265,7 @@ function ClientContracts({ client, companyId }) {
 }
 
 function ClientFormModal({ client, companyId, onClose, onSaved }) {
+  const toast = useToast()
   const [form, setForm] = useState(client ? { company_name:client.company_name||'', contact_name:client.contact_name||'', phone:client.phone||'', email:client.email||'', address:client.address||'', contract_status:client.contract_status||'active', notes:client.notes||'' }
     : { company_name:'', contact_name:'', phone:'', email:'', address:'', contract_status:'active', notes:'' })
   const [saving, setSaving] = useState(false)
@@ -274,6 +276,7 @@ function ClientFormModal({ client, companyId, onClose, onSaved }) {
     setSaving(true)
     if (client?.id) await supabase.from('client').update({...form}).eq('id',client.id)
     else await supabase.from('client').insert({company_id:companyId,...form})
+    toast('Client saved')
     setSaving(false); onSaved()
   }
   return (

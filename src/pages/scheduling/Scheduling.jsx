@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { ROLE_LABELS, atLeast } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
 import { emailSchedulePublished } from '../../lib/email'
+import { useToast } from '../../components/ui/Toast'
 
 const DAYS_SHORT = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
@@ -23,6 +24,7 @@ function getMonthDates(base){ const year=base.getFullYear(),month=base.getMonth(
 
 export default function Scheduling() {
   const { profile } = useAuth()
+  const toast = useToast()
   const [viewMode,setViewMode] = useState('week')
   const [baseDate,setBaseDate] = useState(new Date())
   const [shifts,setShifts]     = useState([])
@@ -160,6 +162,7 @@ export default function Scheduling() {
         onStatusChange={async(id,status)=>{
           await supabase.from('shift').update({status,...(status==='published'?{published_at:new Date().toISOString()}:{})}).eq('id',id)
           if(status==='published') {
+            toast('Schedule published')
             const shift=shifts.find(s=>s.id===id)
             if(shift) {
               const {data:emp}=await supabase.from('employee').select('first_name,email').eq('id',shift.employee_id).single()
@@ -168,7 +171,7 @@ export default function Scheduling() {
           }
           setSelected(null); loadAll()
         }}
-        onDelete={async(id)=>{ await supabase.from('shift').delete().eq('id',id); setSelected(null); loadAll() }}/>}
+        onDelete={async(id)=>{ await supabase.from('shift').delete().eq('id',id); toast('Shift deleted', 'info'); setSelected(null); loadAll() }}/>}
       {showCreate&&<CreateShiftModal employees={sortedEmployees} sites={sites} companyId={profile.company_id} createdBy={profile.id} onClose={()=>setShowCreate(false)} onSaved={()=>{setShowCreate(false);loadAll()}}/>}
       {showAutoAssign&&<AutoAssignModal employees={sortedEmployees} sites={sites} shifts={shifts} companyId={profile.company_id} createdBy={profile.id} onClose={()=>setShowAutoAssign(false)} onSaved={()=>{setShowAutoAssign(false);loadAll()}}/>}
     </div>
@@ -311,6 +314,7 @@ function ShiftDetail({shift,empName,siteName,canApprove,canPublish,canCreate,onC
 }
 
 function CreateShiftModal({employees,sites,companyId,createdBy,onClose,onSaved}){
+  const toast = useToast()
   const today=new Date().toISOString().split('T')[0]
   const [form,setForm]=useState({employee_id:'',site_id:'',date:today,sh:'08',sm:'00',eh:'16',em:'00',role:'officer',is_armed:false,notes:''})
   const [saving,setSaving]=useState(false)
@@ -355,6 +359,7 @@ function CreateShiftModal({employees,sites,companyId,createdBy,onClose,onSaved})
     if(end<=start){setError('End time must be after start time.');setSaving(false);return}
     const {error}=await supabase.from('shift').insert({company_id:companyId,employee_id:form.employee_id,site_id:form.site_id,start_time:start.toISOString(),end_time:end.toISOString(),role:form.role,is_armed:form.is_armed,notes:form.notes||null,status:'draft',created_by:createdBy})
     if(error){setError(error.message);setSaving(false);return}
+    toast('Shift saved')
     onSaved()
   }
   const hrs=Array.from({length:24},(_,i)=>String(i).padStart(2,'0'))

@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { atLeast } from '../../config/roles'
 import { isNative } from '../../lib/platform'
 import Icon from '../../components/ui/Icon'
+import { useToast } from '../../components/ui/Toast'
 
 const INCIDENT_TYPES = [
   'Trespass','Theft','Vandalism','Assault','Disturbance','Suspicious Person',
@@ -149,6 +150,7 @@ const BODY_PARTS = ['Head','Neck','Chest/Torso','Back','Left Arm','Right Arm','L
 const WEAPON_TYPES = ['Firearm','Knife/Blade','Blunt Object','Improvised Weapon','Hands/Feet','Taser/Stun Gun','Pepper Spray','Other']
 
 function IncidentForm({profile,onClose,onSaved}) {
+  const toast = useToast()
   const [mode,setMode]   = useState('guided')
   const [step,setStep]   = useState(0)
   const [aiLoading,setAiLoading] = useState(false)
@@ -245,6 +247,7 @@ function IncidentForm({profile,onClose,onSaved}) {
         submitted_by:asDraft?null:(empData?.id||null),retain_until:retainUntil.toISOString().split('T')[0]
       })
       if(insErr){setError(insErr.message);setSaving(false);return}
+      toast('Incident report saved')
       onSaved()
     } catch(e){setError(e.message)}
     setSaving(false)
@@ -424,6 +427,7 @@ function IncidentForm({profile,onClose,onSaved}) {
     </>
   )
 }function ReportDetail({report,canReview,canApprove,canVoid,onClose,onUpdated,profile}) {
+  const toast = useToast()
   const ss=STATUS_STYLES[report.status]||STATUS_STYLES.draft
   const [notes,setNotes]=useState('')
   const [voidReason,setVoidReason]=useState('')
@@ -455,6 +459,7 @@ function IncidentForm({profile,onClose,onSaved}) {
     if(status==='approved'){update.approved_by=empData?.id;update.approved_at=now}
     if(status==='void'){update.voided_by=empData?.id;update.voided_at=now;update.void_reason=voidReason}
     await supabase.from('incident_report').update(update).eq('id',report.id)
+    toast('Report updated', 'info')
     setSaving(false);onUpdated()
   }
 

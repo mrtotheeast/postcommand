@@ -6,6 +6,7 @@ import Icon from '../../components/ui/Icon'
 import { exportTimesheetPDF } from '../../lib/pdfExport'
 import { emailTimesheetApproved, emailTimesheetRejected, emailPTOApproved, emailPTODenied } from '../../lib/email'
 import { exportToSheets } from '../../lib/googleSheets'
+import { useToast } from '../../components/ui/Toast'
 
 const STATUS_STYLES = {
   pending:  { bg:'rgba(232,148,58,0.15)',  color:'#e8943a', label:'Pending' },
@@ -329,6 +330,7 @@ function SummaryView({summary,empName}) {
 }
 
 function TimesheetDetail({ts,empName,siteName,canReview,onClose,onUpdated,profile}) {
+  const toast = useToast()
   const ss=STATUS_STYLES[ts.status]||STATUS_STYLES.pending
   const [rejReason,setRejReason]=useState('')
   const [showReject,setShowReject]=useState(false)
@@ -342,6 +344,7 @@ function TimesheetDetail({ts,empName,siteName,canReview,onClose,onUpdated,profil
     // Email the officer
     const {data:officer}=await supabase.from('employee').select('first_name,email').eq('id',ts.employee_id).single()
     if(officer?.email) emailTimesheetApproved({ to:officer.email, firstName:officer.first_name, date:ts.date, hours:fmtHours(ts.total_hours), siteName:siteName(ts.site_id) })
+    toast('Timesheet approved')
     setSaving(false);onUpdated()
   }
 
@@ -353,6 +356,7 @@ function TimesheetDetail({ts,empName,siteName,canReview,onClose,onUpdated,profil
     // Email the officer
     const {data:officer}=await supabase.from('employee').select('first_name,email').eq('id',ts.employee_id).single()
     if(officer?.email) emailTimesheetRejected({ to:officer.email, firstName:officer.first_name, date:ts.date, reason:rejReason })
+    toast('Timesheet rejected', 'info')
     setSaving(false);onUpdated()
   }
 

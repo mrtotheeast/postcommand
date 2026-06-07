@@ -5,6 +5,7 @@ import { useTheme } from '../../context/ThemeContext'
 import { supabase } from '../../lib/supabase'
 import { ROLE_LABELS, ROLE_LEVELS, atLeast, ROLE_TITLES } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
+import { useToast } from '../../components/ui/Toast'
 
 // ── Shared primitives ─────────────────────────────────────────────────────────
 
@@ -119,6 +120,7 @@ export default function Settings() {
 // ── Tab 1 — Company Profile ───────────────────────────────────────────────────
 
 function CompanyTab({ profile, companyId }) {
+  const toast = useToast()
   const [form, setForm]   = useState({ name:'', logo_url:'', primary_color:'#c8a84b', address:'', phone:'', email:'', license_number:'', role_style:'military' })
   const [customRanks, setCustomRanks] = useState([])
   const [newRank, setNewRank]         = useState({ title:'', level:'' })
@@ -149,6 +151,7 @@ function CompanyTab({ profile, companyId }) {
     // Upsert to company table
     const { error } = await supabase.from('company').upsert({ id:companyId, name:form.name.trim()||null, logo_url:form.logo_url.trim()||null, primary_color:form.primary_color, address:form.address.trim()||null, phone:form.phone.trim()||null, email:form.email.trim()||null, license_number:form.license_number.trim()||null, role_style:form.role_style, custom_ranks:customRanks }, { onConflict:'id' })
     setSaving(false)
+    if (!error) toast('Settings saved')
     setMsg(error ? { type:'err', text:error.message } : { type:'ok', text:'Company profile saved.' })
     setTimeout(() => setMsg(null), 3000)
   }
@@ -868,6 +871,7 @@ const DEFAULT_PERMS = {
 }
 
 function RolePermissionsMatrix({ companyId, profile }) {
+  const toast = useToast()
   const [matrix, setMatrix] = useState(() => {
     const m = {}
     PERM_ROLES.forEach(r => { m[r] = new Set(DEFAULT_PERMS[r]) })
@@ -911,6 +915,7 @@ function RolePermissionsMatrix({ companyId, profile }) {
     }
     const { error } = await supabase.from('role_permission').upsert(rows, { onConflict:'company_id,role,permission' })
     setSaving(false)
+    if (!error) toast('Settings saved')
     setMsg(error ? { type:'err', text:error.message } : { type:'ok', text:'Permissions saved.' })
     setTimeout(() => setMsg(null), 3000)
   }
