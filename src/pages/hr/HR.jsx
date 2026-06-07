@@ -171,13 +171,14 @@ export default function HR() {
 
       <div style={s.tabs}>
         {[
-          { id: 'documents',  label: 'Documents' },
-          { id: 'writeups',   label: `Write-Ups (${writeups.length})` },
-          { id: 'onboarding', label: `Onboarding (${onboarding.length})` },
-          { id: 'violations',  label: 'Geofence Violations' },
-          { id: 'recognition', label: 'Recognition' },
-          { id: 'esignature',  label: 'E-Signature' },
-          { id: 'policies',   label: 'Policy Management' },
+          { id: 'documents',    label: 'Documents' },
+          { id: 'writeups',     label: `Write-Ups (${writeups.length})` },
+          { id: 'onboarding',   label: `Onboarding (${onboarding.length})` },
+          { id: 'violations',   label: 'Geofence Violations' },
+          { id: 'recognition',  label: 'Recognition' },
+          { id: 'esignature',   label: 'E-Signature' },
+          { id: 'policies',     label: 'Policy Management' },
+          { id: 'company_docs', label: 'Company Docs' },
         ].map(t => (
           <button key={t.id} style={{ ...s.tab, ...(tab === t.id ? s.tabActive : {}) }} onClick={() => setTab(t.id)}>{t.label}</button>
         ))}
@@ -270,6 +271,10 @@ export default function HR() {
 
       {tab === 'policies' && (
         <PolicyManagementTab companyId={profile.company_id} />
+      )}
+
+      {tab === 'company_docs' && (
+        <CompanyDocsTab profile={profile} companyId={profile.company_id} canEdit={atLeast(profile?.role, 'lieutenant')} />
       )}
 
       {wuModal && (
@@ -854,6 +859,144 @@ function RecognitionTab({ companyId, profile, employees }) {
           )
         })
       }
+    </div>
+  )
+}
+
+// ── Company Docs Tab ──────────────────────────────────────────────────────────
+
+function CompanyDocsTab({ profile, companyId, canEdit }) {
+  const [docs, setDocs] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [showUpload, setShowUpload] = useState(false)
+  const [ackStatus, setAckStatus] = useState({}) // docId -> { total, acked }
+
+  useEffect(() => { loadDocs() }, [companyId])
+
+  async function loadDocs() {
+    setLoading(true)
+    const { data } = await supabase.from('hr_document').select('*').eq('company_id', companyId).eq('is_active', true).order('created_at', { ascending: false })
+    setDocs(data || [])
+    if (canEdit && data?.length) {
+      const { data: acks } = await supabase.from('hr_document_acknowledgment').select('document_id,status').eq('company_id', companyId)
+      const counts = {}
+      for (const a of (acks||[])) {
+        if (!counts[a.document_id]) counts[a.document_id] = { total: 0, acked: 0 }
+        counts[a.document_id].total++
+        if (a.status !== 'pending') counts[a.document_id].acked++
+      }
+      setAckStatus(counts)
+    }
+    setLoading(false)
+  }
+
+  async function acknowledge(doc) {
+    const { data: emp } = await supabase.from('employee').select('id').eq('email', profile.email || '').eq('company_id', companyId).maybeSingle()
+    if (!emp?.id) return
+    await supabase.from('hr_document_acknowledgment').upsert({
+      document_id: doc.id,
+      employee_id: emp.id,
+      company_id: companyId,
+      acknowledged_at: new Date().toISOString(),
+      status: 'acknowledged',
+    }, { onConflict: 'document_id,employee_id' })
+    loadDocs()
+  }
+
+  if (loading) return <div style={{padding:'20px',color:'var(--text-muted)',fontSize:'13px'}}>Loading...</div>
+
+  return (
+    <div>
+      {canEdit && (
+        <div style={{display:'flex',justifyContent:'flex-end',marginBottom:'16px'}}>
+          <button onClick={() => setShowUpload(true)} style={{display:'inline-flex',alignItems:'center',gap:'8px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-sm)',padding:'0 18px',height:'40px',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer'}}>
+            <Icon name="upload" size={14}/>UPLOAD DOCUMENT
+          </button>
+        </div>
+      )}
+
+      {docs.length === 0 ? (
+        <div style={{textAlign:'center',padding:'40px',color:'var(--text-muted)',fontSize:'13px'}}>No company documents yet.</div>
+      ) : (
+        <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
+          {docs.map(doc => {
+            const acks = ackStatus[doc.id] || { total: 0, acked: 0 }
+            return (
+              <div key={doc.id} style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'16px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'12px',flexWrap:'wrap'}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:'14px',fontWeight:600,color:'var(--text-primary)'}}>{doc.title}</div>
+                  {doc.description && <div style={{fontSize:'12px',color:'var(--text-muted)',marginTop:'2px'}}>{doc.description}</div>}
+                  <div style={{display:'flex',gap:'8px',marginTop:'6px',flexWrap:'wrap'}}>
+                    <span style={{fontSize:'11px',fontWeight:700,padding:'2px 8px',borderRadius:'10px',background:'var(--accent-bg)',color:'var(--accent)',fontFamily:'var(--font-condensed)'}}>{doc.doc_type?.toUpperCase()}</span>
+                    {doc.requires_signature && <span style={{fontSize:'11px',fontWeight:700,padding:'2px 8px',borderRadius:'10px',background:'var(--color-danger-bg)',color:'var(--color-danger)',fontFamily:'var(--font-condensed)'}}>SIGNATURE REQUIRED</span>}
+                    {canEdit && <span style={{fontSize:'11px',color:'var(--text-muted)'}}>{acks.acked}/{acks.total} acknowledged</span>}
+                  </div>
+                </div>
+                <div style={{display:'flex',gap:'8px',flexShrink:0}}>
+                  {doc.file_url && <a href={doc.file_url} target="_blank" rel="noopener noreferrer" style={{display:'inline-flex',alignItems:'center',gap:'6px',background:'transparent',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',color:'var(--text-secondary)',padding:'0 14px',height:'36px',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,cursor:'pointer',textDecoration:'none'}}><Icon name="external-link" size={13}/>VIEW</a>}
+                  {!canEdit && <button onClick={() => acknowledge(doc)} style={{display:'inline-flex',alignItems:'center',gap:'6px',background:'var(--color-success-bg)',border:'1px solid rgba(58,170,106,0.3)',borderRadius:'var(--radius-sm)',color:'var(--color-success)',padding:'0 14px',height:'36px',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,cursor:'pointer'}}><Icon name="check" size={13}/>ACKNOWLEDGE</button>}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {showUpload && <DocUploadModal companyId={companyId} profile={profile} onClose={() => setShowUpload(false)} onSaved={() => { setShowUpload(false); loadDocs() }}/>}
+    </div>
+  )
+}
+
+function DocUploadModal({ companyId, profile, onClose, onSaved }) {
+  const [form, setForm] = useState({ title: '', description: '', doc_type: 'acknowledgment', requires_signature: false })
+  const [file, setFile] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState(null)
+
+  async function save() {
+    if (!form.title.trim()) { setError('Title required.'); return }
+    setSaving(true); setError(null)
+    let fileUrl = null
+    if (file) {
+      const path = `${companyId}/${Date.now()}-${file.name}`
+      const { data: upData, error: upErr } = await supabase.storage.from('hr-documents').upload(path, file, { upsert: true, contentType: file.type })
+      if (upErr) { setError(upErr.message); setSaving(false); return }
+      fileUrl = supabase.storage.from('hr-documents').getPublicUrl(upData.path).data.publicUrl
+    }
+    const { error: insErr } = await supabase.from('hr_document').insert({
+      company_id: companyId,
+      title: form.title.trim(),
+      description: form.description.trim() || null,
+      doc_type: form.doc_type,
+      requires_signature: form.requires_signature,
+      file_url: fileUrl,
+      is_active: true,
+      created_by: profile.id,
+    })
+    if (insErr) { setError(insErr.message); setSaving(false); return }
+    onSaved()
+  }
+
+  return (
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:400,display:'flex',alignItems:'center',justifyContent:'center',padding:'20px'}} onClick={e=>{if(e.target===e.currentTarget)onClose()}}>
+      <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-lg)',padding:'28px',width:'100%',maxWidth:'480px',boxShadow:'var(--shadow-modal)'}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'20px'}}>
+          <div style={{fontFamily:'var(--font-display)',fontSize:'18px',letterSpacing:'1.5px',color:'var(--text-primary)'}}>UPLOAD DOCUMENT</div>
+          <button onClick={onClose} style={{background:'transparent',border:'none',color:'var(--text-muted)',cursor:'pointer',padding:'4px',display:'flex'}}><Icon name="x" size={18}/></button>
+        </div>
+        {error && <div style={{background:'var(--color-danger-bg)',border:'1px solid rgba(224,85,85,0.3)',borderRadius:'var(--radius-sm)',padding:'10px 14px',fontSize:'13px',color:'var(--color-danger)',marginBottom:'14px'}}>{error}</div>}
+        <div style={{display:'flex',flexDirection:'column',gap:'14px'}}>
+          <div><div style={{fontSize:'11px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',marginBottom:'5px'}}>Title *</div><input style={{background:'var(--bg-input)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',padding:'9px 12px',fontSize:'13px',color:'var(--text-primary)',outline:'none',width:'100%',boxSizing:'border-box',fontFamily:'var(--font-body)'}} value={form.title} onChange={e=>setForm(p=>({...p,title:e.target.value}))} placeholder="e.g. Employee Handbook 2026"/></div>
+          <div><div style={{fontSize:'11px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',marginBottom:'5px'}}>Description</div><textarea style={{background:'var(--bg-input)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',padding:'9px 12px',fontSize:'13px',color:'var(--text-primary)',outline:'none',width:'100%',boxSizing:'border-box',fontFamily:'var(--font-body)',resize:'vertical',minHeight:'60px'}} value={form.description} onChange={e=>setForm(p=>({...p,description:e.target.value}))}/></div>
+          <div><div style={{fontSize:'11px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',marginBottom:'5px'}}>Type</div><select style={{background:'var(--bg-input)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',padding:'9px 12px',fontSize:'13px',color:'var(--text-primary)',outline:'none',width:'100%',fontFamily:'var(--font-body)',cursor:'pointer'}} value={form.doc_type} onChange={e=>setForm(p=>({...p,doc_type:e.target.value}))}><option value="acknowledgment">Acknowledgment</option><option value="signature">Requires Signature</option><option value="informational">Informational</option></select></div>
+          <label style={{display:'flex',alignItems:'center',gap:'10px',fontSize:'13px',color:'var(--text-primary)',cursor:'pointer'}}><input type="checkbox" checked={form.requires_signature} onChange={e=>setForm(p=>({...p,requires_signature:e.target.checked}))} style={{accentColor:'var(--accent)',width:'16px',height:'16px'}}/>Requires employee signature</label>
+          <div><div style={{fontSize:'11px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',marginBottom:'5px'}}>File (PDF, DOC...)</div><input type="file" accept=".pdf,.doc,.docx" onChange={e=>setFile(e.target.files?.[0]||null)} style={{fontSize:'13px',color:'var(--text-primary)'}}/></div>
+        </div>
+        <div style={{display:'flex',gap:'10px',marginTop:'24px'}}>
+          <button onClick={onClose} style={{flex:1,height:'44px',background:'transparent',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',color:'var(--text-secondary)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,cursor:'pointer'}}>CANCEL</button>
+          <button onClick={save} disabled={saving} style={{flex:2,height:'44px',background:'var(--accent)',border:'none',borderRadius:'var(--radius-sm)',color:'var(--text-inverse)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',opacity:saving?0.6:1}}>{saving?'UPLOADING...':'UPLOAD'}</button>
+        </div>
+      </div>
     </div>
   )
 }

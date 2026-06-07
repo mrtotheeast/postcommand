@@ -23,6 +23,12 @@ const STATUS_STYLES = {
 }
 
 const selStyle = { padding:'0 10px', background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-md)', color:'var(--text-primary)', fontSize:'12px', height:'44px', cursor:'pointer', minWidth:'130px' }
+
+function generateCAD() {
+  const d = new Date().toISOString().slice(0,10).replace(/-/g,'')
+  const n = Math.floor(1000 + Math.random() * 9000)
+  return `PC-${d}-${n}`
+}
 const inp = { width:'100%', padding:'10px 12px', background:'var(--bg-input)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-md)', color:'var(--text-primary)', fontSize:'13px', outline:'none', boxSizing:'border-box', height:'44px' }
 const lbl = { fontSize:'11px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', display:'block', marginBottom:'6px' }
 const ta  = { ...inp, height:'auto', resize:'vertical', lineHeight:1.5, padding:'10px 12px' }
@@ -39,6 +45,7 @@ export default function Incidents() {
   const canReview  = atLeast(profile?.role, 'sergeant')
   const canApprove = atLeast(profile?.role, 'lieutenant')
   const canVoid    = atLeast(profile?.role, 'chief')
+  const canDelete  = atLeast(profile?.role, 'chief')
   const canAnalyze = atLeast(profile?.role, 'lieutenant')
   const [mainTab, setMainTab] = useState('reports')
 
@@ -47,7 +54,11 @@ export default function Incidents() {
   async function loadReports() {
     if (!profile?.company_id) return
     setLoading(true)
-    const { data } = await supabase.from('incident_report').select('*').eq('company_id', profile.company_id).order('created_at', { ascending: false })
+    let q = supabase.from('incident_report').select('*').eq('company_id', profile.company_id).order('created_at', { ascending: false })
+    if (!atLeast(profile?.role, 'lieutenant')) {
+      q = q.or('is_confidential.is.null,is_confidential.eq.false')
+    }
+    const { data } = await q
     setReports(data || [])
     setLoading(false)
   }
@@ -121,7 +132,7 @@ export default function Incidents() {
       )}
 
       {showForm && <IncidentForm profile={profile} onClose={()=>setShowForm(false)} onSaved={()=>{setShowForm(false);loadReports()}}/>}
-      {selected && <ReportDetail report={selected} canReview={canReview} canApprove={canApprove} canVoid={canVoid} profile={profile} onClose={()=>setSelected(null)} onUpdated={()=>{setSelected(null);loadReports()}}/>}
+      {selected && <ReportDetail report={selected} canReview={canReview} canApprove={canApprove} canVoid={canVoid} canDelete={canDelete} profile={profile} onClose={()=>setSelected(null)} onUpdated={()=>{setSelected(null);loadReports()}}/>}
     </div>
   )
 }function ReportRow({report,isLast,onClick}) {
@@ -155,6 +166,7 @@ function IncidentForm({profile,onClose,onSaved}) {
   const [step,setStep]   = useState(0)
   const [aiLoading,setAiLoading] = useState(false)
   const [saving,setSaving] = useState(false)
+  const [cadNumber] = useState(() => generateCAD())
   const [error,setError]   = useState(null)
   const [sites,setSites]   = useState([])
   const [employees,setEmployees] = useState([])
@@ -175,7 +187,8 @@ function IncidentForm({profile,onClose,onSaved}) {
     weapons_involved:false,weapon_type:'',weapons_detail:'',
     witnesses:'',evidence:'',
     // Narrative & guided questions
-    narrative:'',q_what:'',q_who:'',q_where:'',q_when:'',q_how:'',q_result:''
+    narrative:'',q_what:'',q_who:'',q_where:'',q_when:'',q_how:'',q_result:'',
+    is_confidential:false
   })
   const set=(k,v)=>setForm(f=>({...f,[k]:v}))
 
@@ -219,10 +232,6 @@ function IncidentForm({profile,onClose,onSaved}) {
       const yy=String(now.getFullYear()).slice(2)
       const mm=String(now.getMonth()+1).padStart(2,'0')
       const month=`${yy}${mm}`
-      const {data:seqData}=await supabase.from('cad_sequence').select('last_number').eq('company_id',profile.company_id).eq('report_month',month).maybeSingle()
-      const nextNum=(seqData?.last_number||0)+1
-      await supabase.from('cad_sequence').upsert({company_id:profile.company_id,report_month:month,last_number:nextNum},{onConflict:'company_id,report_month'})
-      const cadNumber=`${month}-${String(nextNum).padStart(5,'0')}`
       const retainUntil=new Date(now); retainUntil.setFullYear(retainUntil.getFullYear()+3)
       const {data:empData}=await supabase.from('employee').select('id').eq('user_id',profile.id).eq('company_id',profile.company_id).maybeSingle()
       const {error:insErr}=await supabase.from('incident_report').insert({
@@ -243,6 +252,7 @@ function IncidentForm({profile,onClose,onSaved}) {
         ems_called:form.ems_called,ems_unit:form.ems_unit||null,ems_hospital:form.ems_hospital||null,
         fire_called:form.fire_called,fire_unit:form.fire_unit||null,
         witnesses:form.witnesses||null,evidence:form.evidence||null,
+        is_confidential:form.is_confidential||false,
         status:asDraft?'draft':'submitted',submitted_at:asDraft?null:now.toISOString(),
         submitted_by:asDraft?null:(empData?.id||null),retain_until:retainUntil.toISOString().split('T')[0]
       })
@@ -260,7 +270,7 @@ function IncidentForm({profile,onClose,onSaved}) {
       <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:200,backdropFilter:'blur(2px)'}}/>
       <div style={{position:'fixed',top:0,right:0,bottom:0,width:'min(600px,100vw)',background:'var(--bg-surface)',borderLeft:'1px solid var(--border)',zIndex:201,display:'flex',flexDirection:'column'}}>
         <div style={{padding:'18px 24px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
-          <div><div style={{fontFamily:'var(--font-display)',fontSize:'18px',letterSpacing:'2px',color:'var(--text-primary)'}}>NEW INCIDENT REPORT</div><div style={{fontSize:'11px',color:'var(--text-muted)',marginTop:'2px'}}>CAD number assigned on submission</div></div>
+          <div><div style={{fontFamily:'var(--font-display)',fontSize:'18px',letterSpacing:'2px',color:'var(--text-primary)'}}>NEW INCIDENT REPORT</div><div style={{fontSize:'11px',color:'var(--text-muted)',marginTop:'2px'}}>Report will be saved with the CAD number shown above</div></div>
           <button onClick={onClose} style={{background:'transparent',border:'none',color:'var(--text-muted)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',minHeight:'44px',minWidth:'44px'}}><Icon name="x" size={18}/></button>
         </div>
         <div style={{padding:'12px 24px',borderBottom:'1px solid var(--border)',display:'flex',gap:'8px',flexShrink:0,alignItems:'center'}}>
@@ -274,6 +284,10 @@ function IncidentForm({profile,onClose,onSaved}) {
         {mode==='guided'&&<div style={{padding:'10px 24px',borderBottom:'1px solid var(--border)',display:'flex',gap:'4px',flexShrink:0}}>{STEPS.map((_,i)=><div key={i} style={{flex:1,height:'3px',borderRadius:'2px',background:i<=step?'var(--accent)':'var(--border)'}}/>)}</div>}
 
         <div style={{flex:1,overflowY:'auto',padding:'20px 24px',display:'flex',flexDirection:'column',gap:'16px'}}>
+          <div style={{background:'var(--bg-surface)',border:'1px solid var(--border)',borderRadius:'var(--radius-md)',padding:'10px 16px',marginBottom:'16px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <span style={{fontSize:'11px',color:'var(--text-muted)',fontFamily:'var(--font-condensed)',letterSpacing:'1px'}}>CAD NUMBER</span>
+            <span style={{fontSize:'15px',fontWeight:700,color:'var(--accent)',fontFamily:'var(--font-condensed)',letterSpacing:'2px'}}>{cadNumber}</span>
+          </div>
           {error&&<div style={{background:'var(--color-danger-bg)',border:'1px solid rgba(224,85,85,0.3)',borderRadius:'var(--radius-md)',padding:'10px 14px',fontSize:'13px',color:'var(--color-danger)'}}>{error}</div>}
 
           {mode==='guided'&&<>
@@ -372,6 +386,17 @@ function IncidentForm({profile,onClose,onSaved}) {
               </>}
               <div><label style={lbl}>Witnesses</label><textarea value={form.witnesses} onChange={e=>set('witnesses',e.target.value)} rows={2} style={ta} placeholder="Names, contact info..."/></div>
               <div><label style={lbl}>Evidence</label><textarea value={form.evidence} onChange={e=>set('evidence',e.target.value)} rows={2} style={ta} placeholder="Video footage, photos, items..."/></div>
+              {atLeast(profile?.role, 'lieutenant') && (
+                <label style={{display:'flex',alignItems:'center',gap:'10px',padding:'12px',background:'rgba(224,85,85,0.08)',border:'1px solid rgba(224,85,85,0.2)',borderRadius:'var(--radius-md)',cursor:'pointer',marginTop:'12px'}}>
+                  <input type="checkbox" checked={form.is_confidential||false}
+                    onChange={e=>set('is_confidential',e.target.checked)}
+                    style={{accentColor:'var(--color-danger)',width:'16px',height:'16px'}}/>
+                  <div>
+                    <div style={{fontSize:'13px',fontWeight:700,color:'var(--color-danger)'}}>CONFIDENTIAL / IA</div>
+                    <div style={{fontSize:'11px',color:'var(--text-muted)'}}>This report will only be visible to lieutenants and above</div>
+                  </div>
+                </label>
+              )}
             </>}
           </>}
 
@@ -426,7 +451,7 @@ function IncidentForm({profile,onClose,onSaved}) {
       </div>
     </>
   )
-}function ReportDetail({report,canReview,canApprove,canVoid,onClose,onUpdated,profile}) {
+}function ReportDetail({report,canReview,canApprove,canVoid,canDelete,onClose,onUpdated,profile}) {
   const toast = useToast()
   const ss=STATUS_STYLES[report.status]||STATUS_STYLES.draft
   const [notes,setNotes]=useState('')
@@ -461,6 +486,14 @@ function IncidentForm({profile,onClose,onSaved}) {
     await supabase.from('incident_report').update(update).eq('id',report.id)
     toast('Report updated', 'info')
     setSaving(false);onUpdated()
+  }
+
+  async function deleteReport() {
+    if (!window.confirm('Permanently delete this report? This cannot be undone.')) return
+    setSaving(true)
+    await supabase.from('incident_report').delete().eq('id', report.id)
+    setSaving(false)
+    onUpdated()
   }
 
   return (
@@ -525,6 +558,7 @@ function IncidentForm({profile,onClose,onSaved}) {
           {report.status==='submitted'&&canReview&&<button onClick={()=>updateStatus('reviewed')} disabled={saving} style={{height:'44px',background:'var(--color-warning-bg)',border:'1px solid rgba(232,148,58,0.3)',borderRadius:'var(--radius-md)',color:'var(--color-warning)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}><Icon name="eye" size={15}/>MARK REVIEWED</button>}
           {report.status==='reviewed'&&canApprove&&<button onClick={()=>updateStatus('approved')} disabled={saving} style={{height:'44px',background:'var(--color-success-bg)',border:'1px solid rgba(58,170,106,0.3)',borderRadius:'var(--radius-md)',color:'var(--color-success)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}><Icon name="check" size={15}/>APPROVE REPORT</button>}
           {canVoid&&report.status!=='void'&&!showVoid&&<button onClick={()=>setShowVoid(true)} style={{height:'44px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:'var(--text-muted)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}><Icon name="x" size={15}/>VOID REPORT</button>}
+          {canDelete && <button onClick={deleteReport} disabled={saving} style={{height:'44px',background:'transparent',border:'1px solid rgba(224,85,85,0.3)',borderRadius:'var(--radius-md)',color:'var(--color-danger)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}><Icon name="trash-2" size={15}/>DELETE REPORT</button>}
           {(report.status==='approved'||report.status==='submitted')&&<button onClick={shareReport} style={{height:'44px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:'var(--text-muted)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}><Icon name="send" size={15}/>SHARE</button>}
         </div>
       </div>

@@ -31,7 +31,7 @@ export default function Scheduling() {
   const [employees,setEmployees] = useState([])
   const [sites,setSites]       = useState([])
   const [loading,setLoading]   = useState(true)
-  const [showCreate,setShowCreate]   = useState(false)
+  const [showCreate,setShowCreate]   = useState(null)
   const [showAutoAssign,setShowAutoAssign] = useState(false)
   const [selected,setSelected] = useState(null)
   const [filterSite,setFilterSite] = useState('all')
@@ -47,6 +47,33 @@ export default function Scheduling() {
   const canApprove = atLeast(profile?.role,'lieutenant')
   const canPublish = atLeast(profile?.role,'lieutenant')
   const isOfficer  = ['officer','corporal'].includes(profile?.role)
+
+  function getShiftsForEmployeeDay(empId, date) {
+    return filteredShifts.filter(s => {
+      if (s.employee_id !== empId) return false
+      const sd = new Date(s.start_time)
+      return sd.getFullYear()===date.getFullYear() && sd.getMonth()===date.getMonth() && sd.getDate()===date.getDate()
+    })
+  }
+  function getEmployeeWeekHours(empId) {
+    return filteredShifts.filter(s=>s.employee_id===empId).reduce((acc,s)=>{
+      if(!s.start_time||!s.end_time) return acc
+      return acc + (new Date(s.end_time)-new Date(s.start_time))/3600000
+    },0).toFixed(1)
+  }
+  function getDayTotalHours(date) {
+    return filteredShifts.filter(s=>{
+      const sd=new Date(s.start_time)
+      return sd.getFullYear()===date.getFullYear()&&sd.getMonth()===date.getMonth()&&sd.getDate()===date.getDate()
+    }).reduce((acc,s)=>{
+      if(!s.start_time||!s.end_time) return acc
+      return acc+(new Date(s.end_time)-new Date(s.start_time))/3600000
+    },0).toFixed(1)
+  }
+  function formatShiftTime(isoStr) {
+    if(!isoStr) return ''
+    return new Date(isoStr).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true})
+  }
 
   useEffect(()=>{ const h=()=>setIsMobile(window.innerWidth<768); window.addEventListener('resize',h); return ()=>window.removeEventListener('resize',h) },[])
 
@@ -114,14 +141,14 @@ export default function Scheduling() {
               ))}
             </div>
             {mainTab==='schedule'&&(<div style={{display:'flex',gap:'2px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-sm)',padding:'3px'}}>
-              {['week','biweek','month','year'].map(v=>(
+              {['week','biweek','month','year','grid'].map(v=>(
                 <button key={v} onClick={()=>setViewMode(v)} style={{padding:'0 10px',minHeight:'36px',border:'none',borderRadius:'4px',background:viewMode===v?'var(--accent-bg)':'transparent',color:viewMode===v?'var(--accent)':'var(--text-muted)',cursor:'pointer',fontSize:'10px',fontFamily:'var(--font-condensed)',letterSpacing:'1px'}}>
-                  {v==='biweek'?'2 WK':v.toUpperCase()}
+                  {v==='biweek'?'2 WK':v==='grid'?'GRID':v.toUpperCase()}
                 </button>
               ))}
             </div>)}
             {canCreate&&mainTab==='schedule'&&<button onClick={()=>setShowAutoAssign(true)} style={{display:'flex',alignItems:'center',gap:'6px',background:'var(--bg-card)',color:'var(--text-secondary)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-sm)',padding:'0 14px',minHeight:'36px',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:600,letterSpacing:'1px',cursor:'pointer'}}><Icon name="cpu" size={14}/>AUTO-ASSIGN</button>}
-            {canCreate&&mainTab==='schedule'&&<button onClick={()=>setShowCreate(true)} style={{display:'flex',alignItems:'center',gap:'6px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-sm)',padding:'0 14px',minHeight:'36px',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,letterSpacing:'1px',cursor:'pointer'}}><Icon name="plus" size={14}/>ADD SHIFT</button>}
+            {canCreate&&mainTab==='schedule'&&<button onClick={()=>setShowCreate({})} style={{display:'flex',alignItems:'center',gap:'6px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-sm)',padding:'0 14px',minHeight:'36px',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,letterSpacing:'1px',cursor:'pointer'}}><Icon name="plus" size={14}/>ADD SHIFT</button>}
           </div>
         </div>
         <div style={{display:'flex',gap:'8px',flexWrap:'wrap',alignItems:'center'}}>
@@ -154,6 +181,21 @@ export default function Scheduling() {
         <YearView baseDate={baseDate} shifts={filteredShifts} today={today} onMonthClick={(m)=>{ const d=new Date(baseDate); d.setMonth(m); setBaseDate(d); setViewMode('month') }}/>
       ) : mainTab==='schedule' && viewMode==='month' ? (
         <MonthView baseDate={baseDate} today={today} shifts={filteredShifts} empName={empName} siteName={siteName} onSelect={setSelected} isMobile={isMobile} mobileEmpId={mobileEmp?.id}/>
+      ) : mainTab==='schedule' && viewMode==='grid' ? (
+        <GridView
+          weekDays={getWeekDates(baseDate)}
+          sortedEmployees={sortedEmployees}
+          getShiftsForEmployeeDay={getShiftsForEmployeeDay}
+          getEmployeeWeekHours={getEmployeeWeekHours}
+          getDayTotalHours={getDayTotalHours}
+          formatShiftTime={formatShiftTime}
+          siteName={siteName}
+          onSelect={setSelected}
+          canCreate={canCreate}
+          onCellClick={(emp, date) => {
+            setShowCreate({ prefillEmp: emp.id, prefillDate: date })
+          }}
+        />
       ) : mainTab==='schedule' ? (
         <MultiWeekView weeks={viewMode==='biweek'?2:1} baseDate={baseDate} today={today} shifts={filteredShifts} empName={empName} siteName={siteName} onSelect={setSelected} isMobile={isMobile} mobileEmpId={mobileEmp?.id}/>
       ) : null}
@@ -172,7 +214,7 @@ export default function Scheduling() {
           setSelected(null); loadAll()
         }}
         onDelete={async(id)=>{ await supabase.from('shift').delete().eq('id',id); toast('Shift deleted', 'info'); setSelected(null); loadAll() }}/>}
-      {showCreate&&<CreateShiftModal employees={sortedEmployees} sites={sites} companyId={profile.company_id} createdBy={profile.id} onClose={()=>setShowCreate(false)} onSaved={()=>{setShowCreate(false);loadAll()}}/>}
+      {showCreate&&<CreateShiftModal employees={sortedEmployees} sites={sites} companyId={profile.company_id} createdBy={profile.id} prefillEmpId={showCreate?.prefillEmp} prefillDate={showCreate?.prefillDate} onClose={()=>setShowCreate(null)} onSaved={()=>{setShowCreate(null);loadAll()}}/>}
       {showAutoAssign&&<AutoAssignModal employees={sortedEmployees} sites={sites} shifts={shifts} companyId={profile.company_id} createdBy={profile.id} onClose={()=>setShowAutoAssign(false)} onSaved={()=>{setShowAutoAssign(false);loadAll()}}/>}
     </div>
   )
@@ -313,10 +355,11 @@ function ShiftDetail({shift,empName,siteName,canApprove,canPublish,canCreate,onC
   </>
 }
 
-function CreateShiftModal({employees,sites,companyId,createdBy,onClose,onSaved}){
+function CreateShiftModal({employees,sites,companyId,createdBy,prefillEmpId,prefillDate,onClose,onSaved}){
   const toast = useToast()
   const today=new Date().toISOString().split('T')[0]
-  const [form,setForm]=useState({employee_id:'',site_id:'',date:today,sh:'08',sm:'00',eh:'16',em:'00',role:'officer',is_armed:false,notes:''})
+  const prefillDateStr = prefillDate ? prefillDate.toISOString().split('T')[0] : today
+  const [form,setForm]=useState({employee_id:prefillEmpId||'',site_id:'',date:prefillDateStr,sh:'08',sm:'00',eh:'16',em:'00',role:'officer',is_armed:false,notes:''})
   const [saving,setSaving]=useState(false)
   const [error,setError]=useState(null)
   const [conflict,setConflict]=useState(null)  // null | { shiftId, startTime, endTime, siteName }
@@ -737,6 +780,71 @@ function AutoAssignModal({ employees, sites, shifts, companyId, createdBy, onClo
     </>
   )
 }
+// ── Grid View ─────────────────────────────────────────────────────────────────
+
+function GridView({ weekDays, sortedEmployees, getShiftsForEmployeeDay, getEmployeeWeekHours, getDayTotalHours, formatShiftTime, siteName, onSelect, onCellClick, canCreate }) {
+  return (
+    <div style={{flex:1,overflowX:'auto',overflowY:'auto',padding:'0'}}>
+      <div style={{display:'grid',gridTemplateColumns:'200px repeat(7,minmax(120px,1fr))',minWidth:'1040px',border:'1px solid var(--border)',borderRadius:'var(--radius-md)',overflow:'hidden',margin:'16px 20px'}}>
+        {/* Header */}
+        <div style={{background:'var(--bg-surface)',padding:'10px 14px',fontFamily:'var(--font-condensed)',fontSize:'10px',letterSpacing:'1.5px',color:'var(--text-muted)',borderRight:'1px solid var(--border)',borderBottom:'1px solid var(--border)'}}>OFFICER</div>
+        {weekDays.map((d,i) => {
+          const isToday = isSameDay(d,new Date())
+          return (
+            <div key={i} style={{background:isToday?'var(--accent-bg)':'var(--bg-surface)',padding:'10px 14px',textAlign:'center',borderLeft:'1px solid var(--border)',borderBottom:'1px solid var(--border)'}}>
+              <div style={{fontSize:'10px',color:isToday?'var(--accent)':'var(--text-muted)',fontFamily:'var(--font-condensed)',letterSpacing:'1px'}}>{DAYS_SHORT[d.getDay()]}</div>
+              <div style={{fontSize:'16px',fontWeight:700,color:isToday?'var(--accent)':'var(--text-primary)',lineHeight:1.2}}>{d.getDate()}</div>
+            </div>
+          )
+        })}
+        {/* Employee rows */}
+        {sortedEmployees.map(emp => (
+          <div key={emp.id} style={{display:'contents'}}>
+            <div style={{padding:'10px 14px',borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)',display:'flex',alignItems:'center',gap:'8px',background:'var(--bg-card)'}}>
+              <div style={{width:'30px',height:'30px',borderRadius:'50%',background:'var(--accent)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'11px',fontWeight:700,color:'var(--text-inverse)',flexShrink:0}}>
+                {(emp.first_name?.[0]||'')}{(emp.last_name?.[0]||'')}
+              </div>
+              <div style={{minWidth:0}}>
+                <div style={{fontSize:'12px',fontWeight:600,color:'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{emp.first_name} {emp.last_name}</div>
+                <div style={{fontSize:'10px',color:'var(--accent)',fontFamily:'var(--font-condensed)'}}>{getEmployeeWeekHours(emp.id)}h</div>
+              </div>
+            </div>
+            {weekDays.map((d,di) => {
+              const dayShifts = getShiftsForEmployeeDay(emp.id, d)
+              return (
+                <div key={di} onClick={() => canCreate && onCellClick(emp, d)}
+                  style={{borderTop:'1px solid var(--border)',borderLeft:'1px solid var(--border)',padding:'4px',minHeight:'64px',background:'var(--bg-card)',cursor:canCreate?'pointer':'default',transition:'background 100ms ease'}}
+                  onMouseEnter={e=>{if(canCreate)e.currentTarget.style.background='var(--bg-card-hover)'}}
+                  onMouseLeave={e=>{e.currentTarget.style.background='var(--bg-card)'}}>
+                  {dayShifts.length===0 && canCreate && (
+                    <div style={{height:'100%',minHeight:'56px',display:'flex',alignItems:'center',justifyContent:'center',border:'1px dashed var(--border)',borderRadius:'4px',color:'var(--text-muted)',fontSize:'18px',opacity:0.3}}>+</div>
+                  )}
+                  {dayShifts.map(s => (
+                    <div key={s.id} onClick={e=>{e.stopPropagation();onSelect(s)}}
+                      style={{background:'var(--bg-surface)',border:'1px solid var(--accent-border)',borderRadius:'4px',padding:'3px 6px',marginBottom:'2px',fontSize:'11px',cursor:'pointer'}}
+                      onMouseEnter={e=>e.currentTarget.style.borderColor='var(--accent)'}
+                      onMouseLeave={e=>e.currentTarget.style.borderColor='var(--accent-border)'}>
+                      <div style={{color:'var(--accent)',fontWeight:700,fontFamily:'var(--font-condensed)'}}>{formatShiftTime(s.start_time)}</div>
+                      <div style={{color:'var(--text-secondary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{siteName(s.site_id)?.slice(0,14)||'—'}</div>
+                    </div>
+                  ))}
+                </div>
+              )
+            })}
+          </div>
+        ))}
+        {/* Totals row */}
+        <div style={{background:'var(--bg-surface)',padding:'10px 14px',borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)',fontFamily:'var(--font-condensed)',fontSize:'10px',color:'var(--accent)',fontWeight:700,letterSpacing:'1px'}}>TOTAL HRS</div>
+        {weekDays.map((d,i) => (
+          <div key={i} style={{background:'var(--bg-surface)',padding:'10px 14px',textAlign:'center',borderTop:'1px solid var(--border)',borderLeft:'1px solid var(--border)',fontFamily:'var(--font-display)',fontSize:'14px',color:'var(--accent)',fontWeight:700}}>
+            {getDayTotalHours(d)}h
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ── Shift Bids Panel ──────────────────────────────────────────────────────────
 
 function ShiftBidsPanel({ companyId, profile, employees, sites, canPost }) {

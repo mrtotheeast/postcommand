@@ -558,7 +558,7 @@ function CourseFormModal({ course, companyId, employeeId, onClose, onSaved }) {
         {showAiPanel && (
           <div style={{ background:'var(--accent-bg)', border:'1px solid var(--accent-border)', borderRadius:'var(--radius-sm)', padding:'14px', marginBottom:'16px' }}>
             <div style={{ fontSize:'11px', color:'var(--accent)', fontFamily:'var(--font-condensed)', textTransform:'uppercase', letterSpacing:'1px', marginBottom:'10px', display:'flex', alignItems:'center', gap:'6px' }}>
-              <Icon name="zap" size={12}/>Generate Course with Claude AI
+              <Icon name="zap" size={12}/>Generate with AI
             </div>
             <div style={{ display:'flex', gap:'8px', marginBottom:'8px' }}>
               <input style={{ ...s.inp, flex:1 }} value={aiTopic} onChange={e=>setAiTopic(e.target.value)} onFocus={inputF} onBlur={inputB} placeholder="e.g. Use of Force Policy for Private Security Officers" onKeyDown={e=>e.key==='Enter'&&generateWithAI()}/>
