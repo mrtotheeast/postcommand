@@ -13,8 +13,8 @@ export default function Dashboard() {
   const navigate = useNavigate()
 
   if (!profile) return (
-    <div style={{padding:'24px',display:'flex',alignItems:'center',justifyContent:'center',minHeight:'300px'}}>
-      <div style={{color:'var(--text-muted)',fontSize:'13px',fontFamily:'var(--font-condensed)',letterSpacing:'1px'}}>LOADING...</div>
+    <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'60vh',color:'var(--text-muted)',fontSize:'14px'}}>
+      Loading your dashboard...
     </div>
   )
 
@@ -195,6 +195,8 @@ function OfficerDashboard({ profile, badges, navigate }) {
   const hour = now.getHours()
   const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening'
   const dateStr = now.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})
+  const displayName = profile?.first_name
+    || (profile?.role ? profile.role.charAt(0).toUpperCase() + profile.role.slice(1) : 'Officer')
   const [shifts, setShifts] = useState([])
   const [shiftsLoading, setShiftsLoading] = useState(true)
 
@@ -231,7 +233,7 @@ function OfficerDashboard({ profile, badges, navigate }) {
       <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}`}</style>
       <div style={{marginBottom:'24px'}}>
         <div style={{fontSize:'12px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)'}}>{greeting},</div>
-        <div style={{fontFamily:'var(--font-display)',fontSize:'32px',letterSpacing:'2px',color:'var(--text-primary)',lineHeight:1.1,margin:'2px 0 4px'}}>{profile?.first_name || 'Officer'}</div>
+        <div style={{fontFamily:'var(--font-display)',fontSize:'32px',letterSpacing:'2px',color:'var(--text-primary)',lineHeight:1.1,margin:'2px 0 4px'}}>{displayName}</div>
         <div style={{fontSize:'12px',color:'var(--text-muted)'}}>Officer · {dateStr}</div>
       </div>
 
@@ -274,7 +276,7 @@ function OfficerDashboard({ profile, badges, navigate }) {
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(180px,1fr))',gap:'12px'}}>
         {[
           {label:'My Schedule',   desc:'View your upcoming shifts',  path:'/scheduling', icon:'calendar',       color:'#5b9fe0'},
-          {label:'My Timesheets', desc:'Review your hours',           path:'/timesheets', icon:'clock',          color:'var(--accent)'},
+          {label:'My Timesheets', desc:'Review your hours',           path:'/timesheets', icon:'clock',          color:'#c9a227'},
           {label:'File Incident', desc:'Submit a field report',       path:'/incidents',  icon:'file-check',     color:'#e05555'},
           {label:'Patrol Log',    desc:'Log patrol checkpoints',      path:'/patrol',     icon:'activity',       color:'#5b9fe0'},
           {label:'SOS',           desc:'Emergency alert',             path:'/sos',        icon:'alert-triangle', color:'#e05555'},
