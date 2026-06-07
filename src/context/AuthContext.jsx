@@ -34,20 +34,52 @@ export function AuthProvider({ children }) {
   const effectiveRole = viewRole || profile?.role
   const isNPS = profile?.company_id === NPS_COMPANY_ID
 
-  function loadProfile(userId) {
-    return supabase
-      .from('user_profile')
-      .select('*')
-      .eq('id', userId)
-      .single()
-      .then(({ data }) => {
-        setProfile(data)
-        if (data?.id) loadViewAs(data.id)
-        setLoading(false)
-      })
-      .catch(() => {
-        setLoading(false)
-      })
+  async function loadProfile(userId) {
+    try {
+      const { data: profileData } = await supabase
+        .from('user_profile')
+        .select('*')
+        .eq('id', userId)
+        .single()
+
+      if (profileData) {
+        // Fill name/company from auth metadata when missing
+        if (!profileData.first_name) {
+          const { data: { user } } = await supabase.auth.getUser()
+          const meta = user?.user_metadata
+          if (meta?.first_name) {
+            await supabase.from('user_profile').update({
+              first_name: meta.first_name,
+              last_name:  meta.last_name  || profileData.last_name,
+              company_id: meta.company_id || profileData.company_id,
+            }).eq('id', userId)
+            profileData.first_name = meta.first_name
+            profileData.last_name  = meta.last_name  || profileData.last_name
+            if (meta.company_id && !profileData.company_id) profileData.company_id = meta.company_id
+          }
+        }
+        setProfile(profileData)
+        if (profileData.id) loadViewAs(profileData.id)
+      } else {
+        // No profile row yet — create from auth metadata
+        const { data: { user } } = await supabase.auth.getUser()
+        const meta = user?.user_metadata
+        const fresh = {
+          id:         userId,
+          first_name: meta?.first_name || '',
+          last_name:  meta?.last_name  || '',
+          company_id: meta?.company_id || null,
+          role:       meta?.role       || 'officer',
+          email:      user?.email      || '',
+        }
+        await supabase.from('user_profile').insert(fresh)
+        setProfile(fresh)
+      }
+    } catch {
+      // silent
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => {
@@ -60,14 +92,23 @@ export function AuthProvider({ children }) {
       }
     })
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_OUT') {
         setUser(null)
         setProfile(null)
         setLoading(false)
       } else if (event === 'SIGNED_IN' && session?.user) {
         setUser(session.user)
-        loadProfile(session.user.id)
+        await loadProfile(session.user.id)
+        // On magic link login: mark employee record as having app access
+        const meta = session.user.user_metadata
+        if (meta?.company_id && session.user.email) {
+          supabase.from('employee')
+            .update({ has_app_access: true, invitation_status: 'accepted' })
+            .eq('email', session.user.email)
+            .eq('company_id', meta.company_id)
+            .then(() => {}).catch(() => {})
+        }
       }
     })
 

@@ -108,7 +108,7 @@ function MainDashboard({ profile, effectiveRole, badges, navigate }) {
       <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:'28px',gap:'16px'}}>
         <div>
           <div style={{fontSize:'12px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)'}}>{greeting},</div>
-          <div style={{fontFamily:'var(--font-display)',fontSize:'32px',letterSpacing:'2px',color:'var(--text-primary)',lineHeight:1.1,margin:'2px 0 4px'}}>{profile?.first_name ?? 'Officer'}</div>
+          <div style={{fontFamily:'var(--font-display)',fontSize:'32px',letterSpacing:'2px',color:'var(--text-primary)',lineHeight:1.1,margin:'2px 0 4px'}}>{profile?.first_name || ROLE_LABELS[effectiveRole] || 'Welcome'}</div>
           <div style={{fontSize:'12px',color:'var(--text-muted)'}}>{ROLE_LABELS[effectiveRole]} · {dateStr}</div>
         </div>
         <div style={{fontFamily:'var(--font-display)',fontSize:'28px',letterSpacing:'2px',color:'var(--accent)',lineHeight:1,flexShrink:0}}>{timeStr}</div>
@@ -189,26 +189,91 @@ function OfficerDashboard({ profile, badges, navigate }) {
   const hour = now.getHours()
   const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening'
   const dateStr = now.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})
+  const [shifts, setShifts] = useState([])
+  const [shiftsLoading, setShiftsLoading] = useState(true)
+
+  useEffect(() => {
+    if (!profile?.company_id) { setShiftsLoading(false); return }
+    const today = new Date().toISOString().slice(0, 10)
+    async function load() {
+      const { data: emp } = await supabase.from('employee')
+        .select('id')
+        .eq('email', profile.email || '')
+        .eq('company_id', profile.company_id)
+        .maybeSingle()
+      if (!emp?.id) { setShiftsLoading(false); return }
+      const { data } = await supabase.from('shift')
+        .select('id,date,start_time,end_time,site:site_id(name)')
+        .eq('employee_id', emp.id)
+        .gte('date', today)
+        .order('date', { ascending: true })
+        .limit(5)
+      setShifts(data || [])
+      setShiftsLoading(false)
+    }
+    load().catch(() => setShiftsLoading(false))
+  }, [profile])
+
+  function fmtShift(s) {
+    const d = new Date(s.date + 'T00:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})
+    const t = v => v ? new Date('1970-01-01T' + v).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'}) : ''
+    return `${d}${s.start_time ? ' · ' + t(s.start_time) : ''}${s.end_time ? ' – ' + t(s.end_time) : ''}`
+  }
 
   return (
     <div style={{padding:'24px',maxWidth:'800px',animation:'fadeIn 200ms ease'}}>
       <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}`}</style>
-      <div style={{marginBottom:'28px'}}>
+      <div style={{marginBottom:'24px'}}>
         <div style={{fontSize:'12px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)'}}>{greeting},</div>
-        <div style={{fontFamily:'var(--font-display)',fontSize:'32px',letterSpacing:'2px',color:'var(--text-primary)',lineHeight:1.1,margin:'2px 0 4px'}}>{profile?.first_name ?? 'Officer'}</div>
+        <div style={{fontFamily:'var(--font-display)',fontSize:'32px',letterSpacing:'2px',color:'var(--text-primary)',lineHeight:1.1,margin:'2px 0 4px'}}>{profile?.first_name || 'Officer'}</div>
         <div style={{fontSize:'12px',color:'var(--text-muted)'}}>Officer · {dateStr}</div>
       </div>
 
+      {/* Prominent Clock In CTA */}
+      <button onClick={() => navigate('/clockin')}
+        style={{display:'flex',alignItems:'center',gap:'14px',width:'100%',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-md)',padding:'16px 20px',marginBottom:'20px',cursor:'pointer',textAlign:'left',boxShadow:'0 4px 16px rgba(201,162,39,0.25)',transition:'opacity 150ms ease'}}
+        onMouseEnter={e=>e.currentTarget.style.opacity='0.9'} onMouseLeave={e=>e.currentTarget.style.opacity='1'}>
+        <div style={{width:'42px',height:'42px',borderRadius:'var(--radius-sm)',background:'rgba(255,255,255,0.15)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+          <Icon name="log-in" size={22} color="var(--text-inverse)"/>
+        </div>
+        <div>
+          <div style={{fontFamily:'var(--font-display)',fontSize:'16px',letterSpacing:'1.5px'}}>CLOCK IN / OUT</div>
+          <div style={{fontSize:'12px',opacity:0.8,marginTop:'2px'}}>Start or end your shift</div>
+        </div>
+      </button>
+
+      {/* Upcoming shifts */}
+      <div style={{marginBottom:'24px'}}>
+        <div style={{fontSize:'10px',color:'var(--text-muted)',letterSpacing:'1.5px',textTransform:'uppercase',fontFamily:'var(--font-condensed)',marginBottom:'10px'}}>Upcoming Shifts</div>
+        {shiftsLoading ? (
+          <div style={{color:'var(--text-muted)',fontSize:'12px',padding:'14px 16px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)'}}>Loading...</div>
+        ) : shifts.length === 0 ? (
+          <div style={{color:'var(--text-muted)',fontSize:'13px',padding:'14px 16px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)'}}>No shifts scheduled yet.</div>
+        ) : (
+          <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+            {shifts.map(s => (
+              <div key={s.id} style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'12px 16px',display:'flex',alignItems:'center',gap:'12px'}}>
+                <Icon name="calendar" size={15} color="var(--accent)"/>
+                <div>
+                  <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-primary)'}}>{s.site?.name || 'Unassigned'}</div>
+                  <div style={{fontSize:'11px',color:'var(--text-muted)',marginTop:'2px'}}>{fmtShift(s)}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div style={{fontSize:'10px',color:'var(--text-muted)',letterSpacing:'1.5px',textTransform:'uppercase',fontFamily:'var(--font-condensed)',marginBottom:'10px'}}>Quick Access</div>
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(180px,1fr))',gap:'12px'}}>
         {[
-          {label:'Clock In / Out',desc:'Start or end your shift',path:'/clockin',icon:'log-in',color:'#3aaa6a'},
-          {label:'My Schedule',desc:'View your upcoming shifts',path:'/scheduling',icon:'calendar',color:'#5b9fe0'},
-          {label:'My Timesheets',desc:'Review your hours',path:'/timesheets',icon:'clock',color:'var(--accent)'},
-          {label:'File Incident',desc:'Submit a field report',path:'/incidents',icon:'file-check',color:'#e05555'},
-          {label:'Patrol Log',desc:'Log patrol checkpoints',path:'/patrol',icon:'activity',color:'#5b9fe0'},
-          {label:'SOS',desc:'Emergency alert',path:'/sos',icon:'alert-triangle',color:'#e05555'},
-          {label:'Messaging',desc:'Team communication',path:'/messaging',icon:'message-circle',color:'#a07ae0',badge:badges.unread_messages},
-          {label:'Training',desc:'My assigned courses',path:'/training',icon:'book-open',color:'#3aaa6a'},
+          {label:'My Schedule',   desc:'View your upcoming shifts',  path:'/scheduling', icon:'calendar',       color:'#5b9fe0'},
+          {label:'My Timesheets', desc:'Review your hours',           path:'/timesheets', icon:'clock',          color:'var(--accent)'},
+          {label:'File Incident', desc:'Submit a field report',       path:'/incidents',  icon:'file-check',     color:'#e05555'},
+          {label:'Patrol Log',    desc:'Log patrol checkpoints',      path:'/patrol',     icon:'activity',       color:'#5b9fe0'},
+          {label:'SOS',           desc:'Emergency alert',             path:'/sos',        icon:'alert-triangle', color:'#e05555'},
+          {label:'Messaging',     desc:'Team communication',          path:'/messaging',  icon:'message-circle', color:'#a07ae0', badge:badges.unread_messages},
+          {label:'Training',      desc:'My assigned courses',         path:'/training',   icon:'book-open',      color:'#3aaa6a'},
         ].map(t => (
           <button key={t.path} onClick={() => navigate(t.path)}
             style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'16px',textAlign:'left',cursor:'pointer',transition:'all 150ms ease',display:'flex',flexDirection:'column',gap:'6px'}}
@@ -260,7 +325,7 @@ function CorporalDashboard({ profile, badges, navigate }) {
       <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}`}</style>
       <div style={{marginBottom:'24px'}}>
         <div style={{fontSize:'12px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)'}}>{greeting},</div>
-        <div style={{fontFamily:'var(--font-display)',fontSize:'32px',letterSpacing:'2px',color:'var(--text-primary)',lineHeight:1.1,margin:'2px 0 4px'}}>{profile?.first_name ?? 'Corporal'}</div>
+        <div style={{fontFamily:'var(--font-display)',fontSize:'32px',letterSpacing:'2px',color:'var(--text-primary)',lineHeight:1.1,margin:'2px 0 4px'}}>{profile?.first_name || 'Corporal'}</div>
         <div style={{fontSize:'12px',color:'var(--text-muted)'}}>Corporal · {new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}</div>
       </div>
 
