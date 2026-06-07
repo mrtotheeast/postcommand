@@ -19,6 +19,19 @@ const STATUS_COLORS = {
   suspended:{bg:'rgba(224,85,85,0.12)',color:'#e05555'},
 }
 
+function friendlyError(err) {
+  const msg = err?.message || ''
+  if (msg.includes('duplicate key') || msg.includes('unique constraint') || msg.includes('already exists')) {
+    if (msg.includes('email')) return 'An employee with this email already exists.'
+    if (msg.includes('employee_id_number')) return 'An employee with this ID number already exists.'
+    return 'This record already exists.'
+  }
+  if (msg.includes('permission denied') || msg.includes('not authorized')) return 'You do not have permission to perform this action.'
+  if (msg.includes('violates not-null') || msg.includes('null value')) return 'Please fill in all required fields.'
+  if (msg.includes('network') || msg.includes('fetch')) return 'Connection error. Please check your internet and try again.'
+  return 'Something went wrong. Please try again.'
+}
+
 export default function Personnel() {
   const { profile } = useAuth()
   const [employees, setEmployees] = useState([])
@@ -52,7 +65,7 @@ export default function Personnel() {
       .select('id,company_id,first_name,middle_name,last_name,email,phone_number,role,status,employment_type,employment_classification,position_title,pay_rate,hire_date,is_armed,has_app_access,profile_photo_url,employee_id_number,invitation_status,terminated_date,probation_end_date,emergency_contact_name,emergency_contact_phone,emergency_contact_relation,notes')
       .eq('company_id', profile.company_id)
       .order('last_name', { ascending: true })
-    if (error) setError(error.message)
+    if (error) setError(friendlyError(error))
     else setEmployees(data || [])
     setLoading(false)
   }
@@ -450,7 +463,7 @@ function EmpDetail({emp,canViewSensitive,canEdit,onClose,onRefresh}) {
       setInviteMsg({ ok:true, text:`Invite sent to ${emp.email}.` })
       toast('Invite sent to ' + emp.email, 'info')
     } else {
-      setInviteMsg({ ok:false, text: 'Invite failed: ' + error.message })
+      setInviteMsg({ ok:false, text: friendlyError(error) })
     }
     setInviting(false)
   }
@@ -809,7 +822,7 @@ function AddEmployeeModal({ companyId, onClose, onSaved }) {
     }).select().single()
 
     setSaving(false)
-    if (err) { setError(`Save failed: ${err.message}`); return }
+    if (err) { setError(friendlyError(err)); return }
     setSavedEmp(data)
     setSuccess(true)
     toast('Employee added successfully')
@@ -930,7 +943,7 @@ function EmployeeStatusModal({ emp, profile, onClose, onDone }) {
       toast('Employee status updated', 'info')
       onDone()
     } catch(e) {
-      setError(e.message)
+      setError(friendlyError(e))
       setSaving(false)
     }
   }

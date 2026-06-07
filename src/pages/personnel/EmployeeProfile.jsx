@@ -6,6 +6,19 @@ import { meetsLevel, PERMISSION_KEYS } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
 import { useToast } from '../../components/ui/Toast'
 
+function friendlyError(err) {
+  const msg = err?.message || ''
+  if (msg.includes('duplicate key') || msg.includes('unique constraint') || msg.includes('already exists')) {
+    if (msg.includes('email')) return 'An employee with this email already exists.'
+    if (msg.includes('employee_id_number')) return 'An employee with this ID number already exists.'
+    return 'This record already exists.'
+  }
+  if (msg.includes('permission denied') || msg.includes('not authorized')) return 'You do not have permission to perform this action.'
+  if (msg.includes('violates not-null') || msg.includes('null value')) return 'Please fill in all required fields.'
+  if (msg.includes('network') || msg.includes('fetch')) return 'Connection error. Please check your internet and try again.'
+  return 'Something went wrong. Please try again.'
+}
+
 const TABS = [
   { id:'overview',     label:'Overview',     icon:'user' },
   { id:'credentials',  label:'Credentials',  icon:'award' },
@@ -89,7 +102,7 @@ function OverviewTab({emp, canViewSensitive, canEdit, onRefresh, onEdit, viewerP
       setInviteMsg({ ok:true, text:`Invite sent to ${emp.email}.` })
       toast('Invite sent to ' + emp.email, 'info')
     } else {
-      setInviteMsg({ ok:false, text: 'Invite failed: ' + error.message })
+      setInviteMsg({ ok:false, text: friendlyError(error) })
     }
     setInviting(false)
   }
@@ -216,7 +229,7 @@ function CredentialsTab({emp, canEdit}) {
   async function save() {
     setSaving(true); setSaveError(null)
     const { error } = await supabase.from('employee_credential').insert({ employee_id:emp.id, company_id:emp.company_id, ...form, issued_date:form.issued_date||null, expiry_date:form.expiry_date||null })
-    if (error) { setSaveError(error.message); setSaving(false); return }
+    if (error) { setSaveError(friendlyError(error)); setSaving(false); return }
     setSaving(false); setShowAdd(false); setForm({type:'guard_card',number:'',issued_date:'',expiry_date:'',issuing_authority:'',notes:''}); toast('Credential added'); load()
   }
 
@@ -322,7 +335,7 @@ function NotesTab({emp, canEdit, authorId}) {
     if (!text.trim()) return
     setSaving(true); setSaveError(null)
     const { error } = await supabase.from('employee_note').insert({ employee_id:emp.id, company_id:emp.company_id, body:text.trim(), author_id:authorId||null })
-    if (error) { setSaveError(error.message); setSaving(false); return }
+    if (error) { setSaveError(friendlyError(error)); setSaving(false); return }
     setText(''); setSaving(false); toast('Note saved'); load()
   }
 
@@ -688,10 +701,10 @@ function DocumentsTab({ emp, canEdit }) {
     const fname = form.file_name.trim() || file.name
     const path = `${emp.company_id}/${emp.id}/${Date.now()}-${fname}.${ext}`
     const { data: upData, error: upErr } = await supabase.storage.from('employee-documents').upload(path, file, { upsert:true, contentType:file.type })
-    if (upErr) { setError(upErr.message); setUploading(false); return }
+    if (upErr) { setError(friendlyError(upErr)); setUploading(false); return }
     const { data:{ publicUrl } } = supabase.storage.from('employee-documents').getPublicUrl(upData.path)
     const { error: insErr } = await supabase.from('employee_document').insert({ company_id:emp.company_id, employee_id:emp.id, doc_type:form.doc_type, file_name:fname, file_url:publicUrl, uploaded_at:new Date().toISOString() })
-    if (insErr) setError(insErr.message)
+    if (insErr) setError(friendlyError(insErr))
     else { setShowAdd(false); setForm({ doc_type:'I-9', file_name:'' }); toast('Document uploaded') }
     setUploading(false); load()
   }
@@ -785,7 +798,7 @@ function PTOTab({ emp, canEdit }) {
     if (!form.start_date || !form.end_date) { setError('Start and end date required.'); return }
     setSaving(true); setError(null)
     const { error: err } = await supabase.from('pto_request').insert({ company_id:emp.company_id, employee_id:emp.id, pto_type:form.pto_type, start_date:form.start_date, end_date:form.end_date, notes:form.notes||null, status:'pending', requested_at:new Date().toISOString() })
-    if (err) setError(err.message)
+    if (err) setError(friendlyError(err))
     else { setShowReq(false); setForm({ pto_type:'Vacation', start_date:'', end_date:'', notes:'' }) }
     setSaving(false); load()
   }

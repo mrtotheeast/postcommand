@@ -18,6 +18,18 @@ L.Icon.Default.mergeOptions({
 
 const US_STATES = ['AL','AK','AZ','AR','CA','CO','CT','DC','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY']
 
+function friendlyError(err) {
+  const msg = err?.message || ''
+  if (msg.includes('duplicate key') || msg.includes('unique constraint') || msg.includes('already exists')) {
+    if (msg.includes('name')) return 'A site with this name already exists.'
+    return 'This record already exists.'
+  }
+  if (msg.includes('permission denied') || msg.includes('not authorized')) return 'You do not have permission to perform this action.'
+  if (msg.includes('violates not-null') || msg.includes('null value')) return 'Please fill in all required fields.'
+  if (msg.includes('network') || msg.includes('fetch')) return 'Connection error. Please check your internet and try again.'
+  return 'Something went wrong. Please try again.'
+}
+
 const s = {
   page:      { padding:'24px', maxWidth:'1200px', animation:'fadeIn 200ms ease' },
   heading:   { fontFamily:'var(--font-display)', fontSize:'28px', letterSpacing:'2px', color:'var(--text-primary)', lineHeight:1, marginBottom:'4px' },
@@ -378,7 +390,7 @@ function SiteFormModal({ site, companyId, onClose, onSaved }) {
       err = res.error
     }
     setSaving(false)
-    if (err) { toast('Save failed: ' + err.message, 'error'); return }
+    if (err) { toast(friendlyError(err), 'error'); return }
     toast('Site saved successfully')
     onSaved()
   }
