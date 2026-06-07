@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { ROLE_LABELS, atLeast } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
 import EmployeeProfile from './EmployeeProfile'
+import { useToast } from '../../components/ui/Toast'
 
 const ROLE_COLORS = {
   super_admin:{bg:'rgba(201,162,39,0.15)',color:'#c9a227'},chief:{bg:'rgba(201,162,39,0.15)',color:'#c9a227'},
@@ -422,6 +423,7 @@ function EmpRow({emp,ini,isLast,onClick}) {
 }
 
 function EmpDetail({emp,canViewSensitive,canEdit,onClose,onRefresh}) {
+  const toast = useToast()
   const [editing,setEditing]  = useState(false)
   const [inviting,setInviting] = useState(false)
   const [inviteMsg,setInviteMsg] = useState(null)
@@ -446,6 +448,7 @@ function EmpDetail({emp,canViewSensitive,canEdit,onClose,onRefresh}) {
       await supabase.from('employee').update({ invitation_status: 'sent' }).eq('id', emp.id)
       onRefresh?.()
       setInviteMsg({ ok:true, text:`Invite sent to ${emp.email}.` })
+      toast('Invite sent to ' + emp.email, 'info')
     } else {
       setInviteMsg({ ok:false, text: 'Invite failed: ' + error.message })
     }
@@ -519,6 +522,7 @@ function EmpDetail({emp,canViewSensitive,canEdit,onClose,onRefresh}) {
 }
 
 function EmpEditModal({ emp, onClose, onSaved }) {
+  const toast = useToast()
   const ROLES_LIST = ['officer','corporal','sergeant','lieutenant','chief','hr','accounting','office_staff']
   const STATUS_LIST = ['active','inactive','probation','suspended','terminated']
   const EMP_TYPES  = ['full_time','part_time','contract','1099']
@@ -563,6 +567,7 @@ function EmpEditModal({ emp, onClose, onSaved }) {
       hire_date:form.hire_date||null, profile_photo_url:form.profile_photo_url.trim()||null,
       notes:form.notes.trim()||null, employee_id_number:form.employee_id_number.trim()||null,
     }).eq('id', emp.id)
+    toast('Changes saved')
     setSaving(false); onSaved()
   }
 
@@ -644,6 +649,7 @@ function R({label,value,color}) {
 // ── Bulk Action Bar ───────────────────────────────────────────────────────────
 
 function BulkActionBar({ count, companyId, selectedIds, onDone, onCancel }) {
+  const toast = useToast()
   const [acting, setActing] = useState(false)
   const [inviting, setInviting] = useState(false)
 
@@ -656,7 +662,9 @@ function BulkActionBar({ count, companyId, selectedIds, onDone, onCancel }) {
   async function bulkUpdate(field, value) {
     setActing(true)
     await Promise.all(selectedIds.map(id => supabase.from('employee').update({ [field]: value }).eq('id', id)))
-    setActing(false); onDone()
+    setActing(false)
+    toast('Updated ' + count + ' employees')
+    onDone()
   }
 
   async function bulkInvite() {
@@ -676,7 +684,9 @@ function BulkActionBar({ count, companyId, selectedIds, onDone, onCancel }) {
         await supabase.from('employee').update({ invitation_status: 'sent' }).eq('id', emp.id)
       }
     }
-    setInviting(false); onDone()
+    setInviting(false)
+    toast('Invites sent', 'info')
+    onDone()
   }
 
   return (
@@ -755,6 +765,7 @@ function PhotoApprovalsTab({ companyId }) {
 // ── Add Employee Modal ────────────────────────────────────────────────────────
 
 function AddEmployeeModal({ companyId, onClose, onSaved }) {
+  const toast = useToast()
   const ROLES_LIST = ['officer','corporal','sergeant','lieutenant','chief','hr','accounting','office_staff']
   const [form, setForm] = useState({
     first_name:'', last_name:'', email:'', phone_number:'',
@@ -801,6 +812,7 @@ function AddEmployeeModal({ companyId, onClose, onSaved }) {
     if (err) { setError(`Save failed: ${err.message}`); return }
     setSavedEmp(data)
     setSuccess(true)
+    toast('Employee added successfully')
     setTimeout(() => { onSaved() }, 2500)
   }
 
@@ -880,6 +892,7 @@ const STATUS_OPTIONS = [
 ]
 
 function EmployeeStatusModal({ emp, profile, onClose, onDone }) {
+  const toast = useToast()
   const [selected, setSelected] = useState(null)
   const [note, setNote]         = useState('')
   const [saving, setSaving]     = useState(false)
@@ -914,6 +927,7 @@ function EmployeeStatusModal({ emp, profile, onClose, onDone }) {
         oldValue: emp.status, newValue: opt.id,
         changeType: 'status_change', notes: note||null,
       })
+      toast('Employee status updated', 'info')
       onDone()
     } catch(e) {
       setError(e.message)

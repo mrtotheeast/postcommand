@@ -4,6 +4,7 @@ import { ROLE_LABELS, atLeast } from '../../config/roles'
 import { logChange, logFieldChanges } from '../../lib/changeLog'
 import { meetsLevel, PERMISSION_KEYS } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
+import { useToast } from '../../components/ui/Toast'
 
 const TABS = [
   { id:'overview',     label:'Overview',     icon:'user' },
@@ -65,6 +66,7 @@ function ComingSoonTab({name}) {
 // ── Overview Tab ──────────────────────────────────────────────────────────────
 
 function OverviewTab({emp, canViewSensitive, canEdit, onRefresh, onEdit, viewerProfile}) {
+  const toast = useToast()
   const [inviting, setInviting] = useState(false)
   const [inviteMsg, setInviteMsg] = useState(null)
   const rc = ROLE_COLORS[emp.role] || ROLE_COLORS.officer
@@ -85,6 +87,7 @@ function OverviewTab({emp, canViewSensitive, canEdit, onRefresh, onEdit, viewerP
       await supabase.from('employee').update({ invitation_status: 'sent' }).eq('id', emp.id)
       onRefresh?.()
       setInviteMsg({ ok:true, text:`Invite sent to ${emp.email}.` })
+      toast('Invite sent to ' + emp.email, 'info')
     } else {
       setInviteMsg({ ok:false, text: 'Invite failed: ' + error.message })
     }
@@ -193,6 +196,7 @@ function PermissionsSection({ emp, viewerProfile, onRefresh }) {
 const CRED_TYPES = ['firearms','guard_card','cpr','first_aid','background_check','taser','pepper_spray','driver_license','other']
 
 function CredentialsTab({emp, canEdit}) {
+  const toast = useToast()
   const [creds, setCreds] = useState([])
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
@@ -213,12 +217,13 @@ function CredentialsTab({emp, canEdit}) {
     setSaving(true); setSaveError(null)
     const { error } = await supabase.from('employee_credential').insert({ employee_id:emp.id, company_id:emp.company_id, ...form, issued_date:form.issued_date||null, expiry_date:form.expiry_date||null })
     if (error) { setSaveError(error.message); setSaving(false); return }
-    setSaving(false); setShowAdd(false); setForm({type:'guard_card',number:'',issued_date:'',expiry_date:'',issuing_authority:'',notes:''}); load()
+    setSaving(false); setShowAdd(false); setForm({type:'guard_card',number:'',issued_date:'',expiry_date:'',issuing_authority:'',notes:''}); toast('Credential added'); load()
   }
 
   async function remove(id) {
     if (!window.confirm('Delete this credential?')) return
     await supabase.from('employee_credential').delete().eq('id', id)
+    toast('Credential removed', 'info')
     load()
   }
 
@@ -297,6 +302,7 @@ function CredentialsTab({emp, canEdit}) {
 // ── Notes Tab ─────────────────────────────────────────────────────────────────
 
 function NotesTab({emp, canEdit, authorId}) {
+  const toast = useToast()
   const [notes, setNotes] = useState([])
   const [loading, setLoading] = useState(true)
   const [text, setText] = useState('')
@@ -317,11 +323,12 @@ function NotesTab({emp, canEdit, authorId}) {
     setSaving(true); setSaveError(null)
     const { error } = await supabase.from('employee_note').insert({ employee_id:emp.id, company_id:emp.company_id, body:text.trim(), author_id:authorId||null })
     if (error) { setSaveError(error.message); setSaving(false); return }
-    setText(''); setSaving(false); load()
+    setText(''); setSaving(false); toast('Note saved'); load()
   }
 
   async function remove(id) {
     await supabase.from('employee_note').delete().eq('id', id)
+    toast('Note removed', 'info')
     load()
   }
 
@@ -364,6 +371,7 @@ function NotesTab({emp, canEdit, authorId}) {
 // ── Edit Modal (inline) ───────────────────────────────────────────────────────
 
 function EmpEditModal({ emp, onClose, onSaved }) {
+  const toast = useToast()
   const ROLES_LIST = ['officer','corporal','sergeant','lieutenant','chief','hr','accounting','office_staff']
   const STATUS_LIST = ['active','inactive','probation','suspended','terminated']
   const EMP_TYPES  = ['full_time','part_time','contract','1099']
@@ -407,6 +415,7 @@ function EmpEditModal({ emp, onClose, onSaved }) {
         }
       )
     }
+    toast('Changes saved')
     setSaving(false); onSaved()
   }
 
@@ -654,6 +663,7 @@ function TrainingTab({ emp, canEdit }) {
 const DOC_TYPES_LIST = ['I-9','Handbook Acknowledgment','Write-Up','Doctor Note','Contract','Guard License','Background Check','Other']
 
 function DocumentsTab({ emp, canEdit }) {
+  const toast = useToast()
   const [docs, setDocs]       = useState([])
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)

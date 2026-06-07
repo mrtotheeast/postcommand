@@ -6,6 +6,7 @@ import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
 import { atLeast } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
+import { useToast } from '../../components/ui/Toast'
 
 // Fix Leaflet default icons
 delete L.Icon.Default.prototype._getIconUrl
@@ -94,6 +95,7 @@ function qrUrl(siteId) {
 
 export default function SiteManagement() {
   const { profile } = useAuth()
+  const toast = useToast()
   const canEdit = atLeast(profile?.role, 'lieutenant')
   const [sites, setSites]           = useState([])
   const [activeTSMap, setActiveTSMap] = useState({})
@@ -136,6 +138,7 @@ export default function SiteManagement() {
     await supabase.from('site').delete().eq('id', id)
     setConfirmDelete(null)
     setDetail(null)
+    toast('Site deleted', 'info')
     load()
   }
 
@@ -305,6 +308,7 @@ export default function SiteManagement() {
 const EMPTY_FORM = { name:'', address:'', address_line_2:'', city:'', state:'DC', zip_code:'', description:'', contact_name:'', contact_phone:'', latitude:'', longitude:'', geofence_radius:150, is_active:true }
 
 function SiteFormModal({ site, companyId, onClose, onSaved }) {
+  const toast = useToast()
   const [form, setForm]     = useState(site ? { ...EMPTY_FORM, ...site, geofence_radius: site.geofence_radius ?? 150, is_active: site.is_active !== false } : { ...EMPTY_FORM })
   const [saving, setSaving] = useState(false)
   const [error, setError]   = useState(null)
@@ -374,7 +378,8 @@ function SiteFormModal({ site, companyId, onClose, onSaved }) {
       err = res.error
     }
     setSaving(false)
-    if (err) { alert('Save failed: ' + err.message); return }
+    if (err) { toast('Save failed: ' + err.message, 'error'); return }
+    toast('Site saved successfully')
     onSaved()
   }
 

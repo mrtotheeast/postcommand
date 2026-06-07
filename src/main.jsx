@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import { ThemeProvider } from './context/ThemeContext'
 import { NotificationProvider } from './context/NotificationContext'
+import { ToastProvider } from './components/ui/Toast'
 import ErrorBoundary from './components/ui/ErrorBoundary'
 import App from './App.jsx'
 import './index.css'
@@ -21,7 +22,9 @@ createRoot(document.getElementById('root')).render(
         <ThemeProvider>
           <AuthProvider>
             <NotificationProvider>
-              <App />
+              <ToastProvider>
+                <App />
+              </ToastProvider>
             </NotificationProvider>
           </AuthProvider>
         </ThemeProvider>
