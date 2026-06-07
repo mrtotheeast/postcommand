@@ -66,12 +66,74 @@ export function getTourSteps(level, company) {
   return steps
 }
 
+function getCardPosition(targetEl) {
+  if (!targetEl) return { top:'50%', left:'50%', transform:'translate(-50%,-50%)' }
+  const r = targetEl.getBoundingClientRect()
+  const cardW = 340, cardH = 260
+  const vw = window.innerWidth, vh = window.innerHeight
+
+  if (r.right + cardW + 24 < vw)
+    return { top: Math.min(r.top, vh - cardH - 20), left: r.right + 16, transform:'none' }
+  if (r.left - cardW - 24 > 0)
+    return { top: Math.min(r.top, vh - cardH - 20), left: r.left - cardW - 16, transform:'none' }
+  if (r.bottom + cardH + 24 < vh)
+    return { top: r.bottom + 16, left: Math.max(16, r.left - cardW / 2), transform:'none' }
+  return { top: Math.max(16, r.top - cardH - 16), left: Math.max(16, r.left - cardW / 2), transform:'none' }
+}
+
+function Spotlight({ targetEl }) {
+  const [rect, setRect] = useState(null)
+
+  useEffect(() => {
+    if (!targetEl) { setRect(null); return }
+    const r = targetEl.getBoundingClientRect()
+    setRect({ top: r.top - 8, left: r.left - 8, width: r.width + 16, height: r.height + 16 })
+  }, [targetEl])
+
+  const dim = 'rgba(0,0,0,0.75)'
+  const trans = { transition:'all 300ms ease' }
+
+  if (!rect) return (
+    <div style={{ position:'fixed', inset:0, background:dim, zIndex:10000, pointerEvents:'none', transition:'all 300ms ease' }}/>
+  )
+
+  return (
+    <div style={{ position:'fixed', inset:0, zIndex:10000, pointerEvents:'none' }}>
+      {/* Top */}
+      <div style={{ position:'absolute', top:0, left:0, right:0, height:rect.top, background:dim, ...trans }}/>
+      {/* Bottom */}
+      <div style={{ position:'absolute', top:rect.top+rect.height, left:0, right:0, bottom:0, background:dim, ...trans }}/>
+      {/* Left */}
+      <div style={{ position:'absolute', top:rect.top, left:0, width:rect.left, height:rect.height, background:dim, ...trans }}/>
+      {/* Right */}
+      <div style={{ position:'absolute', top:rect.top, left:rect.left+rect.width, right:0, height:rect.height, background:dim, ...trans }}/>
+      {/* Highlight border */}
+      <div style={{ position:'absolute', top:rect.top, left:rect.left, width:rect.width, height:rect.height, border:'2px solid #c9a227', borderRadius:'8px', boxShadow:'0 0 0 4px rgba(201,162,39,0.2)', ...trans }}/>
+    </div>
+  )
+}
+
 export function GuidedTour({ profile, onDone }) {
-  const [step, setStep]       = useState(0)
+  const [step, setStep]           = useState(0)
   const [neverShow, setNeverShow] = useState(false)
-  const level = getRoleLevel(profile?.role)
-  const steps = getTourSteps(level, profile?.company)
+  const [targetEl, setTargetEl]   = useState(null)
+  const [pos, setPos]             = useState({ top:'50%', left:'50%', transform:'translate(-50%,-50%)' })
+
+  const level   = getRoleLevel(profile?.role)
+  const steps   = getTourSteps(level, profile?.company)
   const current = steps[step]
+
+  useEffect(() => {
+    if (!current?.target) {
+      setTargetEl(null)
+      setPos({ top:'50%', left:'50%', transform:'translate(-50%,-50%)' })
+      return
+    }
+    const el = document.querySelector(current.target)
+    setTargetEl(el || null)
+    setPos(el ? getCardPosition(el) : { top:'50%', left:'50%', transform:'translate(-50%,-50%)' })
+    el?.scrollIntoView({ behavior:'smooth', block:'center' })
+  }, [step])
 
   function finish() {
     localStorage.setItem(`pc-tour-seen-${profile.id}`, '1')
@@ -87,38 +149,18 @@ export function GuidedTour({ profile, onDone }) {
   const handleKey = useCallback((e) => { if (e.key === 'Escape') skip() }, [])
   useEffect(() => { window.addEventListener('keydown', handleKey); return () => window.removeEventListener('keydown', handleKey) }, [handleKey])
 
-  // Find target element position
-  const [pos, setPos] = useState({ top:'50%', left:'50%', transform:'translate(-50%,-50%)' })
-  useEffect(() => {
-    if (!current?.target) {
-      setPos({ top:'50%', left:'50%', transform:'translate(-50%,-50%)' })
-      return
-    }
-    const el = document.querySelector(current.target)
-    if (!el) { setPos({ top:'50%', left:'50%', transform:'translate(-50%,-50%)' }); return }
-    const r = el.getBoundingClientRect()
-    const cardW = 340, cardH = 200
-    let top = r.top + r.height / 2 - cardH / 2
-    let left = current.position === 'right' ? r.right + 16 : r.left - cardW - 16
-    // Clamp to viewport
-    top  = Math.max(16, Math.min(top,  window.innerHeight - cardH - 16))
-    left = Math.max(16, Math.min(left, window.innerWidth  - cardW - 16))
-    setPos({ top, left, transform:'none' })
-  }, [step, current])
-
   const cardStyle = {
     position:'fixed', zIndex:10001, width:'340px', background:'var(--bg-card)',
     border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-lg)',
-    boxShadow:'0 8px 48px rgba(0,0,0,0.5)', padding:'24px',
+    boxShadow:'0 8px 48px rgba(0,0,0,0.5)', padding:'24px', pointerEvents:'all',
     ...pos,
   }
 
   return (
     <>
-      {/* Dim overlay — pointer-events none so SKIP button works */}
-      <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.65)', zIndex:10000, pointerEvents:'none' }}/>
+      <Spotlight targetEl={targetEl} />
 
-      {/* Tour card — on top of overlay */}
+      {/* Tour card — above spotlight */}
       <div style={cardStyle}>
         {/* Header */}
         <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:'12px' }}>
@@ -129,10 +171,10 @@ export function GuidedTour({ profile, onDone }) {
         {/* Body */}
         <div style={{ fontSize:'13px', color:'var(--text-secondary)', lineHeight:1.7, marginBottom:'20px' }}>{current?.body}</div>
 
-        {/* Don't show again — final step */}
+        {/* Don't show again — final step only */}
         {current?.isFinal && (
           <label style={{ display:'flex', alignItems:'center', gap:'8px', fontSize:'12px', color:'var(--text-muted)', cursor:'pointer', marginBottom:'16px' }}>
-            <input type="checkbox" checked={neverShow} onChange={e=>setNeverShow(e.target.checked)} style={{ accentColor:'var(--accent)', width:'15px', height:'15px' }}/>
+            <input type="checkbox" checked={neverShow} onChange={e => setNeverShow(e.target.checked)} style={{ accentColor:'var(--accent)', width:'14px', height:'14px' }}/>
             Don't show this tour again
           </label>
         )}
@@ -140,17 +182,17 @@ export function GuidedTour({ profile, onDone }) {
         {/* Navigation */}
         <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
           {step > 0 && (
-            <button onClick={()=>setStep(s=>s-1)} style={{ display:'inline-flex', alignItems:'center', gap:'6px', background:'transparent', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', color:'var(--text-secondary)', fontFamily:'var(--font-condensed)', fontSize:'12px', fontWeight:700, cursor:'pointer', padding:'0 12px', height:'36px' }}>BACK</button>
+            <button onClick={() => setStep(s => s - 1)} style={{ display:'inline-flex', alignItems:'center', gap:'6px', background:'transparent', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', color:'var(--text-secondary)', fontFamily:'var(--font-condensed)', fontSize:'12px', fontWeight:700, cursor:'pointer', padding:'0 12px', height:'36px' }}>BACK</button>
           )}
           <div style={{ flex:1, display:'flex', gap:'5px', justifyContent:'center' }}>
             {steps.map((_,i) => (
-              <div key={i} style={{ width:'7px', height:'7px', borderRadius:'50%', background:i < step ? 'var(--color-success)' : i === step ? 'var(--accent)' : 'var(--border)', transition:'background 200ms ease', cursor:'pointer' }} onClick={()=>setStep(i)}/>
+              <div key={i} style={{ width:'7px', height:'7px', borderRadius:'50%', background:i < step ? 'var(--color-success)' : i === step ? 'var(--accent)' : 'var(--border)', transition:'background 200ms ease', cursor:'pointer' }} onClick={() => setStep(i)}/>
             ))}
           </div>
           {current?.isFinal ? (
             <button onClick={finish} style={{ display:'inline-flex', alignItems:'center', gap:'6px', background:'var(--accent)', border:'none', borderRadius:'var(--radius-sm)', color:'var(--text-inverse)', fontFamily:'var(--font-condensed)', fontSize:'13px', fontWeight:700, letterSpacing:'1px', cursor:'pointer', padding:'0 16px', height:'36px' }}>FINISH</button>
           ) : (
-            <button onClick={()=>setStep(s=>Math.min(s+1, steps.length-1))} style={{ display:'inline-flex', alignItems:'center', gap:'6px', background:'var(--accent)', border:'none', borderRadius:'var(--radius-sm)', color:'var(--text-inverse)', fontFamily:'var(--font-condensed)', fontSize:'13px', fontWeight:700, letterSpacing:'1px', cursor:'pointer', padding:'0 16px', height:'36px' }}>
+            <button onClick={() => setStep(s => Math.min(s + 1, steps.length - 1))} style={{ display:'inline-flex', alignItems:'center', gap:'6px', background:'var(--accent)', border:'none', borderRadius:'var(--radius-sm)', color:'var(--text-inverse)', fontFamily:'var(--font-condensed)', fontSize:'13px', fontWeight:700, letterSpacing:'1px', cursor:'pointer', padding:'0 16px', height:'36px' }}>
               NEXT →
             </button>
           )}
