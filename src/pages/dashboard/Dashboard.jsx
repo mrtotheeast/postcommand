@@ -12,6 +12,12 @@ export default function Dashboard() {
   const { badges } = useNotifications()
   const navigate = useNavigate()
 
+  if (!profile) return (
+    <div style={{padding:'24px',display:'flex',alignItems:'center',justifyContent:'center',minHeight:'300px'}}>
+      <div style={{color:'var(--text-muted)',fontSize:'13px',fontFamily:'var(--font-condensed)',letterSpacing:'1px'}}>LOADING...</div>
+    </div>
+  )
+
   // Route to role-specific dashboard
   if (effectiveRole === 'client')   return <ClientDashboard profile={profile} />
 

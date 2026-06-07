@@ -36,45 +36,77 @@ export function AuthProvider({ children }) {
 
   async function loadProfile(userId) {
     try {
-      const { data: profileData } = await supabase
+      const { data: { user } } = await supabase.auth.getUser()
+
+      let { data: profile } = await supabase
         .from('user_profile')
-        .select('*')
+        .select('*, company(role_style, custom_titles, custom_ranks, name)')
         .eq('id', userId)
         .single()
 
-      if (profileData) {
-        // Fill name/company from auth metadata when missing
-        if (!profileData.first_name) {
-          const { data: { user } } = await supabase.auth.getUser()
-          const meta = user?.user_metadata
-          if (meta?.first_name) {
+      if (profile) {
+        // Backfill name from employee record if missing
+        if (!profile.first_name && user?.email) {
+          const { data: emp } = await supabase
+            .from('employee')
+            .select('first_name, last_name, company_id, role')
+            .eq('email', user.email)
+            .maybeSingle()
+          if (emp?.first_name) {
             await supabase.from('user_profile').update({
-              first_name: meta.first_name,
-              last_name:  meta.last_name  || profileData.last_name,
-              company_id: meta.company_id || profileData.company_id,
+              first_name: emp.first_name,
+              last_name:  emp.last_name  || profile.last_name,
+              company_id: emp.company_id || profile.company_id,
+              role:       emp.role       || profile.role,
             }).eq('id', userId)
-            profileData.first_name = meta.first_name
-            profileData.last_name  = meta.last_name  || profileData.last_name
-            if (meta.company_id && !profileData.company_id) profileData.company_id = meta.company_id
+            profile.first_name = emp.first_name
+            profile.last_name  = emp.last_name  || profile.last_name
+            if (emp.company_id && !profile.company_id) profile.company_id = emp.company_id
           }
         }
-        setProfile(profileData)
-        if (profileData.id) loadViewAs(profileData.id)
       } else {
-        // No profile row yet — create from auth metadata
-        const { data: { user } } = await supabase.auth.getUser()
-        const meta = user?.user_metadata
-        const fresh = {
-          id:         userId,
-          first_name: meta?.first_name || '',
-          last_name:  meta?.last_name  || '',
-          company_id: meta?.company_id || null,
-          role:       meta?.role       || 'officer',
-          email:      user?.email      || '',
+        // No profile row yet — look up employee by email for reliable data
+        const { data: emp } = await supabase
+          .from('employee')
+          .select('id, company_id, role, first_name, last_name')
+          .eq('email', user?.email || '')
+          .maybeSingle()
+
+        if (emp) {
+          const { data: created } = await supabase
+            .from('user_profile')
+            .insert({
+              id:         userId,
+              company_id: emp.company_id,
+              role:       emp.role || 'officer',
+              first_name: emp.first_name || '',
+              last_name:  emp.last_name  || '',
+            })
+            .select('*, company(role_style, custom_titles, custom_ranks, name)')
+            .single()
+          profile = created
+
+          // Link auth user to employee record and mark app access
+          await supabase.from('employee')
+            .update({ has_app_access: true, invitation_status: 'accepted', user_id: userId })
+            .eq('id', emp.id)
+        } else {
+          // No employee record — fall back to auth metadata
+          const meta = user?.user_metadata
+          const fresh = {
+            id:         userId,
+            first_name: meta?.first_name || '',
+            last_name:  meta?.last_name  || '',
+            company_id: meta?.company_id || null,
+            role:       meta?.role       || 'officer',
+          }
+          await supabase.from('user_profile').insert(fresh)
+          profile = fresh
         }
-        await supabase.from('user_profile').insert(fresh)
-        setProfile(fresh)
       }
+
+      setProfile(profile)
+      if (profile?.id) loadViewAs(profile.id)
     } catch {
       // silent
     } finally {
