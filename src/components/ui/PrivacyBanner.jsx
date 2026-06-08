@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { openBrowser } from '../../lib/platform'
 
 const STORAGE_KEY = 'pc-privacy-accepted'
-const PRIVACY_URL = 'https://www.nationwidepolice.com/nps-portal#section-3'
+const PRIVACY_URL = 'https://www.nationwidepolice.com/post-command'
 
 export default function PrivacyBanner() {
   const [visible, setVisible] = useState(false)
