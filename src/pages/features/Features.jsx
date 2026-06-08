@@ -18,7 +18,7 @@ const CATEGORIES = [
     features:[
       { name:'Shift Scheduling', desc:'Create, manage, and publish shifts. Officers receive notifications when new schedules go live.', minLevel:3, highlights:['Drag-and-drop scheduling','Weekly / daily views','Auto-assign by availability','Shift swap requests'] },
       { name:'Clock In / Out', desc:'GPS-verified clock in and out at assigned posts. Geofence radius configurable per site (min 10m).', minLevel:1, highlights:['GPS geofence verification','Clock-in photo','Geofence override with reason','Supervisor notification on override'] },
-      { name:'Timesheet Review', desc:'Review, approve, and export timesheets. Close pay periods and mark no-shows.', minLevel:3, highlights:['Approve / reject per timesheet','Pay period close flow','No-show all','ADP & Paychex export'] },
+      { name:'Timesheet Review', desc:'Review, approve, and export timesheets. Close pay periods and mark no-shows.', minLevel:3, highlights:['Approve / reject per timesheet','Pay period close flow','No-show all','CSV & PDF export'] },
     ]
   },
   {
@@ -43,7 +43,7 @@ const CATEGORIES = [
     id:'payroll', title:'Payroll & Finance', icon:'💰',
     features:[
       { name:'Gusto Integration', desc:'Connect your Gusto account to run payroll directly from PostCommand. Hours sync from approved timesheets.', minLevel:4, highlights:['OAuth secure connection','Hours sync from timesheets','Submit payroll to Gusto','Pay stub viewer per employee'] },
-      { name:'ADP / Paychex Export', desc:'Export approved timesheet hours in ADP Workforce Now or Paychex Flex format.', minLevel:3, highlights:['ADP format CSV','Paychex format CSV','OT calculation (over 40 hours)','Per pay period export'] },
+      { name:'Payroll CSV Export', desc:'Export approved timesheet hours as CSV for import into your payroll provider.', minLevel:3, highlights:['CSV export','OT calculation (over 40 hours)','Per pay period export','Google Sheets export'] },
       { name:'Invoicing', desc:'Create, send, and track client invoices. Per-site billing with line items, tax, and PDF export.', minLevel:4, highlights:['Invoice PDF generation','Client email with branded header','Overdue tracking','Send payment nudge'] },
     ]
   },

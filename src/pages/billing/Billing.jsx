@@ -27,7 +27,7 @@ const PLANS = [
     stripePriceId: 'price_standard_per_user', // set in Supabase secrets
     officers: null,
     sites: 1,
-    features: ['Single location', '$2.50 / user / month', 'Scheduling & timesheets', 'Incident reports + HR', 'Payroll export (ADP/Paychex)', 'Invoicing', 'Advanced reports'],
+    features: ['Single location', '$2.50 / user / month', 'Scheduling & timesheets', 'Incident reports + HR', 'Payroll export (CSV)', 'Invoicing', 'Advanced reports'],
     color: 'var(--color-info)',
     bg: 'var(--color-info-bg)',
   },

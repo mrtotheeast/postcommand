@@ -33,8 +33,6 @@ const SECTIONS = [
     content: [
       { q: 'How does the pay period work?', a: 'The default pay period is weekly (Monday–Sunday). A banner at the top of the Timesheets page shows the current period dates, total approved hours, and close/no-show controls.' },
       { q: 'How do I close a pay period?', a: 'Lieutenant+ can click "CLOSE PERIOD" on the Timesheets page. This marks all approved timesheets in the current week as "closed" and locks them from further edits. This is required before payroll export.' },
-      { q: 'How do I export to ADP?', a: 'On the Timesheets page, click the "ADP" export button. This generates a CSV in ADP Workforce Now format (Co Code, Batch ID, File #, Regular Hours, OT Hours). Import the file in ADP under Payroll → Import.' },
-      { q: 'How do I export to Paychex?', a: 'Click the "Paychex" export button on Timesheets. This generates Employee ID, Last Name, First Name, Regular Hours, Overtime Hours in Paychex Flex format.' },
       { q: 'What triggers overtime?', a: 'Hours over 40 in a single week are automatically calculated as overtime in payroll exports. Regular hours are capped at 40; excess goes into the OT Hours column.' },
     ]
   },

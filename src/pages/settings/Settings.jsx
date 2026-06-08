@@ -449,8 +449,6 @@ function IntegrationsTab({ companyId }) {
           <div style={s.lbl}>Payroll Provider</div>
           <select style={{ ...s.inp, cursor:'pointer' }} value={form.payroll_provider} onChange={e=>setF('payroll_provider',e.target.value)}>
             <option value="">Select provider...</option>
-            <option value="adp">ADP Workforce Now</option>
-            <option value="paychex">Paychex Flex</option>
             <option value="gusto">Gusto</option>
             <option value="quickbooks">QuickBooks Payroll</option>
             <option value="custom">Custom / Other</option>

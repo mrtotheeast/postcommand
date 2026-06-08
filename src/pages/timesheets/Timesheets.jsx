@@ -118,36 +118,6 @@ export default function Timesheets() {
     downloadCSV(rows, `timesheets-${new Date().toISOString().split('T')[0]}.csv`)
   }
 
-  function exportADP() {
-    // ADP Workforce Now format: Company Code, Batch ID, File #, Temp Dept, Temp Hours Regular, Temp Hours OT, Temp Hours Holiday
-    const empIds = [...new Set(filtered.filter(t=>t.status==='approved').map(t=>t.employee_id))]
-    const rows = [['Co Code','Batch ID','File #','Temp Dept','Temp Hours Regular','Temp Hours OT']]
-    for (const eid of empIds) {
-      const empTs = filtered.filter(t=>t.employee_id===eid && t.status==='approved')
-      const totalH = empTs.reduce((a,t)=>a+(Number(t.total_hours)||0),0)
-      const regH = Math.min(totalH, 40)  // first 40 hours regular
-      const otH  = Math.max(0, totalH - 40)
-      const name = empName(eid).split(' ')
-      rows.push(['NPS', new Date().toISOString().slice(0,7).replace('-',''), name[1]||name[0], '', regH.toFixed(2), otH.toFixed(2)])
-    }
-    downloadCSV(rows, `adp-payroll-${new Date().toISOString().slice(0,7)}.csv`)
-  }
-
-  function exportPaychex() {
-    // Paychex format: Employee ID, Last Name, First Name, Regular Hours, Overtime Hours, Rate
-    const empIds = [...new Set(filtered.filter(t=>t.status==='approved').map(t=>t.employee_id))]
-    const rows = [['Employee ID','Last Name','First Name','Regular Hours','Overtime Hours','Pay Type']]
-    for (const eid of empIds) {
-      const empTs = filtered.filter(t=>t.employee_id===eid && t.status==='approved')
-      const totalH = empTs.reduce((a,t)=>a+(Number(t.total_hours)||0),0)
-      const regH = Math.min(totalH, 40)
-      const otH  = Math.max(0, totalH - 40)
-      const emp = employees.find(e=>e.id===eid)
-      rows.push([eid.slice(0,8), emp?.last_name||'', emp?.first_name||'', regH.toFixed(2), otH.toFixed(2), 'Hourly'])
-    }
-    downloadCSV(rows, `paychex-payroll-${new Date().toISOString().slice(0,7)}.csv`)
-  }
-
   function downloadCSV(rows, filename) {
     const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n')
     const blob = new Blob([csv], { type:'text/csv' })
@@ -204,8 +174,6 @@ export default function Timesheets() {
             ))}
           </div>
           {canExport&&<button onClick={exportCSV} style={{display:'flex',alignItems:'center',gap:'6px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'0 14px',height:'40px',color:'var(--text-secondary)',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,cursor:'pointer'}}><Icon name="download" size={14}/>CSV</button>}
-          {canExport&&<button onClick={exportADP} style={{display:'flex',alignItems:'center',gap:'6px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'0 14px',height:'40px',color:'var(--text-secondary)',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,cursor:'pointer'}} title="ADP Workforce Now format"><Icon name="briefcase" size={14}/>ADP</button>}
-          {canExport&&<button onClick={exportPaychex} style={{display:'flex',alignItems:'center',gap:'6px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'0 14px',height:'40px',color:'var(--text-secondary)',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,cursor:'pointer'}} title="Paychex format"><Icon name="briefcase" size={14}/>Paychex</button>}
           {canExport&&<button onClick={()=>exportTimesheetPDF(filtered,employees,sites,'All timesheets')} style={{display:'flex',alignItems:'center',gap:'6px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'0 14px',height:'40px',color:'var(--text-secondary)',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,cursor:'pointer'}}><Icon name="file-text" size={14}/>PDF</button>}
           {canExport&&<button onClick={()=>exportToSheets('Timesheets','timesheets',[['Date','Employee','Site','Clock In','Clock Out','Hours','Status'],...filtered.map(t=>[t.date,empName(t.employee_id),siteName(t.site_id),fmt12(t.clock_in),fmt12(t.clock_out),fmtHours(t.total_hours),t.status])]).catch(()=>{})} style={{display:'flex',alignItems:'center',gap:'6px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'0 14px',height:'40px',color:'var(--text-secondary)',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,cursor:'pointer'}} title="Export to Google Sheets"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>SHEETS</button>}
         </div>
@@ -712,7 +680,7 @@ h1{font-size:20px;font-weight:900;color:#0d1f35;margin-bottom:4px}
 </div>
 <div class="disclaimer">
   <strong>⚠ FOR REFERENCE ONLY</strong><br/>
-  This document is generated for administrative reference purposes only and is NOT a valid tax form for IRS filing. Consult a licensed payroll provider (ADP, Paychex, Gusto) to generate official W-2 and 1099 forms with proper tax calculations, withholding amounts, and IRS-required formatting. PostCommand and Nationwide Police Services LLC are not responsible for tax filing decisions made based on this document.
+  This document is generated for administrative reference purposes only and is NOT a valid tax form for IRS filing. Consult a licensed payroll provider to generate official W-2 and 1099 forms with proper tax calculations, withholding amounts, and IRS-required formatting. PostCommand and Nationwide Police Services LLC are not responsible for tax filing decisions made based on this document.
 </div>
 </body></html>`)
     w.document.close(); w.print()

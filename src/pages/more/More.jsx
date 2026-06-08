@@ -87,7 +87,7 @@ const SECTIONS = [
       { title:'Accounting Dashboard',     desc:'AR, aging reports & revenue',                        path:'/reports' },
       { title:'Invoices',                 desc:'View and manage all invoices',                        path:'/invoices' },
       { title:'Create Invoice',           desc:'Create a new client invoice',                        path:'/invoices' },
-      { title:'Payroll Export',           desc:'Export payroll data to CSV / ADP / Paychex',         path:'/timesheets' },
+      { title:'Payroll Export',           desc:'Export payroll data to CSV or Google Sheets',        path:'/timesheets' },
       { title:'Payroll Settings',         desc:'Configure payroll provider & column mappings',       path:'/settings' },
       { title:'Tax Forms (W-2 & 1099)',   desc:'Timesheets → Tax Forms tab',                         path:'/timesheets' },
       { title:'PTO Approval',             desc:'Approve/deny time off requests',                     path:'/timesheets' },
