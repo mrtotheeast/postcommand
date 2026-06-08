@@ -6,63 +6,40 @@ export function getTourSteps(level, company) {
   const titles = ROLE_TITLES[style] || ROLE_TITLES.military
   const roleLabel = titles[level] || 'your role'
 
-  const base = [
-    { target:null, title:'Welcome to PostCommand', position:'center',
-      body:`This quick tour shows the key features available to you as ${roleLabel}. It takes about 60 seconds.` },
-    { target:'[data-tour="sidebar"]', title:'Navigation', position:'right',
-      body:'Use the sidebar to move between sections. Your available sections depend on your access level.' },
-  ]
+  const steps = []
 
-  const officer = [
-    { target:'[data-tour="clockin"]', title:'Clock In / Out', position:'right',
-      body:'Tap Clock In at the start of your shift. GPS verifies you are at your assigned post. Tap Clock Out when your shift ends.' },
-    { target:'[data-tour="incidents"]', title:'Incident Reports', position:'right',
-      body:'File incident reports from your phone. Use AI Guided mode for step-by-step help, or Write Directly for freeform entry.' },
-    { target:'[data-tour="sos"]', title:'SOS Alert', position:'right',
-      body:'In an emergency, tap SOS. Your supervisors are immediately alerted with your GPS location. Hold for 3 seconds to trigger.' },
-    { target:'[data-tour="scheduling"]', title:'Your Schedule', position:'right',
-      body:'View your assigned shifts here. You receive a notification when new schedules are published.' },
-  ]
+  // 1. Welcome — all roles
+  steps.push({ target: null, title: 'Welcome to PostCommand', position: 'center',
+    body: `This quick tour shows the key features available to you as ${roleLabel}. It takes about 60 seconds.` })
 
-  const corporal = [
-    { target:'[data-tour="personnel"]', title:'Personnel', position:'right',
-      body:'View employee profiles for staff assigned to your sites — credentials, training status, and contact information.' },
-    { target:'[data-tour="incidents"]', title:'Incident Review', position:'right',
-      body:'As a supervisor, you can review and approve incident reports filed by officers in your command.' },
-  ]
+  // 2. Sidebar — all roles
+  steps.push({ target: '[data-tour="sidebar"]', title: 'Navigation', position: 'right',
+    body: 'Use the sidebar to move between sections. Your available sections depend on your access level.' })
 
-  const lieutenant = [
-    { target:'[data-tour="timesheets"]', title:'Timesheets', position:'right',
-      body:'Review and approve officer timesheets, close pay periods, and export payroll data to ADP or Paychex.' },
-    { target:'[data-tour="scheduling"]', title:'Schedule Management', position:'right',
-      body:'Create shifts, assign officers to posts, and publish schedules. Officers are notified automatically.' },
-    { target:'[data-tour="reports"]', title:'Reports', position:'right',
-      body:'Access operational reports, performance analytics, and AI-generated summaries of your team activity.' },
-  ]
+  // 3. Personnel — sergeant+ (level >= 3)
+  if (level >= 3) steps.push({ target: '[data-tour="personnel"]', title: 'Personnel', position: 'right',
+    body: 'View and manage employee profiles, credentials, training status, and contact information.' })
 
-  const admin = [
-    { target:'[data-tour="personnel"]', title:'Personnel Management', position:'right',
-      body:'Add employees, send app invites, manage credentials, and handle status changes. All changes are logged for compliance.' },
-    { target:'[data-tour="settings"]', title:'Company Settings', position:'right',
-      body:'Configure your company profile, role titles, supervisor assignments, and billing from Settings.' },
-    { target:'[data-tour="billing"]', title:'Billing', position:'right',
-      body:'Manage your PostCommand subscription, view usage stats, and upgrade your plan here.' },
-  ]
+  // 4. Scheduling — all roles (officers view their own shifts)
+  steps.push({ target: '[data-tour="scheduling"]', title: 'Scheduling', position: 'right',
+    body: 'View your assigned shifts here. Supervisors can create shifts and publish schedules — officers are notified automatically.' })
 
-  const superAdmin = [
-    { target:'[data-tour="superadmin"]', title:'Super Admin Panel', position:'right',
-      body:'Access platform-wide statistics, all companies, and system health from the Super Admin panel.' },
-  ]
+  // 5. Timesheets — all roles (officers submit their own)
+  steps.push({ target: '[data-tour="timesheets"]', title: 'Timesheets', position: 'right',
+    body: 'Review and approve officer timesheets, close pay periods, and export payroll data.' })
 
-  const final = { target:'[data-tour="help"]', title:'Need Help?', position:'right', isFinal:true,
-    body:'Tap Help at any time for FAQs and to replay this tour. Reach support at support@postcommand.app.' }
+  // 6. Incident Reports — all roles
+  steps.push({ target: '[data-tour="incidents"]', title: 'Incident Reports', position: 'right',
+    body: 'File and review incident reports. Use AI Guided mode for step-by-step help, or Write Directly for freeform entry.' })
 
-  let steps = [...base, ...officer]
-  if (level >= 2) steps = [...steps, ...corporal]
-  if (level >= 4) steps = [...steps, ...lieutenant]
-  if (level >= 5) steps = [...steps, ...admin]
-  if (level >= 6) steps = [...steps, ...superAdmin]
-  steps.push(final)
+  // 7. Settings — chief+ (level >= 5)
+  if (level >= 5) steps.push({ target: '[data-tour="settings"]', title: 'Settings', position: 'right',
+    body: 'Configure your company profile, role titles, supervisor assignments, and billing from Settings.' })
+
+  // 8. Help — all roles (final)
+  steps.push({ target: '[data-tour="help"]', title: 'Need Help?', position: 'right', isFinal: true,
+    body: 'Tap Help at any time for FAQs and to replay this tour. Reach support at support@postcommand.app.' })
+
   return steps
 }
 
@@ -86,28 +63,42 @@ function Spotlight({ targetEl }) {
 
   useEffect(() => {
     if (!targetEl) { setRect(null); return }
-    const r = targetEl.getBoundingClientRect()
-    setRect({ top: r.top - 8, left: r.left - 8, width: r.width + 16, height: r.height + 16 })
+
+    // Small delay to let DOM settle after scroll
+    const timer = setTimeout(() => {
+      const r = targetEl.getBoundingClientRect()
+      if (r.width === 0 && r.height === 0) {
+        setRect(null)
+        return
+      }
+      setRect({
+        top: r.top - 8,
+        left: r.left - 8,
+        width: r.width + 16,
+        height: r.height + 16,
+      })
+    }, 100)
+    return () => clearTimeout(timer)
   }, [targetEl])
 
-  const dim = 'rgba(0,0,0,0.75)'
-  const trans = { transition:'all 300ms ease' }
-
+  // No target or element not visible — soft dim only, no blackout
   if (!rect) return (
-    <div style={{ position:'fixed', inset:0, background:dim, zIndex:10000, pointerEvents:'none', transition:'all 300ms ease' }}/>
+    <div style={{
+      position: 'fixed', inset: 0,
+      background: 'rgba(0,0,0,0.5)',
+      zIndex: 10000, pointerEvents: 'none',
+    }}/>
   )
+
+  const dim = 'rgba(0,0,0,0.75)'
+  const trans = { transition: 'all 300ms ease' }
 
   return (
     <div style={{ position:'fixed', inset:0, zIndex:10000, pointerEvents:'none' }}>
-      {/* Top */}
       <div style={{ position:'absolute', top:0, left:0, right:0, height:rect.top, background:dim, ...trans }}/>
-      {/* Bottom */}
       <div style={{ position:'absolute', top:rect.top+rect.height, left:0, right:0, bottom:0, background:dim, ...trans }}/>
-      {/* Left */}
       <div style={{ position:'absolute', top:rect.top, left:0, width:rect.left, height:rect.height, background:dim, ...trans }}/>
-      {/* Right */}
       <div style={{ position:'absolute', top:rect.top, left:rect.left+rect.width, right:0, height:rect.height, background:dim, ...trans }}/>
-      {/* Highlight border */}
       <div style={{ position:'absolute', top:rect.top, left:rect.left, width:rect.width, height:rect.height, border:'2px solid #c9a227', borderRadius:'8px', boxShadow:'0 0 0 4px rgba(201,162,39,0.2)', ...trans }}/>
     </div>
   )
@@ -130,10 +121,16 @@ export function GuidedTour({ profile, onDone }) {
       return
     }
     const el = document.querySelector(current.target)
-    setTargetEl(el || null)
-    setPos(el ? getCardPosition(el) : { top:'50%', left:'50%', transform:'translate(-50%,-50%)' })
-    el?.scrollIntoView({ behavior:'smooth', block:'center' })
-  }, [step])
+    if (!el) {
+      // Element not in DOM (user hasn't navigated there yet) — center card, soft dim
+      setTargetEl(null)
+      setPos({ top:'50%', left:'50%', transform:'translate(-50%,-50%)' })
+      return
+    }
+    setTargetEl(el)
+    setPos(getCardPosition(el))
+    el.scrollIntoView({ behavior:'smooth', block:'center' })
+  }, [step, current])
 
   function finish() {
     localStorage.setItem(`pc-tour-seen-${profile.id}`, '1')
@@ -160,18 +157,14 @@ export function GuidedTour({ profile, onDone }) {
     <>
       <Spotlight targetEl={targetEl} />
 
-      {/* Tour card — above spotlight */}
       <div style={cardStyle}>
-        {/* Header */}
         <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:'12px' }}>
           <div style={{ fontFamily:'var(--font-display)', fontSize:'17px', letterSpacing:'1.5px', color:'var(--accent)', lineHeight:1.2 }}>{current?.title}</div>
           <button onClick={skip} style={{ background:'transparent', border:'none', color:'var(--text-muted)', cursor:'pointer', fontSize:'12px', fontFamily:'var(--font-condensed)', letterSpacing:'0.5px', flexShrink:0, padding:'0 0 0 12px' }}>SKIP</button>
         </div>
 
-        {/* Body */}
         <div style={{ fontSize:'13px', color:'var(--text-secondary)', lineHeight:1.7, marginBottom:'20px' }}>{current?.body}</div>
 
-        {/* Don't show again — final step only */}
         {current?.isFinal && (
           <label style={{ display:'flex', alignItems:'center', gap:'8px', fontSize:'12px', color:'var(--text-muted)', cursor:'pointer', marginBottom:'16px' }}>
             <input type="checkbox" checked={neverShow} onChange={e => setNeverShow(e.target.checked)} style={{ accentColor:'var(--accent)', width:'14px', height:'14px' }}/>
@@ -179,7 +172,6 @@ export function GuidedTour({ profile, onDone }) {
           </label>
         )}
 
-        {/* Navigation */}
         <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
           {step > 0 && (
             <button onClick={() => setStep(s => s - 1)} style={{ display:'inline-flex', alignItems:'center', gap:'6px', background:'transparent', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', color:'var(--text-secondary)', fontFamily:'var(--font-condensed)', fontSize:'12px', fontWeight:700, cursor:'pointer', padding:'0 12px', height:'36px' }}>BACK</button>
@@ -198,7 +190,6 @@ export function GuidedTour({ profile, onDone }) {
           )}
         </div>
 
-        {/* Step counter */}
         <div style={{ textAlign:'center', fontSize:'10px', color:'var(--text-muted)', marginTop:'10px', fontFamily:'var(--font-condensed)' }}>{step + 1} / {steps.length}</div>
       </div>
     </>
