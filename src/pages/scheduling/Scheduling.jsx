@@ -7,321 +7,586 @@ import { emailSchedulePublished } from '../../lib/email'
 import { useToast } from '../../components/ui/Toast'
 
 const DAYS_SHORT = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
-const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
 const STATUS_STYLES = {
   draft:     { bg:'rgba(130,130,130,0.15)', color:'#8899aa', label:'Draft' },
   published: { bg:'rgba(91,159,224,0.15)',  color:'#5b9fe0', label:'Published' },
   approved:  { bg:'rgba(58,170,106,0.15)',  color:'#3aaa6a', label:'Approved' },
   cancelled: { bg:'rgba(224,85,85,0.15)',   color:'#e05555', label:'Cancelled' },
 }
-const selStyle={padding:'0 10px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-sm)',color:'var(--text-primary)',fontSize:'12px',minHeight:'36px',cursor:'pointer'}
+const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
 
 function isSameDay(a,b){ return a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate() }
-function fmt12(ts){ if(!ts) return '—'; return new Date(ts).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true}) }
+function fmt12(ts){
+  if(!ts) return '—'
+  const t = new Date(ts).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true})
+  return t.replace(' AM','a').replace(' PM','p')
+}
 function fmtDate(d){ return d.toLocaleDateString('en-US',{month:'short',day:'numeric'}) }
-function getWeekDates(base,offset=0){ const d=new Date(base); d.setDate(d.getDate()-d.getDay()+(offset*7)); return Array.from({length:7},(_,i)=>{ const day=new Date(d); day.setDate(d.getDate()+i); return day }) }
-function getMonthDates(base){ const year=base.getFullYear(),month=base.getMonth(),first=new Date(year,month,1),last=new Date(year,month+1,0),startPad=first.getDay(),endPad=6-last.getDay(),dates=[]; for(let i=startPad;i>0;i--){ const d=new Date(first); d.setDate(d.getDate()-i); dates.push({date:d,thisMonth:false}) } for(let i=1;i<=last.getDate();i++) dates.push({date:new Date(year,month,i),thisMonth:true}); for(let i=1;i<=endPad;i++){ const d=new Date(last); d.setDate(d.getDate()+i); dates.push({date:d,thisMonth:false}) } return dates }
+
+function getViewDates(baseDate, weeks) {
+  const start = new Date(baseDate)
+  start.setDate(start.getDate() - start.getDay())
+  start.setHours(0,0,0,0)
+  const dates = []
+  for (let i = 0; i < weeks * 7; i++) {
+    const d = new Date(start)
+    d.setDate(start.getDate() + i)
+    dates.push(d)
+  }
+  return dates
+}
+
+// ── Main Scheduling Component ─────────────────────────────────────────────────
 
 export default function Scheduling() {
   const { profile } = useAuth()
   const toast = useToast()
-  const [viewMode,setViewMode] = useState('week')
-  const [baseDate,setBaseDate] = useState(new Date())
-  const [shifts,setShifts]     = useState([])
-  const [employees,setEmployees] = useState([])
-  const [sites,setSites]       = useState([])
-  const [loading,setLoading]   = useState(true)
-  const [showCreate,setShowCreate]   = useState(null)
-  const [showAutoAssign,setShowAutoAssign] = useState(false)
-  const [selected,setSelected] = useState(null)
-  const [filterSite,setFilterSite] = useState('all')
-  const [filterStatus,setFilterStatus] = useState('all')
-  const [filterEmp,setFilterEmp] = useState('all')
-  const [sortEmp,setSortEmp]   = useState('last')
-  const [filterTitle,setFilterTitle] = useState('all')
-  const [mobileEmpIdx,setMobileEmpIdx] = useState(0)
-  const [isMobile,setIsMobile] = useState(window.innerWidth<768)
-  const [mainTab,setMainTab] = useState('schedule')
-  const [creatorEmpId,setCreatorEmpId] = useState(null)
-  const canBid = atLeast(profile?.role,'officer')
-  const canCreate  = atLeast(profile?.role,'sergeant')
-  const canApprove = atLeast(profile?.role,'lieutenant')
-  const canPublish = atLeast(profile?.role,'lieutenant')
+  const [viewWeeks, setViewWeeks]       = useState(2)
+  const [baseDate, setBaseDate]         = useState(new Date())
+  const [shifts, setShifts]             = useState([])
+  const [employees, setEmployees]       = useState([])
+  const [sites, setSites]               = useState([])
+  const [loading, setLoading]           = useState(true)
+  const [showCreate, setShowCreate]     = useState(null)
+  const [showAutoAssign, setShowAutoAssign] = useState(false)
+  const [selected, setSelected]         = useState(null)
+  const [mainTab, setMainTab]           = useState('schedule')
+  const [creatorEmpId, setCreatorEmpId] = useState(null)
+  const [isMobile, setIsMobile]         = useState(window.innerWidth < 768)
+  const [sidebarOpen, setSidebarOpen]   = useState(true)
+  const [selPositions, setSelPositions] = useState(new Set())
+  const [selSites, setSelSites]         = useState(new Set())
+
+  const canCreate  = atLeast(profile?.role, 'sergeant')
+  const canApprove = atLeast(profile?.role, 'lieutenant')
+  const canPublish = atLeast(profile?.role, 'lieutenant')
   const isOfficer  = ['officer','corporal'].includes(profile?.role)
 
-  function getShiftsForEmployeeDay(empId, date) {
-    return filteredShifts.filter(s => {
-      if (s.employee_id !== empId) return false
-      const sd = new Date(s.start_time)
-      return sd.getFullYear()===date.getFullYear() && sd.getMonth()===date.getMonth() && sd.getDate()===date.getDate()
-    })
-  }
-  function getEmployeeWeekHours(empId) {
-    return filteredShifts.filter(s=>s.employee_id===empId).reduce((acc,s)=>{
-      if(!s.start_time||!s.end_time) return acc
-      return acc + (new Date(s.end_time)-new Date(s.start_time))/3600000
-    },0).toFixed(1)
-  }
-  function getDayTotalHours(date) {
-    return filteredShifts.filter(s=>{
-      const sd=new Date(s.start_time)
-      return sd.getFullYear()===date.getFullYear()&&sd.getMonth()===date.getMonth()&&sd.getDate()===date.getDate()
-    }).reduce((acc,s)=>{
-      if(!s.start_time||!s.end_time) return acc
-      return acc+(new Date(s.end_time)-new Date(s.start_time))/3600000
-    },0).toFixed(1)
-  }
-  function formatShiftTime(isoStr) {
-    if(!isoStr) return ''
-    return new Date(isoStr).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true})
-  }
+  useEffect(() => {
+    const h = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', h)
+    return () => window.removeEventListener('resize', h)
+  }, [])
 
-  useEffect(()=>{ const h=()=>setIsMobile(window.innerWidth<768); window.addEventListener('resize',h); return ()=>window.removeEventListener('resize',h) },[])
+  const viewDates = useMemo(() => getViewDates(baseDate, viewWeeks), [baseDate, viewWeeks])
 
-  const dateRange = useMemo(()=>{
-    const y=baseDate.getFullYear(),m=baseDate.getMonth()
-    if(viewMode==='year') return {start:new Date(y,0,1),end:new Date(y,11,31,23,59,59)}
-    if(viewMode==='month') return {start:new Date(y,m,1),end:new Date(y,m+1,0,23,59,59)}
-    if(viewMode==='biweek'){ const w1=getWeekDates(baseDate,0),w2=getWeekDates(baseDate,1),start=new Date(w1[0]),end=new Date(w2[6]); start.setHours(0,0,0,0); end.setHours(23,59,59,999); return {start,end} }
-    const week=getWeekDates(baseDate),start=new Date(week[0]),end=new Date(week[6]); start.setHours(0,0,0,0); end.setHours(23,59,59,999); return {start,end}
-  },[viewMode,baseDate])
+  const dateRange = useMemo(() => {
+    if (!viewDates.length) return { start: new Date(), end: new Date() }
+    const start = new Date(viewDates[0])
+    const end   = new Date(viewDates[viewDates.length - 1])
+    end.setHours(23, 59, 59, 999)
+    return { start, end }
+  }, [viewDates])
 
-  useEffect(()=>{ loadAll() },[profile,dateRange])
+  useEffect(() => { loadAll() }, [profile, dateRange])
 
-  async function loadAll(){
-    if(!profile?.company_id) return
+  async function loadAll() {
+    if (!profile?.company_id) return
     setLoading(true)
-    const [sR,eR,siR,ceR]=await Promise.all([
-      supabase.from('shift').select('*').eq('company_id',profile.company_id).gte('start_time',dateRange.start.toISOString()).lte('start_time',dateRange.end.toISOString()).order('start_time'),
-      supabase.from('employee').select('id,first_name,last_name,role,is_armed,position_title,status').eq('company_id',profile.company_id).eq('status','active').or('invitation_status.eq.accepted,has_app_access.eq.true'),
-      supabase.from('site').select('id,name,city,state').eq('company_id',profile.company_id),
-      supabase.from('employee').select('id').eq('company_id',profile.company_id).eq('user_id',profile.id).maybeSingle(),
+    const [sR, eR, siR, ceR] = await Promise.all([
+      supabase.from('shift').select('*')
+        .eq('company_id', profile.company_id)
+        .gte('start_time', dateRange.start.toISOString())
+        .lte('start_time', dateRange.end.toISOString())
+        .order('start_time'),
+      supabase.from('employee')
+        .select('id,first_name,last_name,position_title,role,profile_photo_url,status,is_armed')
+        .eq('company_id', profile.company_id)
+        .eq('status', 'active')
+        .or('invitation_status.eq.accepted,has_app_access.eq.true')
+        .order('last_name'),
+      supabase.from('site').select('id,name,city,state').eq('company_id', profile.company_id),
+      supabase.from('employee').select('id').eq('company_id', profile.company_id).eq('user_id', profile.id).maybeSingle(),
     ])
-    let sd=sR.data||[]
-    if(isOfficer){ const me=(eR.data||[]).find(e=>e.id===profile.employee_id); if(me) sd=sd.filter(s=>s.employee_id===me.id) }
-    setCreatorEmpId(ceR.data?.id||null)
-    setShifts(sd); setEmployees(eR.data||[]); setSites(siR.data||[]); setLoading(false)
+    let sd = sR.data || []
+    if (isOfficer) {
+      const me = (eR.data || []).find(e => e.id === profile.employee_id)
+      if (me) sd = sd.filter(s => s.employee_id === me.id)
+    }
+    setCreatorEmpId(ceR.data?.id || null)
+    setShifts(sd)
+    setEmployees(eR.data || [])
+    setSites(siR.data || [])
+    setLoading(false)
   }
 
-  const sortedEmployees=useMemo(()=>[...employees].sort((a,b)=>((sortEmp==='first'?a.first_name:a.last_name)||'').localeCompare((sortEmp==='first'?b.first_name:b.last_name)||'')),[employees,sortEmp])
-  const positionTitles=useMemo(()=>[...new Set(employees.map(e=>e.position_title).filter(Boolean))].sort(),[employees])
-  const filteredShifts=useMemo(()=>shifts.filter(s=>{ const emp=employees.find(e=>e.id===s.employee_id); return (filterSite==='all'||s.site_id===filterSite)&&(filterStatus==='all'||s.status===filterStatus)&&(filterEmp==='all'||s.employee_id===filterEmp)&&(filterTitle==='all'||emp?.position_title===filterTitle) }),[shifts,filterSite,filterStatus,filterEmp,filterTitle,employees])
+  function navigate(dir) {
+    const d = new Date(baseDate)
+    d.setDate(d.getDate() + dir * viewWeeks * 7)
+    setBaseDate(d)
+  }
 
-  function empName(id,mode='full'){ const e=employees.find(e=>e.id===id); if(!e) return '—'; if(mode==='first') return e.first_name; if(mode==='last') return e.last_name; return e.first_name+' '+e.last_name }
-  function siteName(id){ const s=sites.find(s=>s.id===id); return s?s.name:'—' }
-  function navigate(dir){ const d=new Date(baseDate); if(viewMode==='week') d.setDate(d.getDate()+(dir*7)); else if(viewMode==='biweek') d.setDate(d.getDate()+(dir*14)); else if(viewMode==='month') d.setMonth(d.getMonth()+dir); else d.setFullYear(d.getFullYear()+dir); setBaseDate(d) }
+  const periodLabel = useMemo(() => {
+    if (!viewDates.length) return ''
+    const first = viewDates[0], last = viewDates[viewDates.length - 1]
+    return `${fmtDate(first)} – ${fmtDate(last)}, ${last.getFullYear()}`
+  }, [viewDates])
 
-  const periodLabel=useMemo(()=>{
-    if(viewMode==='year') return String(baseDate.getFullYear())
-    if(viewMode==='month') return MONTHS[baseDate.getMonth()]+' '+baseDate.getFullYear()
-    if(viewMode==='week'){ const w=getWeekDates(baseDate); return fmtDate(w[0])+' — '+fmtDate(w[6])+', '+w[0].getFullYear() }
-    const w1=getWeekDates(baseDate,0),w2=getWeekDates(baseDate,1); return fmtDate(w1[0])+' — '+fmtDate(w2[6])+', '+w1[0].getFullYear()
-  },[viewMode,baseDate])
+  const positionTitles = useMemo(
+    () => [...new Set(employees.map(e => e.position_title).filter(Boolean))].sort(),
+    [employees]
+  )
 
-  const today=new Date()
-  const mobileEmp=isMobile?sortedEmployees[mobileEmpIdx]:null
+  const activeSiteIds = useMemo(() => new Set(shifts.map(s => s.site_id).filter(Boolean)), [shifts])
+
+  const filteredEmployees = useMemo(() => {
+    let emps = employees
+    if (selPositions.size > 0) emps = emps.filter(e => selPositions.has(e.position_title || ''))
+    if (selSites.size > 0) {
+      const empIdsWithSite = new Set(shifts.filter(s => selSites.has(s.site_id)).map(s => s.employee_id))
+      emps = emps.filter(e => empIdsWithSite.has(e.id))
+    }
+    return emps
+  }, [employees, shifts, selPositions, selSites])
+
+  function empName(id, mode = 'full') {
+    const e = employees.find(e => e.id === id)
+    if (!e) return '—'
+    if (mode === 'first') return e.first_name
+    if (mode === 'last') return e.last_name
+    return e.first_name + ' ' + e.last_name
+  }
+  function siteName(id) { const s = sites.find(s => s.id === id); return s ? s.name : '—' }
+
+  const today = new Date()
+
+  const btnBase = { border:'none', borderRadius:'var(--radius-sm)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'var(--font-condensed)', letterSpacing:'1px' }
 
   return (
-    <div style={{display:'flex',flexDirection:'column',height:'100%',overflow:'hidden'}}>
-      <style>{`.sc:hover{opacity:0.85}`}</style>
-      <div style={{padding:'12px 20px',borderBottom:'1px solid var(--border)',background:'var(--bg-surface)',flexShrink:0,display:'flex',flexDirection:'column',gap:'10px'}}>
-        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:'8px'}}>
-          <div style={{display:'flex',alignItems:'center',gap:'10px'}}>
-            <h2 style={{fontFamily:'var(--font-display)',fontSize:'20px',letterSpacing:'2px',color:'var(--text-primary)',lineHeight:1,margin:0}}>SCHEDULING</h2>
-            <div style={{display:'flex',alignItems:'center',gap:'4px'}}>
-              <button onClick={()=>navigate(-1)} style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-sm)',color:'var(--text-secondary)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',minHeight:'36px',minWidth:'36px'}}><Icon name="chevron-left" size={15}/></button>
-              <button onClick={()=>setBaseDate(new Date())} style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-sm)',color:'var(--text-secondary)',cursor:'pointer',padding:'0 10px',minHeight:'36px',fontSize:'11px',fontFamily:'var(--font-condensed)',letterSpacing:'1px'}}>TODAY</button>
-              <button onClick={()=>navigate(1)} style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-sm)',color:'var(--text-secondary)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',minHeight:'36px',minWidth:'36px'}}><Icon name="chevron-right" size={15}/></button>
-              <span style={{fontSize:'12px',color:'var(--text-secondary)',marginLeft:'6px',whiteSpace:'nowrap'}}>{periodLabel}</span>
-            </div>
-          </div>
-          <div style={{display:'flex',alignItems:'center',gap:'6px',flexWrap:'wrap'}}>
-            <div style={{display:'flex',gap:'2px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-sm)',padding:'3px'}}>
-              {[['schedule','Schedule'],['swaps','Swaps'],['availability','Availability'],['bids','Shift Bids']].map(([v,l])=>(
-                <button key={v} onClick={()=>setMainTab(v)} style={{padding:'0 10px',minHeight:'36px',border:'none',borderRadius:'4px',background:mainTab===v?'var(--accent-bg)':'transparent',color:mainTab===v?'var(--accent)':'var(--text-muted)',cursor:'pointer',fontSize:'10px',fontFamily:'var(--font-condensed)',letterSpacing:'1px',fontWeight:mainTab===v?700:400}}>
-                  {l.toUpperCase()}
-                </button>
-              ))}
-            </div>
-            {mainTab==='schedule'&&(<div style={{display:'flex',gap:'2px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-sm)',padding:'3px'}}>
-              {['week','biweek','month','year','grid'].map(v=>(
-                <button key={v} onClick={()=>setViewMode(v)} style={{padding:'0 10px',minHeight:'36px',border:'none',borderRadius:'4px',background:viewMode===v?'var(--accent-bg)':'transparent',color:viewMode===v?'var(--accent)':'var(--text-muted)',cursor:'pointer',fontSize:'10px',fontFamily:'var(--font-condensed)',letterSpacing:'1px'}}>
-                  {v==='biweek'?'2 WK':v==='grid'?'GRID':v.toUpperCase()}
-                </button>
-              ))}
-            </div>)}
-            {canCreate&&mainTab==='schedule'&&<button onClick={()=>setShowAutoAssign(true)} style={{display:'flex',alignItems:'center',gap:'6px',background:'var(--bg-card)',color:'var(--text-secondary)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-sm)',padding:'0 14px',minHeight:'36px',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:600,letterSpacing:'1px',cursor:'pointer'}}><Icon name="cpu" size={14}/>AUTO-ASSIGN</button>}
-            {canCreate&&mainTab==='schedule'&&<button onClick={()=>setShowCreate({})} style={{display:'flex',alignItems:'center',gap:'6px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-sm)',padding:'0 14px',minHeight:'36px',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,letterSpacing:'1px',cursor:'pointer'}}><Icon name="plus" size={14}/>ADD SHIFT</button>}
-          </div>
+    <div style={{display:'flex', flexDirection:'column', height:'100%', overflow:'hidden'}}>
+      {/* ── Top Bar ── */}
+      <div style={{padding:'10px 16px', borderBottom:'1px solid var(--border)', background:'var(--bg-surface)', flexShrink:0, display:'flex', alignItems:'center', gap:'8px', flexWrap:'wrap'}}>
+        {/* Sidebar toggle */}
+        {!isMobile && mainTab === 'schedule' && (
+          <button onClick={() => setSidebarOpen(o => !o)}
+            style={{...btnBase, background:'var(--bg-card)', border:'1px solid var(--border-subtle)', color:'var(--text-secondary)', minHeight:'34px', minWidth:'34px', flexShrink:0}}>
+            <Icon name="sidebar" size={15}/>
+          </button>
+        )}
+
+        {/* Title */}
+        <h2 style={{fontFamily:'var(--font-display)', fontSize:'18px', letterSpacing:'2px', color:'var(--text-primary)', lineHeight:1, margin:0, flexShrink:0}}>SCHEDULING</h2>
+
+        {/* Date navigation */}
+        <div style={{display:'flex', alignItems:'center', gap:'3px'}}>
+          <button onClick={() => navigate(-1)} style={{...btnBase, background:'var(--bg-card)', border:'1px solid var(--border-subtle)', color:'var(--text-secondary)', minHeight:'34px', minWidth:'34px'}}><Icon name="chevron-left" size={14}/></button>
+          <button onClick={() => setBaseDate(new Date())} style={{...btnBase, background:'var(--bg-card)', border:'1px solid var(--border-subtle)', color:'var(--text-secondary)', padding:'0 10px', minHeight:'34px', fontSize:'10px', letterSpacing:'1px'}}>TODAY</button>
+          <button onClick={() => navigate(1)}  style={{...btnBase, background:'var(--bg-card)', border:'1px solid var(--border-subtle)', color:'var(--text-secondary)', minHeight:'34px', minWidth:'34px'}}><Icon name="chevron-right" size={14}/></button>
         </div>
-        <div style={{display:'flex',gap:'8px',flexWrap:'wrap',alignItems:'center'}}>
-          <select value={filterSite} onChange={e=>setFilterSite(e.target.value)} style={selStyle}><option value="all">All Sites</option>{sites.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select>
-          {!isMobile&&<>
-            <select value={filterEmp} onChange={e=>setFilterEmp(e.target.value)} style={selStyle}><option value="all">All Employees</option>{sortedEmployees.map(e=><option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>)}</select>
-            <select value={filterTitle} onChange={e=>setFilterTitle(e.target.value)} style={selStyle}><option value="all">All Positions</option>{positionTitles.map(t=><option key={t} value={t}>{t}</option>)}</select>
-            <select value={sortEmp} onChange={e=>setSortEmp(e.target.value)} style={selStyle}><option value="last">Sort: Last Name</option><option value="first">Sort: First Name</option></select>
-            <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value)} style={selStyle}><option value="all">All Status</option>{Object.entries(STATUS_STYLES).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}</select>
-          </>}
-          {isMobile&&viewMode!=='year'&&sortedEmployees.length>0&&(
-            <div style={{display:'flex',alignItems:'center',gap:'6px',flex:1}}>
-              <button onClick={()=>setMobileEmpIdx(i=>Math.max(0,i-1))} disabled={mobileEmpIdx===0} style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-sm)',color:'var(--text-secondary)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',minHeight:'36px',minWidth:'36px'}}><Icon name="chevron-left" size={14}/></button>
-              <span style={{flex:1,textAlign:'center',fontSize:'13px',color:'var(--text-primary)',fontWeight:600}}>{sortedEmployees[mobileEmpIdx]?sortedEmployees[mobileEmpIdx].first_name+' '+sortedEmployees[mobileEmpIdx].last_name:'All'}</span>
-              <button onClick={()=>setMobileEmpIdx(i=>Math.min(sortedEmployees.length-1,i+1))} disabled={mobileEmpIdx===sortedEmployees.length-1} style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-sm)',color:'var(--text-secondary)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',minHeight:'36px',minWidth:'36px'}}><Icon name="chevron-right" size={14}/></button>
-            </div>
-          )}
+        <span style={{fontSize:'12px', color:'var(--text-secondary)', whiteSpace:'nowrap', fontFamily:'var(--font-condensed)', letterSpacing:'0.5px', flex:1}}>{periodLabel}</span>
+
+        {/* Main tab selector */}
+        <div style={{display:'flex', gap:'2px', background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-sm)', padding:'3px', flexShrink:0}}>
+          {[['schedule','Schedule'],['swaps','Swaps'],['availability','Avail.'],['bids','Bids']].map(([v,l]) => (
+            <button key={v} onClick={() => setMainTab(v)}
+              style={{...btnBase, padding:'0 10px', minHeight:'30px', background:mainTab===v?'var(--accent-bg)':'transparent', color:mainTab===v?'var(--accent)':'var(--text-muted)', fontSize:'10px', fontWeight:mainTab===v?700:400}}>
+              {l.toUpperCase()}
+            </button>
+          ))}
         </div>
+
+        {/* View weeks — schedule tab only */}
+        {mainTab === 'schedule' && (
+          <div style={{display:'flex', gap:'2px', background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-sm)', padding:'3px', flexShrink:0}}>
+            {[[1,'1 WK'],[2,'2 WK'],[4,'4 WK']].map(([w,l]) => (
+              <button key={w} onClick={() => setViewWeeks(w)}
+                style={{...btnBase, padding:'0 10px', minHeight:'30px', background:viewWeeks===w?'var(--accent-bg)':'transparent', color:viewWeeks===w?'var(--accent)':'var(--text-muted)', fontSize:'10px', fontWeight:viewWeeks===w?700:400}}>
+                {l}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {canCreate && mainTab === 'schedule' && (
+          <button onClick={() => setShowAutoAssign(true)}
+            style={{...btnBase, background:'var(--bg-card)', color:'var(--text-secondary)', border:'1px solid var(--border-subtle)', padding:'0 12px', minHeight:'34px', fontSize:'11px', fontWeight:600, gap:'6px', flexShrink:0}}>
+            <Icon name="cpu" size={13}/>AUTO-ASSIGN
+          </button>
+        )}
+        {canCreate && mainTab === 'schedule' && (
+          <button onClick={() => setShowCreate({})}
+            style={{...btnBase, background:'var(--accent)', color:'var(--text-inverse)', padding:'0 14px', minHeight:'34px', fontSize:'11px', fontWeight:700, gap:'6px', flexShrink:0}}>
+            <Icon name="plus" size={13}/>ADD SHIFT
+          </button>
+        )}
       </div>
 
-      {mainTab==='swaps' && <SwapsPanel companyId={profile.company_id} profile={profile} employees={employees} shifts={shifts} canApprove={canApprove}/>}
-      {mainTab==='availability' && <AvailabilityPanel companyId={profile.company_id} profile={profile} employees={employees} canEdit={canCreate}/>}
-      {mainTab==='bids' && <ShiftBidsPanel companyId={profile.company_id} profile={profile} employees={employees} sites={sites} canPost={canCreate}/>}
+      {/* ── Content ── */}
+      <div style={{flex:1, display:'flex', overflow:'hidden'}}>
+        {/* Non-schedule tabs */}
+        {mainTab === 'swaps'        && <SwapsPanel companyId={profile.company_id} profile={profile} employees={employees} shifts={shifts} canApprove={canApprove}/>}
+        {mainTab === 'availability' && <AvailabilityPanel companyId={profile.company_id} profile={profile} employees={employees} canEdit={canCreate}/>}
+        {mainTab === 'bids'         && <ShiftBidsPanel companyId={profile.company_id} profile={profile} employees={employees} sites={sites} canPost={canCreate}/>}
 
-      {mainTab==='schedule' && loading ? (
-        <div style={{padding:'16px 20px',display:'grid',gridTemplateColumns:viewMode==='year'?'repeat(auto-fill,minmax(200px,1fr))':'repeat(7,1fr)',gap:'8px'}}>
-          {[...Array(viewMode==='year'?12:7)].map((_,i)=><div key={i} style={{height:'180px',borderRadius:'8px'}} className="skeleton"/>)}
-        </div>
-      ) : mainTab==='schedule' && viewMode==='year' ? (
-        <YearView baseDate={baseDate} shifts={filteredShifts} today={today} onMonthClick={(m)=>{ const d=new Date(baseDate); d.setMonth(m); setBaseDate(d); setViewMode('month') }}/>
-      ) : mainTab==='schedule' && viewMode==='month' ? (
-        <MonthView baseDate={baseDate} today={today} shifts={filteredShifts} empName={empName} siteName={siteName} onSelect={setSelected} isMobile={isMobile} mobileEmpId={mobileEmp?.id}/>
-      ) : mainTab==='schedule' && viewMode==='grid' ? (
-        <GridView
-          weekDays={getWeekDates(baseDate)}
-          sortedEmployees={sortedEmployees}
-          getShiftsForEmployeeDay={getShiftsForEmployeeDay}
-          getEmployeeWeekHours={getEmployeeWeekHours}
-          getDayTotalHours={getDayTotalHours}
-          formatShiftTime={formatShiftTime}
+        {/* Schedule tab */}
+        {mainTab === 'schedule' && (
+          <>
+            {/* Filter sidebar */}
+            {!isMobile && sidebarOpen && (
+              <FilterSidebar
+                positions={positionTitles}
+                sites={sites}
+                activeSiteIds={activeSiteIds}
+                selPositions={selPositions}
+                selSites={selSites}
+                onPositionsChange={setSelPositions}
+                onSitesChange={setSelSites}
+              />
+            )}
+
+            {/* Staffing grid */}
+            {loading ? (
+              <div style={{flex:1, padding:'16px 20px', display:'flex', flexDirection:'column', gap:'8px'}}>
+                {[...Array(6)].map((_,i) => <div key={i} style={{height:'64px', borderRadius:'8px'}} className="skeleton"/>)}
+              </div>
+            ) : (
+              <StaffingGrid
+                dates={viewDates}
+                employees={filteredEmployees}
+                allEmployees={employees}
+                shifts={shifts}
+                sites={sites}
+                today={today}
+                canCreate={canCreate}
+                onSelectShift={setSelected}
+                onCellClick={(emp, date) => setShowCreate({ prefillEmp: emp.id, prefillDate: date })}
+                siteName={siteName}
+                viewWeeks={viewWeeks}
+              />
+            )}
+          </>
+        )}
+      </div>
+
+      {/* ── Modals ── */}
+      {selected && (
+        <ShiftDetail
+          shift={selected}
+          empName={empName}
           siteName={siteName}
-          onSelect={setSelected}
+          canApprove={canApprove}
+          canPublish={canPublish}
           canCreate={canCreate}
-          onCellClick={(emp, date) => {
-            setShowCreate({ prefillEmp: emp.id, prefillDate: date })
+          onClose={() => setSelected(null)}
+          onStatusChange={async (id, status) => {
+            await supabase.from('shift').update({status,...(status==='published'?{published_at:new Date().toISOString()}:{})}).eq('id',id)
+            if (status === 'published') {
+              toast('Schedule published')
+              const shift = shifts.find(s => s.id === id)
+              if (shift) {
+                const {data:emp} = await supabase.from('employee').select('first_name,email').eq('id',shift.employee_id).single()
+                if (emp?.email) emailSchedulePublished({ to:emp.email, firstName:emp.first_name, shiftCount:1, period:new Date(shift.start_time).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'}) })
+              }
+            }
+            setSelected(null); loadAll()
+          }}
+          onDelete={async (id) => {
+            await supabase.from('shift').delete().eq('id',id)
+            toast('Shift deleted','info')
+            setSelected(null); loadAll()
           }}
         />
-      ) : mainTab==='schedule' ? (
-        <MultiWeekView weeks={viewMode==='biweek'?2:1} baseDate={baseDate} today={today} shifts={filteredShifts} empName={empName} siteName={siteName} onSelect={setSelected} isMobile={isMobile} mobileEmpId={mobileEmp?.id}/>
-      ) : null}
-
-      {selected&&<ShiftDetail shift={selected} empName={empName} siteName={siteName} canApprove={canApprove} canPublish={canPublish} canCreate={canCreate} onClose={()=>setSelected(null)}
-        onStatusChange={async(id,status)=>{
-          await supabase.from('shift').update({status,...(status==='published'?{published_at:new Date().toISOString()}:{})}).eq('id',id)
-          if(status==='published') {
-            toast('Schedule published')
-            const shift=shifts.find(s=>s.id===id)
-            if(shift) {
-              const {data:emp}=await supabase.from('employee').select('first_name,email').eq('id',shift.employee_id).single()
-              if(emp?.email) emailSchedulePublished({ to:emp.email, firstName:emp.first_name, shiftCount:1, period:new Date(shift.start_time).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'}) })
-            }
-          }
-          setSelected(null); loadAll()
-        }}
-        onDelete={async(id)=>{ await supabase.from('shift').delete().eq('id',id); toast('Shift deleted', 'info'); setSelected(null); loadAll() }}/>}
-      {showCreate&&<CreateShiftModal employees={sortedEmployees} sites={sites} companyId={profile.company_id} createdBy={creatorEmpId} prefillEmpId={showCreate?.prefillEmp} prefillDate={showCreate?.prefillDate} onClose={()=>setShowCreate(null)} onSaved={()=>{setShowCreate(null);loadAll()}}/>}
-      {showAutoAssign&&<AutoAssignModal employees={sortedEmployees} sites={sites} shifts={shifts} companyId={profile.company_id} createdBy={creatorEmpId} onClose={()=>setShowAutoAssign(false)} onSaved={()=>{setShowAutoAssign(false);loadAll()}}/>}
+      )}
+      {showCreate && (
+        <CreateShiftModal
+          employees={employees}
+          sites={sites}
+          companyId={profile.company_id}
+          createdBy={creatorEmpId}
+          prefillEmpId={showCreate?.prefillEmp}
+          prefillDate={showCreate?.prefillDate}
+          onClose={() => setShowCreate(null)}
+          onSaved={() => { setShowCreate(null); loadAll() }}
+        />
+      )}
+      {showAutoAssign && (
+        <AutoAssignModal
+          employees={employees}
+          sites={sites}
+          shifts={shifts}
+          companyId={profile.company_id}
+          createdBy={creatorEmpId}
+          onClose={() => setShowAutoAssign(false)}
+          onSaved={() => { setShowAutoAssign(false); loadAll() }}
+        />
+      )}
     </div>
   )
 }
 
-function MultiWeekView({weeks,baseDate,today,shifts,empName,siteName,onSelect,isMobile,mobileEmpId}){
-  const allDates=useMemo(()=>{ const r=[]; for(let w=0;w<weeks;w++) getWeekDates(baseDate,w).forEach(d=>r.push(d)); return r },[baseDate,weeks])
-  function sfd(date){ let s=shifts.filter(s=>isSameDay(new Date(s.start_time),date)); if(isMobile&&mobileEmpId) s=s.filter(s=>s.employee_id===mobileEmpId); return s }
+// ── Filter Sidebar ────────────────────────────────────────────────────────────
+
+function FilterSidebar({ positions, sites, activeSiteIds, selPositions, selSites, onPositionsChange, onSitesChange }) {
+  function togglePos(p) {
+    if (selPositions.size === 0) {
+      onPositionsChange(new Set(positions.filter(x => x !== p)))
+    } else {
+      const n = new Set(selPositions); n.has(p) ? n.delete(p) : n.add(p)
+      onPositionsChange(n.size === positions.length ? new Set() : n)
+    }
+  }
+  function toggleSite(id) {
+    if (selSites.size === 0) {
+      onSitesChange(new Set(sites.filter(x => x.id !== id).map(x => x.id)))
+    } else {
+      const n = new Set(selSites); n.has(id) ? n.delete(id) : n.add(id)
+      onSitesChange(n.size === sites.length ? new Set() : n)
+    }
+  }
+  const isFiltered = selPositions.size > 0 || selSites.size > 0
+  const sectHd = { fontSize:'10px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1.5px', fontFamily:'var(--font-condensed)', marginBottom:'8px', paddingBottom:'6px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', justifyContent:'space-between' }
+  const miniBtn = { fontSize:'10px', background:'transparent', border:'none', cursor:'pointer', fontFamily:'var(--font-condensed)', padding:0, letterSpacing:'0.5px' }
+  const rowStyle = { display:'flex', alignItems:'center', gap:'8px', padding:'3px 0', cursor:'pointer', userSelect:'none' }
+
   return (
-    <div style={{flex:1,overflowY:'auto',padding:'12px 16px'}}>
-      <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:'4px',marginBottom:'6px'}}>
-        {DAYS_SHORT.map(d=><div key={d} style={{textAlign:'center',fontSize:'10px',color:'var(--text-muted)',fontFamily:'var(--font-condensed)',letterSpacing:'1px',padding:'4px 0'}}>{d}</div>)}
-      </div>
-      <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:'6px'}}>
-        {allDates.map((date,i)=>{
-          const isToday=isSameDay(date,today),ds=sfd(date)
-          return (
-            <div key={i} style={{background:'var(--bg-card)',border:'1px solid '+(isToday?'var(--accent-border)':'var(--border-subtle)'),borderRadius:'var(--radius-md)',minHeight:isMobile?'80px':'140px',overflow:'hidden'}}>
-              <div style={{padding:'6px 8px',borderBottom:'1px solid var(--border)',background:isToday?'var(--accent-bg)':'transparent',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-                <div>
-                  {!isMobile&&<div style={{fontSize:'9px',color:isToday?'var(--accent)':'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)'}}>{DAYS_SHORT[date.getDay()]}</div>}
-                  <div style={{fontSize:isMobile?'13px':'16px',fontFamily:'var(--font-display)',color:isToday?'var(--accent)':'var(--text-primary)',lineHeight:1}}>{date.getDate()}</div>
-                </div>
-                {ds.length>0&&<span style={{fontSize:'9px',background:'var(--border)',color:'var(--text-muted)',borderRadius:'10px',padding:'1px 5px'}}>{ds.length}</span>}
-              </div>
-              <div style={{padding:'4px',display:'flex',flexDirection:'column',gap:'3px'}}>
-                {ds.slice(0,isMobile?2:999).map(s=><SC key={s.id} shift={s} empName={empName} siteName={siteName} onClick={()=>onSelect(s)} compact={isMobile}/>)}
-                {isMobile&&ds.length>2&&<div style={{fontSize:'10px',color:'var(--text-muted)',textAlign:'center'}}>+{ds.length-2}</div>}
-                {ds.length===0&&!isMobile&&<div style={{padding:'8px 4px',textAlign:'center',fontSize:'10px',color:'var(--text-muted)'}}>—</div>}
-              </div>
+    <div style={{width:'210px', flexShrink:0, borderRight:'1px solid var(--border)', background:'var(--bg-card)', overflowY:'auto', padding:'14px 12px', display:'flex', flexDirection:'column', gap:'20px'}}>
+      {positions.length > 0 && (
+        <div>
+          <div style={sectHd}>
+            <span>Positions</span>
+            <div style={{display:'flex', gap:'8px'}}>
+              <button style={{...miniBtn, color:'var(--accent)'}} onClick={() => onPositionsChange(new Set())}>ALL</button>
+              <button style={{...miniBtn, color:'var(--text-muted)'}} onClick={() => onPositionsChange(new Set(positions))}>NONE</button>
             </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
+          </div>
+          {positions.map(p => {
+            const checked = selPositions.size === 0 || selPositions.has(p)
+            return (
+              <label key={p} style={rowStyle}>
+                <input type="checkbox" checked={checked} onChange={() => togglePos(p)} style={{width:'14px', height:'14px', accentColor:'var(--accent)', cursor:'pointer', flexShrink:0}}/>
+                <span style={{fontSize:'12px', color: checked ? 'var(--text-primary)' : 'var(--text-muted)', lineHeight:1.4, flex:1}}>{p}</span>
+              </label>
+            )
+          })}
+        </div>
+      )}
 
-function MonthView({baseDate,today,shifts,empName,siteName,onSelect,isMobile,mobileEmpId}){
-  const dates=useMemo(()=>getMonthDates(baseDate),[baseDate])
-  function sfd(date){ let s=shifts.filter(s=>isSameDay(new Date(s.start_time),date)); if(isMobile&&mobileEmpId) s=s.filter(s=>s.employee_id===mobileEmpId); return s }
-  return (
-    <div style={{flex:1,overflowY:'auto',padding:'12px 16px'}}>
-      <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:'2px',marginBottom:'6px'}}>
-        {DAYS_SHORT.map(d=><div key={d} style={{textAlign:'center',fontSize:'10px',color:'var(--text-muted)',fontFamily:'var(--font-condensed)',letterSpacing:'1px',padding:'4px 0'}}>{d}</div>)}
-      </div>
-      <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:'4px'}}>
-        {dates.map(({date,thisMonth},i)=>{
-          const isToday=isSameDay(date,today),ds=sfd(date),lim=isMobile?1:3
-          return (
-            <div key={i} style={{background:thisMonth?'var(--bg-card)':'rgba(0,0,0,0.15)',border:'1px solid '+(isToday?'var(--accent-border)':'var(--border-subtle)'),borderRadius:'var(--radius-sm)',minHeight:isMobile?'60px':'100px',overflow:'hidden',opacity:thisMonth?1:0.5}}>
-              <div style={{padding:'4px 6px',display:'flex',alignItems:'center',justifyContent:'space-between',background:isToday?'var(--accent-bg)':'transparent'}}>
-                <span style={{fontSize:isMobile?'11px':'13px',fontFamily:'var(--font-display)',color:isToday?'var(--accent)':'var(--text-primary)'}}>{date.getDate()}</span>
-                {ds.length>0&&<span style={{fontSize:'9px',background:isToday?'var(--accent)':'var(--border)',color:isToday?'var(--text-inverse)':'var(--text-muted)',borderRadius:'10px',padding:'0 4px'}}>{ds.length}</span>}
-              </div>
-              <div style={{padding:'2px 4px',display:'flex',flexDirection:'column',gap:'2px'}}>
-                {ds.slice(0,lim).map(s=><SC key={s.id} shift={s} empName={empName} siteName={siteName} onClick={()=>onSelect(s)} compact={true}/>)}
-                {ds.length>lim&&<div style={{fontSize:'9px',color:'var(--text-muted)',paddingLeft:'4px'}}>+{ds.length-lim} more</div>}
-              </div>
+      {sites.length > 0 && (
+        <div>
+          <div style={sectHd}>
+            <span>Job Sites</span>
+            <div style={{display:'flex', gap:'8px'}}>
+              <button style={{...miniBtn, color:'var(--accent)'}} onClick={() => onSitesChange(new Set())}>ALL</button>
+              <button style={{...miniBtn, color:'var(--text-muted)'}} onClick={() => onSitesChange(new Set(sites.map(s=>s.id)))}>NONE</button>
             </div>
-          )
-        })}
-      </div>
+          </div>
+          {sites.map(s => {
+            const checked = selSites.size === 0 || selSites.has(s.id)
+            return (
+              <label key={s.id} style={rowStyle}>
+                <input type="checkbox" checked={checked} onChange={() => toggleSite(s.id)} style={{width:'14px', height:'14px', accentColor:'var(--accent)', cursor:'pointer', flexShrink:0}}/>
+                <span style={{fontSize:'12px', color: checked ? 'var(--text-primary)' : 'var(--text-muted)', lineHeight:1.4, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{s.name}</span>
+                {activeSiteIds.has(s.id) && <span style={{width:'6px', height:'6px', borderRadius:'50%', background:'var(--accent)', flexShrink:0}}/>}
+              </label>
+            )
+          })}
+        </div>
+      )}
+
+      {isFiltered && (
+        <button onClick={() => { onPositionsChange(new Set()); onSitesChange(new Set()) }}
+          style={{padding:'8px', background:'var(--bg-surface)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', color:'var(--text-muted)', fontSize:'11px', fontFamily:'var(--font-condensed)', cursor:'pointer', letterSpacing:'0.5px', marginTop:'auto'}}>
+          CLEAR FILTERS
+        </button>
+      )}
     </div>
   )
 }
 
-function YearView({baseDate,shifts,today,onMonthClick}){
-  const year=baseDate.getFullYear()
+// ── Staffing Grid ─────────────────────────────────────────────────────────────
+
+const EMP_COL = 224
+
+function StaffingGrid({ dates, employees, allEmployees, shifts, sites, today, canCreate, onSelectShift, onCellClick, siteName, viewWeeks }) {
+  const dayColMin = viewWeeks === 1 ? 140 : viewWeeks === 2 ? 110 : 84
+
+  function getEmpDayShifts(empId, date) {
+    return shifts.filter(s => {
+      if (s.employee_id !== empId) return false
+      return isSameDay(new Date(s.start_time), date)
+    })
+  }
+
+  function getEmpPeriodHours(empId) {
+    return shifts.filter(s => s.employee_id === empId && s.status !== 'cancelled').reduce((acc, s) => {
+      if (!s.start_time || !s.end_time) return acc
+      return acc + (new Date(s.end_time) - new Date(s.start_time)) / 3600000
+    }, 0)
+  }
+
+  function getDayAssigned(date) {
+    return new Set(shifts.filter(s => s.status !== 'cancelled' && isSameDay(new Date(s.start_time), date)).map(s => s.employee_id)).size
+  }
+
+  function getDayHours(date) {
+    return shifts.filter(s => s.status !== 'cancelled' && isSameDay(new Date(s.start_time), date)).reduce((acc, s) => {
+      if (!s.start_time || !s.end_time) return acc
+      return acc + (new Date(s.end_time) - new Date(s.start_time)) / 3600000
+    }, 0)
+  }
+
+  const totalPeriodHours = shifts.filter(s => s.status !== 'cancelled').reduce((acc, s) => {
+    if (!s.start_time || !s.end_time) return acc
+    return acc + (new Date(s.end_time) - new Date(s.start_time)) / 3600000
+  }, 0)
+
+  const ini = (emp) => `${emp.first_name?.[0]||''}${emp.last_name?.[0]||''}`.toUpperCase()
+
+  if (employees.length === 0) {
+    return (
+      <div style={{flex:1, display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap:'12px', color:'var(--text-muted)'}}>
+        <Icon name="users" size={36} color="var(--border-subtle)"/>
+        <div style={{fontSize:'14px'}}>No employees match the current filters</div>
+      </div>
+    )
+  }
+
+  // Shared cell style helpers
+  const stickyEmpCell = {
+    position:'sticky', left:0, zIndex:1,
+    background:'var(--bg-card)',
+    borderRight:'1px solid var(--border)',
+    borderBottom:'1px solid var(--border)',
+    padding:'8px 10px',
+    width:`${EMP_COL}px`, minWidth:`${EMP_COL}px`, maxWidth:`${EMP_COL}px`,
+    verticalAlign:'middle',
+    boxShadow:'2px 0 6px rgba(0,0,0,0.15)',
+  }
+
   return (
-    <div style={{flex:1,overflowY:'auto',padding:'16px 20px'}}>
-      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:'12px'}}>
-        {MONTHS.map((name,m)=>{
-          const dates=getMonthDates(new Date(year,m,1))
-          const count=shifts.filter(s=>{ const d=new Date(s.start_time); return d.getFullYear()===year&&d.getMonth()===m }).length
-          const isCur=today.getFullYear()===year&&today.getMonth()===m
-          return (
-            <button key={m} onClick={()=>onMonthClick(m)} style={{background:'var(--bg-card)',border:'1px solid '+(isCur?'var(--accent-border)':'var(--border-subtle)'),borderRadius:'var(--radius-md)',padding:'12px',textAlign:'left',cursor:'pointer',width:'100%'}}
-              onMouseEnter={e=>{e.currentTarget.style.borderColor='var(--accent-border)';e.currentTarget.style.background='var(--bg-card-hover)'}}
-              onMouseLeave={e=>{e.currentTarget.style.borderColor=isCur?'var(--accent-border)':'var(--border-subtle)';e.currentTarget.style.background='var(--bg-card)'}}>
-              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'8px'}}>
-                <span style={{fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,color:isCur?'var(--accent)':'var(--text-primary)'}}>{name}</span>
-                {count>0&&<span style={{fontSize:'10px',background:'var(--accent-bg)',color:'var(--accent)',borderRadius:'10px',padding:'1px 6px',fontWeight:600}}>{count}</span>}
-              </div>
-              <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:'1px'}}>
-                {DAYS_SHORT.map(d=><div key={d} style={{textAlign:'center',fontSize:'8px',color:'var(--text-muted)'}}>{d[0]}</div>)}
-                {dates.map(({date,thisMonth},i)=>{
-                  const isT=isSameDay(date,today)
-                  const cnt=thisMonth?shifts.filter(s=>{ const d=new Date(s.start_time); return d.getFullYear()===year&&d.getMonth()===m&&d.getDate()===date.getDate() }).length:0
-                  return <div key={i} style={{textAlign:'center',fontSize:'9px',padding:'2px 1px',borderRadius:'3px',background:isT?'var(--accent)':cnt>0?'var(--accent-bg)':'transparent',color:isT?'var(--text-inverse)':cnt>0?'var(--accent)':thisMonth?'var(--text-secondary)':'var(--text-muted)',fontWeight:cnt>0?700:400,opacity:thisMonth?1:0.4}}>{date.getDate()}</div>
+    <div style={{flex:1, overflow:'auto', position:'relative'}}>
+      <table style={{borderCollapse:'collapse', minWidth:`${EMP_COL + dates.length * dayColMin}px`, width:'100%'}}>
+        <colgroup>
+          <col style={{width:`${EMP_COL}px`}}/>
+          {dates.map((_,i) => <col key={i} style={{width:`${dayColMin}px`, minWidth:`${dayColMin}px`}}/>)}
+        </colgroup>
+
+        {/* ── Header ── */}
+        <thead>
+          <tr>
+            <th style={{position:'sticky', left:0, top:0, zIndex:4, background:'var(--bg-surface)', borderRight:'1px solid var(--border)', borderBottom:'2px solid var(--border)', padding:'8px 10px', textAlign:'left', width:`${EMP_COL}px`, boxShadow:'2px 0 6px rgba(0,0,0,0.15)'}}>
+              <span style={{fontSize:'10px', color:'var(--text-muted)', fontFamily:'var(--font-condensed)', letterSpacing:'1.5px', textTransform:'uppercase'}}>OFFICER · {employees.length}</span>
+            </th>
+            {dates.map((d, i) => {
+              const isToday = isSameDay(d, today)
+              return (
+                <th key={i} style={{position:'sticky', top:0, zIndex:2, background: isToday ? 'var(--accent-bg)' : 'var(--bg-surface)', padding:'7px 6px', textAlign:'center', borderLeft:'1px solid var(--border)', borderBottom:'2px solid var(--border)', minWidth:`${dayColMin}px`, whiteSpace:'nowrap'}}>
+                  <div style={{fontSize:'10px', color: isToday ? 'var(--accent)' : 'var(--text-muted)', fontFamily:'var(--font-condensed)', letterSpacing:'1px', textTransform:'uppercase', lineHeight:1}}>{DAYS_SHORT[d.getDay()]}</div>
+                  <div style={{fontSize:'17px', fontFamily:'var(--font-display)', color: isToday ? 'var(--accent)' : 'var(--text-primary)', lineHeight:1.2, fontWeight:700}}>{d.getDate()}</div>
+                </th>
+              )
+            })}
+          </tr>
+        </thead>
+
+        {/* ── Employee Rows ── */}
+        <tbody>
+          {employees.map(emp => {
+            const hours = getEmpPeriodHours(emp.id)
+            return (
+              <tr key={emp.id}>
+                {/* Employee name cell */}
+                <td style={stickyEmpCell}>
+                  <div style={{display:'flex', alignItems:'center', gap:'8px'}}>
+                    <div style={{width:'34px', height:'34px', borderRadius:'50%', background:'var(--accent-bg)', border:'1px solid var(--accent-border)', display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'var(--font-condensed)', fontSize:'12px', fontWeight:700, color:'var(--accent)', flexShrink:0, overflow:'hidden'}}>
+                      {emp.profile_photo_url
+                        ? <img src={emp.profile_photo_url} alt="" style={{width:'100%', height:'100%', objectFit:'cover'}}/>
+                        : ini(emp)
+                      }
+                    </div>
+                    <div style={{minWidth:0, flex:1}}>
+                      <div style={{fontSize:'12px', fontWeight:600, color:'var(--text-primary)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>{emp.first_name} {emp.last_name}</div>
+                      {emp.position_title && <div style={{fontSize:'10px', color:'var(--text-muted)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', marginTop:'1px'}}>{emp.position_title}</div>}
+                    </div>
+                    {hours > 0 && (
+                      <div style={{fontSize:'11px', color:'var(--accent)', fontFamily:'var(--font-display)', fontWeight:700, flexShrink:0, letterSpacing:'0.5px'}}>{Number.isInteger(hours) ? hours : hours.toFixed(1)}h</div>
+                    )}
+                  </div>
+                </td>
+
+                {/* Day cells */}
+                {dates.map((d, di) => {
+                  const dayShifts = getEmpDayShifts(emp.id, d)
+                  const isToday = isSameDay(d, today)
+                  const canClick = canCreate && dayShifts.length === 0
+                  return (
+                    <td key={di}
+                      style={{borderLeft:'1px solid var(--border)', borderBottom:'1px solid var(--border)', padding:'4px', verticalAlign:'top', background: isToday ? 'rgba(201,162,39,0.025)' : 'var(--bg-card)', minWidth:`${dayColMin}px`, cursor: canClick ? 'pointer' : 'default', transition:'background 80ms'}}
+                      onClick={() => canClick && onCellClick(emp, d)}
+                      onMouseEnter={e => { if (canClick) e.currentTarget.style.background = 'var(--bg-card-hover)' }}
+                      onMouseLeave={e => { e.currentTarget.style.background = isToday ? 'rgba(201,162,39,0.025)' : 'var(--bg-card)' }}
+                    >
+                      {dayShifts.length === 0 && canCreate && (
+                        <div style={{minHeight:'48px', display:'flex', alignItems:'center', justifyContent:'center', color:'var(--accent)', fontSize:'20px', opacity:0.15, pointerEvents:'none'}}>+</div>
+                      )}
+                      {dayShifts.map(s => (
+                        <ShiftBlock key={s.id} shift={s} siteName={siteName} onClick={e => { e.stopPropagation(); onSelectShift(s) }}/>
+                      ))}
+                    </td>
+                  )
                 })}
-              </div>
-            </button>
-          )
-        })}
-      </div>
+              </tr>
+            )
+          })}
+        </tbody>
+
+        {/* ── Totals Row ── */}
+        <tfoot>
+          <tr>
+            <td style={{...stickyEmpCell, background:'var(--bg-surface)', borderTop:'2px solid var(--border)', borderBottom:'none', zIndex:1}}>
+              <div style={{fontSize:'10px', color:'var(--accent)', fontFamily:'var(--font-condensed)', fontWeight:700, letterSpacing:'1px', textTransform:'uppercase'}}>ASSIGNED</div>
+              <div style={{fontSize:'11px', color:'var(--text-muted)', marginTop:'3px'}}>{totalPeriodHours.toFixed(1)} total hours</div>
+            </td>
+            {dates.map((d, i) => {
+              const assigned = getDayAssigned(d)
+              const hrs = getDayHours(d)
+              return (
+                <td key={i} style={{borderLeft:'1px solid var(--border)', borderTop:'2px solid var(--border)', background:'var(--bg-surface)', padding:'8px 6px', textAlign:'center', minWidth:`${dayColMin}px`, verticalAlign:'middle'}}>
+                  <div style={{fontSize:'18px', fontFamily:'var(--font-display)', color: assigned > 0 ? 'var(--text-primary)' : 'var(--text-muted)', fontWeight:700, lineHeight:1}}>{assigned}</div>
+                  {hrs > 0 && <div style={{fontSize:'9px', color:'var(--text-muted)', marginTop:'2px', fontFamily:'var(--font-condensed)', letterSpacing:'0.5px'}}>{hrs.toFixed(0)}h</div>}
+                </td>
+              )
+            })}
+          </tr>
+        </tfoot>
+      </table>
     </div>
   )
 }
 
-function SC({shift,empName,onClick,compact}){
-  const ss=STATUS_STYLES[shift.status]||STATUS_STYLES.draft
-  return <button onClick={e=>{e.stopPropagation();onClick()}} className="sc" style={{background:ss.bg,border:'1px solid transparent',borderRadius:'4px',padding:compact?'3px 5px':'5px 7px',textAlign:'left',cursor:'pointer',width:'100%',transition:'all 120ms ease'}}><div style={{fontSize:compact?'9px':'10px',color:'var(--text-primary)',fontWeight:500,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{empName(shift.employee_id,'last')}</div>{!compact&&<div style={{fontSize:'9px',color:ss.color}}>{fmt12(shift.start_time)}</div>}</button>
+// ── Shift Block ───────────────────────────────────────────────────────────────
+
+function ShiftBlock({ shift, siteName, onClick }) {
+  const ss = STATUS_STYLES[shift.status] || STATUS_STYLES.draft
+  const site = (siteName(shift.site_id) || '').slice(0, 5).toUpperCase()
+  const [hover, setHover] = useState(false)
+  return (
+    <div
+      onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        background: hover ? 'var(--bg-surface)' : 'var(--bg-card)',
+        border: `1px solid ${hover ? 'var(--accent)' : 'var(--accent-border)'}`,
+        borderLeft: '3px solid var(--accent)',
+        borderRadius: '4px',
+        padding: '3px 5px',
+        marginBottom: '3px',
+        cursor: 'pointer',
+        transition: 'all 80ms ease',
+        minHeight: '42px',
+      }}
+    >
+      <div style={{fontSize:'11px', color:'var(--accent)', fontWeight:700, fontFamily:'var(--font-condensed)', whiteSpace:'nowrap', letterSpacing:'0.3px'}}>{fmt12(shift.start_time)}</div>
+      <div style={{fontSize:'10px', color:'var(--text-muted)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', marginTop:'1px'}}>{site || '—'}</div>
+      {shift.status !== 'draft' && (
+        <div style={{fontSize:'8px', color:ss.color, fontFamily:'var(--font-condensed)', fontWeight:700, letterSpacing:'0.5px', marginTop:'2px'}}>{ss.label.toUpperCase()}</div>
+      )}
+    </div>
+  )
 }
+
+// ── Shift Detail ──────────────────────────────────────────────────────────────
 
 function ShiftDetail({shift,empName,siteName,canApprove,canPublish,canCreate,onClose,onStatusChange,onDelete}){
   const ss=STATUS_STYLES[shift.status]||STATUS_STYLES.draft
@@ -358,6 +623,8 @@ function ShiftDetail({shift,empName,siteName,canApprove,canPublish,canCreate,onC
   </>
 }
 
+// ── Create Shift Modal ────────────────────────────────────────────────────────
+
 function CreateShiftModal({employees,sites,companyId,createdBy,prefillEmpId,prefillDate,onClose,onSaved}){
   const toast = useToast()
   const today=new Date().toISOString().split('T')[0]
@@ -365,35 +632,19 @@ function CreateShiftModal({employees,sites,companyId,createdBy,prefillEmpId,pref
   const [form,setForm]=useState({employee_id:prefillEmpId||'',site_id:'',date:prefillDateStr,sh:'08',sm:'00',eh:'16',em:'00',role:'officer',is_armed:false,notes:''})
   const [saving,setSaving]=useState(false)
   const [error,setError]=useState(null)
-  const [conflict,setConflict]=useState(null)  // null | { shiftId, startTime, endTime, siteName }
-  const [checkingConflict,setCheckingConflict]=useState(false)
+  const [conflict,setConflict]=useState(null)
   const set=(k,v)=>setForm(f=>({...f,[k]:v}))
 
-  // Check for conflicts whenever employee or time changes
   useEffect(()=>{
-    if(!form.employee_id||!form.date) { setConflict(null); return }
+    if(!form.employee_id||!form.date){setConflict(null);return}
     const start=new Date(form.date+'T'+form.sh+':'+form.sm+':00')
     const end=new Date(form.date+'T'+form.eh+':'+form.em+':00')
-    if(end<=start) { setConflict(null); return }
-    setCheckingConflict(true)
-    // Look for overlapping shifts for this employee on this date
-    supabase.from('shift')
-      .select('id,start_time,end_time,site_id')
-      .eq('company_id',companyId)
-      .eq('employee_id',form.employee_id)
-      .neq('status','cancelled')
-      .gte('start_time', new Date(form.date+'T00:00:00').toISOString())
-      .lte('start_time', new Date(form.date+'T23:59:59').toISOString())
+    if(end<=start){setConflict(null);return}
+    supabase.from('shift').select('id,start_time,end_time,site_id').eq('company_id',companyId).eq('employee_id',form.employee_id).neq('status','cancelled').gte('start_time',new Date(form.date+'T00:00:00').toISOString()).lte('start_time',new Date(form.date+'T23:59:59').toISOString())
       .then(({data})=>{
-        const overlapping=(data||[]).find(s=>{
-          const sStart=new Date(s.start_time), sEnd=new Date(s.end_time)
-          return start < sEnd && end > sStart
-        })
-        if(overlapping){
-          const site=sites.find(s=>s.id===overlapping.site_id)
-          setConflict({ siteName:site?.name||'another site', startTime:new Date(overlapping.start_time).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'}), endTime:new Date(overlapping.end_time).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'}) })
-        } else { setConflict(null) }
-        setCheckingConflict(false)
+        const ov=(data||[]).find(s=>{ const sS=new Date(s.start_time),sE=new Date(s.end_time); return start<sE&&end>sS })
+        if(ov){ const site=sites.find(s=>s.id===ov.site_id); setConflict({siteName:site?.name||'another site',startTime:new Date(ov.start_time).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'}),endTime:new Date(ov.end_time).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}) }
+        else setConflict(null)
       })
   },[form.employee_id,form.date,form.sh,form.sm,form.eh,form.em])
 
@@ -405,8 +656,7 @@ function CreateShiftModal({employees,sites,companyId,createdBy,prefillEmpId,pref
     if(end<=start){setError('End time must be after start time.');setSaving(false);return}
     const {error}=await supabase.from('shift').insert({company_id:companyId,employee_id:form.employee_id,site_id:form.site_id,start_time:start.toISOString(),end_time:end.toISOString(),role:form.role,is_armed:form.is_armed,notes:form.notes||null,status:'draft',created_by:createdBy})
     if(error){setError(error.message);setSaving(false);return}
-    toast('Shift saved')
-    onSaved()
+    toast('Shift saved'); onSaved()
   }
   const hrs=Array.from({length:24},(_,i)=>String(i).padStart(2,'0'))
   const mins=['00','15','30','45']
@@ -421,10 +671,7 @@ function CreateShiftModal({employees,sites,companyId,createdBy,prefillEmpId,pref
       </div>
       <div style={{flex:1,overflowY:'auto',padding:'20px 24px',display:'flex',flexDirection:'column',gap:'14px'}}>
         {error&&<div style={{background:'var(--color-danger-bg)',border:'1px solid rgba(224,85,85,0.3)',borderRadius:'var(--radius-md)',padding:'10px 14px',fontSize:'13px',color:'var(--color-danger)'}}>{error}</div>}
-        {conflict&&<div style={{background:'var(--color-warning-bg)',border:'1px solid rgba(232,148,58,0.3)',borderRadius:'var(--radius-md)',padding:'10px 14px',fontSize:'13px',color:'var(--color-warning)',display:'flex',alignItems:'flex-start',gap:'8px'}}>
-          <Icon name="alert-triangle" size={15} color="var(--color-warning)"/>
-          <div><strong>Scheduling conflict:</strong> This officer already has a shift at {conflict.siteName} from {conflict.startTime} – {conflict.endTime} on this date. You can still create this shift.</div>
-        </div>}
+        {conflict&&<div style={{background:'var(--color-warning-bg)',border:'1px solid rgba(232,148,58,0.3)',borderRadius:'var(--radius-md)',padding:'10px 14px',fontSize:'13px',color:'var(--color-warning)',display:'flex',alignItems:'flex-start',gap:'8px'}}><Icon name="alert-triangle" size={15} color="var(--color-warning)"/><div><strong>Scheduling conflict:</strong> This officer already has a shift at {conflict.siteName} from {conflict.startTime} – {conflict.endTime} on this date.</div></div>}
         <div><label style={lbl}>Employee *</label><select value={form.employee_id} onChange={e=>set('employee_id',e.target.value)} style={inp}><option value="">Select employee...</option>{employees.map(e=><option key={e.id} value={e.id}>{e.last_name}, {e.first_name}{e.position_title?' — '+e.position_title:''}</option>)}</select></div>
         <div><label style={lbl}>Site *</label><select value={form.site_id} onChange={e=>set('site_id',e.target.value)} style={inp}><option value="">Select site...</option>{sites.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
         <div><label style={lbl}>Date *</label><input type="date" value={form.date} onChange={e=>set('date',e.target.value)} style={inp}/></div>
@@ -448,6 +695,7 @@ function CreateShiftModal({employees,sites,companyId,createdBy,prefillEmpId,pref
 }
 
 function SD({title,children}){return <div style={{marginBottom:'20px'}}><div style={{fontSize:'10px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1.5px',fontFamily:'var(--font-condensed)',marginBottom:'10px',paddingBottom:'6px',borderBottom:'1px solid var(--border)'}}>{title}</div><div style={{display:'flex',flexDirection:'column',gap:'8px'}}>{children}</div></div>}
+function SR({l,v}){if(!v)return null;return <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:'13px'}}><span style={{color:'var(--text-muted)'}}>{l}</span><span style={{color:'var(--text-primary)',fontWeight:500,textAlign:'right',maxWidth:'65%'}}>{v}</span></div>}
 
 // ── Swaps Panel ───────────────────────────────────────────────────────────────
 
@@ -473,12 +721,12 @@ function SwapsPanel({ companyId, profile, employees, shifts, canApprove }) {
     await supabase.from('shift_swap_request').update({ status, reviewed_at:new Date().toISOString() }).eq('id', id); load()
   }
 
-  const empMap  = Object.fromEntries(employees.map(e=>[e.id,`${e.first_name} ${e.last_name}`]))
+  const empMap   = Object.fromEntries(employees.map(e=>[e.id,`${e.first_name} ${e.last_name}`]))
   const shiftMap = Object.fromEntries(shifts.map(s=>[s.id,s]))
-  const visible = swaps.filter(s => filter==='all' || s.status===filter)
+  const visible  = swaps.filter(s => filter==='all' || s.status===filter)
 
-  const pill = (st) => { const m=SWAP_STATUS[st]||SWAP_STATUS.pending; return { display:'inline-flex',padding:'2px 8px',borderRadius:'10px',fontSize:'11px',fontWeight:700,fontFamily:'var(--font-condensed)',letterSpacing:'0.5px',...m } }
-  const btnS = (v='accent') => ({ display:'inline-flex',alignItems:'center',gap:'6px',background:v==='accent'?'var(--accent)':v==='ok'?'var(--color-success-bg)':'var(--color-danger-bg)',color:v==='accent'?'var(--text-inverse)':v==='ok'?'var(--color-success)':'var(--color-danger)',border:v==='accent'?'none':v==='ok'?'1px solid rgba(58,170,106,0.3)':'1px solid rgba(192,57,43,0.3)',borderRadius:'var(--radius-sm)',padding:'0 12px',height:'34px',fontFamily:'var(--font-condensed)',fontSize:'11px',fontWeight:700,cursor:'pointer' })
+  const pill  = (st) => { const m=SWAP_STATUS[st]||SWAP_STATUS.pending; return { display:'inline-flex',padding:'2px 8px',borderRadius:'10px',fontSize:'11px',fontWeight:700,fontFamily:'var(--font-condensed)',letterSpacing:'0.5px',...m } }
+  const btnS  = (v='accent') => ({ display:'inline-flex',alignItems:'center',gap:'6px',background:v==='accent'?'var(--accent)':v==='ok'?'var(--color-success-bg)':'var(--color-danger-bg)',color:v==='accent'?'var(--text-inverse)':v==='ok'?'var(--color-success)':'var(--color-danger)',border:v==='accent'?'none':v==='ok'?'1px solid rgba(58,170,106,0.3)':'1px solid rgba(192,57,43,0.3)',borderRadius:'var(--radius-sm)',padding:'0 12px',height:'34px',fontFamily:'var(--font-condensed)',fontSize:'11px',fontWeight:700,cursor:'pointer' })
 
   return (
     <div style={{flex:1,overflowY:'auto',padding:'20px'}}>
@@ -493,19 +741,12 @@ function SwapsPanel({ companyId, profile, employees, shifts, canApprove }) {
       ) : (
         <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',overflow:'hidden'}}>
           {visible.map((sw,i)=>{
-            const sh = shiftMap[sw.requester_shift_id]
-            const shT = shiftMap[sw.target_shift_id]
-            const st = SWAP_STATUS[sw.status]||SWAP_STATUS.pending
+            const sh=shiftMap[sw.requester_shift_id], shT=shiftMap[sw.target_shift_id], st=SWAP_STATUS[sw.status]||SWAP_STATUS.pending
             return (
               <div key={sw.id} style={{display:'flex',alignItems:'center',gap:'14px',padding:'14px 18px',borderBottom:i<visible.length-1?'1px solid var(--border)':'none'}}>
                 <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-primary)',marginBottom:'2px'}}>
-                    {empMap[sw.requester_employee_id]||'—'} → {empMap[sw.target_employee_id]||'Any'}
-                  </div>
-                  <div style={{fontSize:'11px',color:'var(--text-muted)'}}>
-                    {sh ? `${new Date(sh.start_time).toLocaleDateString('en-US',{month:'short',day:'numeric'})} ${new Date(sh.start_time).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}` : 'My shift'}
-                    {shT ? ` ↔ ${new Date(shT.start_time).toLocaleDateString('en-US',{month:'short',day:'numeric'})}` : ''}
-                    {sw.notes ? ` · "${sw.notes}"` : ''}
+                  <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-primary)',marginBottom:'2px'}}>{empMap[sw.requester_employee_id]||'—'} → {empMap[sw.target_employee_id]||'Any'}</div>
+                  <div style={{fontSize:'11px',color:'var(--text-muted)'}}>{sh?`${new Date(sh.start_time).toLocaleDateString('en-US',{month:'short',day:'numeric'})} ${new Date(sh.start_time).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}`:'My shift'}{shT?` ↔ ${new Date(shT.start_time).toLocaleDateString('en-US',{month:'short',day:'numeric'})}`:''}{sw.notes?` · "${sw.notes}"`:''}
                   </div>
                 </div>
                 <span style={pill(sw.status)}>{st.label}</span>
@@ -580,13 +821,11 @@ function SwapRequestModal({ companyId, employee, shifts, employees, allShifts, o
 
 // ── Availability Panel ────────────────────────────────────────────────────────
 
-const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
-
 function AvailabilityPanel({ companyId, profile, employees, canEdit }) {
-  const [avail, setAvail]     = useState([])
+  const [avail, setAvail]       = useState([])
   const [employee, setEmployee] = useState(null)
   const [viewEmpId, setViewEmpId] = useState(null)
-  const [saving, setSaving]   = useState(false)
+  const [saving, setSaving]     = useState(false)
   const [localAvail, setLocalAvail] = useState({})
 
   useEffect(() => { load() }, [companyId])
@@ -666,16 +905,15 @@ function AvailabilityPanel({ companyId, profile, employees, canEdit }) {
     </div>
   )
 }
-function SR({l,v}){if(!v)return null;return <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',fontSize:'13px'}}><span style={{color:'var(--text-muted)'}}>{l}</span><span style={{color:'var(--text-primary)',fontWeight:500,textAlign:'right',maxWidth:'65%'}}>{v}</span></div>}
 
 // ── Auto-Assign Modal ─────────────────────────────────────────────────────────
 
 function AutoAssignModal({ employees, sites, shifts, companyId, createdBy, onClose, onSaved }) {
   const today = new Date().toISOString().split('T')[0]
   const [form, setForm] = useState({ site_id:'', date:today, sh:'08', sm:'00', eh:'16', em:'00', role:'officer', count:1 })
-  const [preview, setPreview]   = useState(null)
-  const [saving, setSaving]     = useState(false)
-  const [error, setError]       = useState(null)
+  const [preview, setPreview] = useState(null)
+  const [saving, setSaving]   = useState(false)
+  const [error, setError]     = useState(null)
   const set = (k,v) => setForm(f=>({...f,[k]:v}))
 
   const hrs  = Array.from({length:24},(_,i)=>String(i).padStart(2,'0'))
@@ -689,24 +927,18 @@ function AutoAssignModal({ employees, sites, shifts, companyId, createdBy, onClo
     const start = new Date(form.date+'T'+form.sh+':'+form.sm+':00')
     const end   = new Date(form.date+'T'+form.eh+':'+form.em+':00')
     if (end<=start) { setError('End time must be after start.'); return }
-
-    // Employees already scheduled that day (any site)
     const alreadyScheduled = new Set(
       shifts.filter(s => {
         const sDate = s.start_time?.slice(0,10)
         if (sDate !== form.date) return false
-        // Overlap check
         const sStart=new Date(s.start_time), sEnd=new Date(s.end_time)
         return start<sEnd && end>sStart
       }).map(s=>s.employee_id)
     )
-
-    // Filter by role and not already scheduled
     const candidates = employees.filter(e =>
       (form.role==='any' || e.role===form.role || e.position_title?.toLowerCase().includes(form.role)) &&
       !alreadyScheduled.has(e.id)
     ).slice(0, Number(form.count))
-
     setPreview({ candidates, start, end })
   }
 
@@ -744,18 +976,16 @@ function AutoAssignModal({ employees, sites, shifts, companyId, createdBy, onClo
             <div><label style={lbl}>Role</label><select style={inp} value={form.role} onChange={e=>set('role',e.target.value)}><option value="any">Any available</option>{['officer','corporal','sergeant','lieutenant'].map(r=><option key={r} value={r}>{ROLE_LABELS[r]||r}</option>)}</select></div>
             <div><label style={lbl}>Officers Needed</label><input type="number" min="1" max="20" style={inp} value={form.count} onChange={e=>set('count',Math.max(1,Math.min(20,Number(e.target.value))))}/></div>
           </div>
-
           <button onClick={findCandidates} style={{display:'inline-flex',alignItems:'center',gap:'8px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'0 18px',height:'42px',fontFamily:'var(--font-condensed)',fontSize:'13px',color:'var(--text-secondary)',cursor:'pointer',letterSpacing:'1px'}}>
             <Icon name="search" size={14}/>FIND AVAILABLE OFFICERS
           </button>
-
           {preview && (
             <div>
               <div style={{fontSize:'11px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1.5px',fontFamily:'var(--font-condensed)',marginBottom:'10px'}}>
-                {preview.candidates.length} officer{preview.candidates.length!==1?'s':''} available (not already scheduled)
+                {preview.candidates.length} officer{preview.candidates.length!==1?'s':''} available
               </div>
               {preview.candidates.length === 0 ? (
-                <div style={{padding:'20px',textAlign:'center',color:'var(--text-muted)',fontSize:'13px',background:'var(--bg-card)',borderRadius:'var(--radius-md)'}}>No available officers match your criteria for this time slot.</div>
+                <div style={{padding:'20px',textAlign:'center',color:'var(--text-muted)',fontSize:'13px',background:'var(--bg-card)',borderRadius:'var(--radius-md)'}}>No available officers match your criteria.</div>
               ) : (
                 <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',overflow:'hidden'}}>
                   {preview.candidates.map((e,i)=>(
@@ -783,80 +1013,16 @@ function AutoAssignModal({ employees, sites, shifts, companyId, createdBy, onClo
     </>
   )
 }
-// ── Grid View ─────────────────────────────────────────────────────────────────
-
-function GridView({ weekDays, sortedEmployees, getShiftsForEmployeeDay, getEmployeeWeekHours, getDayTotalHours, formatShiftTime, siteName, onSelect, onCellClick, canCreate }) {
-  return (
-    <div style={{flex:1,overflowX:'auto',overflowY:'auto',padding:'0'}}>
-      <div style={{display:'grid',gridTemplateColumns:'200px repeat(7,minmax(120px,1fr))',minWidth:'1040px',border:'1px solid var(--border)',borderRadius:'var(--radius-md)',overflow:'hidden',margin:'16px 20px'}}>
-        {/* Header */}
-        <div style={{background:'var(--bg-surface)',padding:'10px 14px',fontFamily:'var(--font-condensed)',fontSize:'10px',letterSpacing:'1.5px',color:'var(--text-muted)',borderRight:'1px solid var(--border)',borderBottom:'1px solid var(--border)'}}>OFFICER</div>
-        {weekDays.map((d,i) => {
-          const isToday = isSameDay(d,new Date())
-          return (
-            <div key={i} style={{background:isToday?'var(--accent-bg)':'var(--bg-surface)',padding:'10px 14px',textAlign:'center',borderLeft:'1px solid var(--border)',borderBottom:'1px solid var(--border)'}}>
-              <div style={{fontSize:'10px',color:isToday?'var(--accent)':'var(--text-muted)',fontFamily:'var(--font-condensed)',letterSpacing:'1px'}}>{DAYS_SHORT[d.getDay()]}</div>
-              <div style={{fontSize:'16px',fontWeight:700,color:isToday?'var(--accent)':'var(--text-primary)',lineHeight:1.2}}>{d.getDate()}</div>
-            </div>
-          )
-        })}
-        {/* Employee rows */}
-        {sortedEmployees.map(emp => (
-          <div key={emp.id} style={{display:'contents'}}>
-            <div style={{padding:'10px 14px',borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)',display:'flex',alignItems:'center',gap:'8px',background:'var(--bg-card)'}}>
-              <div style={{width:'30px',height:'30px',borderRadius:'50%',background:'var(--accent)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'11px',fontWeight:700,color:'var(--text-inverse)',flexShrink:0}}>
-                {(emp.first_name?.[0]||'')}{(emp.last_name?.[0]||'')}
-              </div>
-              <div style={{minWidth:0}}>
-                <div style={{fontSize:'12px',fontWeight:600,color:'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{emp.first_name} {emp.last_name}</div>
-                <div style={{fontSize:'10px',color:'var(--accent)',fontFamily:'var(--font-condensed)'}}>{getEmployeeWeekHours(emp.id)}h</div>
-              </div>
-            </div>
-            {weekDays.map((d,di) => {
-              const dayShifts = getShiftsForEmployeeDay(emp.id, d)
-              return (
-                <div key={di} onClick={() => canCreate && onCellClick(emp, d)}
-                  style={{borderTop:'1px solid var(--border)',borderLeft:'1px solid var(--border)',padding:'4px',minHeight:'64px',background:'var(--bg-card)',cursor:canCreate?'pointer':'default',transition:'background 100ms ease'}}
-                  onMouseEnter={e=>{if(canCreate)e.currentTarget.style.background='var(--bg-card-hover)'}}
-                  onMouseLeave={e=>{e.currentTarget.style.background='var(--bg-card)'}}>
-                  {dayShifts.length===0 && canCreate && (
-                    <div style={{height:'100%',minHeight:'56px',display:'flex',alignItems:'center',justifyContent:'center',border:'1px dashed var(--border)',borderRadius:'4px',color:'var(--text-muted)',fontSize:'18px',opacity:0.3}}>+</div>
-                  )}
-                  {dayShifts.map(s => (
-                    <div key={s.id} onClick={e=>{e.stopPropagation();onSelect(s)}}
-                      style={{background:'var(--bg-surface)',border:'1px solid var(--accent-border)',borderRadius:'4px',padding:'3px 6px',marginBottom:'2px',fontSize:'11px',cursor:'pointer'}}
-                      onMouseEnter={e=>e.currentTarget.style.borderColor='var(--accent)'}
-                      onMouseLeave={e=>e.currentTarget.style.borderColor='var(--accent-border)'}>
-                      <div style={{color:'var(--accent)',fontWeight:700,fontFamily:'var(--font-condensed)'}}>{formatShiftTime(s.start_time)}</div>
-                      <div style={{color:'var(--text-secondary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{siteName(s.site_id)?.slice(0,14)||'—'}</div>
-                    </div>
-                  ))}
-                </div>
-              )
-            })}
-          </div>
-        ))}
-        {/* Totals row */}
-        <div style={{background:'var(--bg-surface)',padding:'10px 14px',borderTop:'1px solid var(--border)',borderRight:'1px solid var(--border)',fontFamily:'var(--font-condensed)',fontSize:'10px',color:'var(--accent)',fontWeight:700,letterSpacing:'1px'}}>TOTAL HRS</div>
-        {weekDays.map((d,i) => (
-          <div key={i} style={{background:'var(--bg-surface)',padding:'10px 14px',textAlign:'center',borderTop:'1px solid var(--border)',borderLeft:'1px solid var(--border)',fontFamily:'var(--font-display)',fontSize:'14px',color:'var(--accent)',fontWeight:700}}>
-            {getDayTotalHours(d)}h
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
 
 // ── Shift Bids Panel ──────────────────────────────────────────────────────────
 
 function ShiftBidsPanel({ companyId, profile, employees, sites, canPost }) {
-  const [bids, setBids]     = useState([])
-  const [loading, setLoading] = useState(true)
-  const [showNew, setShowNew] = useState(false)
-  const [form, setForm]     = useState({ site_id:'', date:'', sh:'08', sm:'00', eh:'16', em:'00', role:'officer', bonus:'' })
-  const [saving, setSaving] = useState(false)
-  const [myEmpId, setMyEmpId] = useState(null)
+  const [bids, setBids]         = useState([])
+  const [loading, setLoading]   = useState(true)
+  const [showNew, setShowNew]   = useState(false)
+  const [form, setForm]         = useState({ site_id:'', date:'', sh:'08', sm:'00', eh:'16', em:'00', role:'officer', bonus:'' })
+  const [saving, setSaving]     = useState(false)
+  const [myEmpId, setMyEmpId]   = useState(null)
   const [applications, setApplications] = useState([])
   const empMap  = Object.fromEntries(employees.map(e=>[e.id,`${e.first_name} ${e.last_name}`]))
   const siteMap = Object.fromEntries(sites.map(s=>[s.id,s.name]))
@@ -880,19 +1046,17 @@ function ShiftBidsPanel({ companyId, profile, employees, sites, canPost }) {
   }
   async function applyBid(bidId) {
     if (!myEmpId) return
-    await supabase.from('shift_bid_application').insert({ shift_bid_id:bidId, employee_id:myEmpId, company_id:companyId, status:'pending' })
-    load()
+    await supabase.from('shift_bid_application').insert({ shift_bid_id:bidId, employee_id:myEmpId, company_id:companyId, status:'pending' }); load()
   }
   async function awardBid(bidId, empId) {
     await supabase.from('shift_bid').update({ status:'awarded' }).eq('id',bidId)
-    await supabase.from('shift_bid_application').update({ status:'awarded' }).eq('shift_bid_id',bidId).eq('employee_id',empId)
-    load()
+    await supabase.from('shift_bid_application').update({ status:'awarded' }).eq('shift_bid_id',bidId).eq('employee_id',empId); load()
   }
   const hrs=['00','01','02','03','04','05','06','07','08','09','10','11','12','13','14','15','16','17','18','19','20','21','22','23']
   const mins=['00','15','30','45']
   const inp={width:'100%',padding:'9px 11px',background:'var(--bg-input)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:'var(--text-primary)',fontSize:'12px',outline:'none',height:'40px'}
   const lbl={fontSize:'11px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',display:'block',marginBottom:'5px'}
-  const bidApps = (bidId) => applications.filter(a=>a.shift_bid_id===bidId)
+  const bidApps  = (bidId) => applications.filter(a=>a.shift_bid_id===bidId)
   const hasApplied = (bidId) => applications.some(a=>a.shift_bid_id===bidId&&a.employee_id===myEmpId)
   return (
     <div style={{flex:1,overflowY:'auto',padding:'20px'}}>
@@ -919,8 +1083,7 @@ function ShiftBidsPanel({ companyId, profile, employees, sites, canPost }) {
       {loading ? <div style={{color:'var(--text-muted)',fontSize:'12px',fontFamily:'var(--font-condensed)',letterSpacing:'1px'}}>LOADING...</div>
         : bids.length===0 ? <div style={{textAlign:'center',padding:'40px',color:'var(--text-muted)',fontSize:'13px'}}>No open shift bids.</div>
         : bids.map(bid => {
-          const apps = bidApps(bid.id)
-          const applied = hasApplied(bid.id)
+          const apps = bidApps(bid.id), applied = hasApplied(bid.id)
           return (
             <div key={bid.id} style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'14px',marginBottom:'10px'}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'8px'}}>
