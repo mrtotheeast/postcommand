@@ -42,6 +42,7 @@ export default function Scheduling() {
   const [mobileEmpIdx,setMobileEmpIdx] = useState(0)
   const [isMobile,setIsMobile] = useState(window.innerWidth<768)
   const [mainTab,setMainTab] = useState('schedule')
+  const [creatorEmpId,setCreatorEmpId] = useState(null)
   const canBid = atLeast(profile?.role,'officer')
   const canCreate  = atLeast(profile?.role,'sergeant')
   const canApprove = atLeast(profile?.role,'lieutenant')
@@ -90,13 +91,15 @@ export default function Scheduling() {
   async function loadAll(){
     if(!profile?.company_id) return
     setLoading(true)
-    const [sR,eR,siR]=await Promise.all([
+    const [sR,eR,siR,ceR]=await Promise.all([
       supabase.from('shift').select('*').eq('company_id',profile.company_id).gte('start_time',dateRange.start.toISOString()).lte('start_time',dateRange.end.toISOString()).order('start_time'),
       supabase.from('employee').select('id,first_name,last_name,role,is_armed,position_title,status').eq('company_id',profile.company_id).eq('status','active').or('invitation_status.eq.accepted,has_app_access.eq.true'),
       supabase.from('site').select('id,name,city,state').eq('company_id',profile.company_id),
+      supabase.from('employee').select('id').eq('company_id',profile.company_id).eq('user_id',profile.id).maybeSingle(),
     ])
     let sd=sR.data||[]
     if(isOfficer){ const me=(eR.data||[]).find(e=>e.id===profile.employee_id); if(me) sd=sd.filter(s=>s.employee_id===me.id) }
+    setCreatorEmpId(ceR.data?.id||null)
     setShifts(sd); setEmployees(eR.data||[]); setSites(siR.data||[]); setLoading(false)
   }
 
@@ -214,8 +217,8 @@ export default function Scheduling() {
           setSelected(null); loadAll()
         }}
         onDelete={async(id)=>{ await supabase.from('shift').delete().eq('id',id); toast('Shift deleted', 'info'); setSelected(null); loadAll() }}/>}
-      {showCreate&&<CreateShiftModal employees={sortedEmployees} sites={sites} companyId={profile.company_id} createdBy={profile.id} prefillEmpId={showCreate?.prefillEmp} prefillDate={showCreate?.prefillDate} onClose={()=>setShowCreate(null)} onSaved={()=>{setShowCreate(null);loadAll()}}/>}
-      {showAutoAssign&&<AutoAssignModal employees={sortedEmployees} sites={sites} shifts={shifts} companyId={profile.company_id} createdBy={profile.id} onClose={()=>setShowAutoAssign(false)} onSaved={()=>{setShowAutoAssign(false);loadAll()}}/>}
+      {showCreate&&<CreateShiftModal employees={sortedEmployees} sites={sites} companyId={profile.company_id} createdBy={creatorEmpId} prefillEmpId={showCreate?.prefillEmp} prefillDate={showCreate?.prefillDate} onClose={()=>setShowCreate(null)} onSaved={()=>{setShowCreate(null);loadAll()}}/>}
+      {showAutoAssign&&<AutoAssignModal employees={sortedEmployees} sites={sites} shifts={shifts} companyId={profile.company_id} createdBy={creatorEmpId} onClose={()=>setShowAutoAssign(false)} onSaved={()=>{setShowAutoAssign(false);loadAll()}}/>}
     </div>
   )
 }

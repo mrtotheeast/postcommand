@@ -16,7 +16,7 @@ const ROLE_COLORS = {
 const STATUS_COLORS = {
   active:{bg:'rgba(58,170,106,0.12)',color:'#3aaa6a'},inactive:{bg:'rgba(130,130,130,0.12)',color:'#8899aa'},
   terminated:{bg:'rgba(224,85,85,0.12)',color:'#e05555'},probation:{bg:'rgba(232,148,58,0.12)',color:'#e8943a'},
-  suspended:{bg:'rgba(224,85,85,0.12)',color:'#e05555'},
+  suspended:{bg:'rgba(224,85,85,0.12)',color:'#e05555'},on_leave:{bg:'rgba(91,159,224,0.12)',color:'#5b9fe0'},
 }
 
 function friendlyError(err) {
@@ -135,7 +135,7 @@ export default function Personnel() {
 
       {/* Status filter tabs */}
       <div style={{display:'flex',gap:'2px',marginBottom:'16px',borderBottom:'1px solid var(--border)',paddingBottom:0}}>
-        {[['active','Active'],['suspended','Suspended'],['terminated','Terminated'],['archived','Archived']].map(([v,l])=>(
+        {[['active','Active'],['suspended','Suspended'],['on_leave','On Leave'],['terminated','Terminated'],['archived','Archived']].map(([v,l])=>(
           <button key={v} onClick={()=>setStatusTab(v)} style={{padding:'8px 16px',fontSize:'12px',background:'transparent',border:'none',cursor:'pointer',fontFamily:'var(--font-condensed)',letterSpacing:'0.5px',borderBottom:`2px solid ${statusTab===v?'var(--accent)':'transparent'}`,color:statusTab===v?'var(--accent)':'var(--text-muted)',transition:'all 150ms ease',fontWeight:statusTab===v?700:400,marginBottom:'-1px'}}>
             {l}
             <span style={{marginLeft:'6px',fontSize:'11px',background:statusTab===v?'var(--accent-bg)':'var(--border)',color:statusTab===v?'var(--accent)':'var(--text-muted)',padding:'1px 6px',borderRadius:'10px'}}>
@@ -177,6 +177,8 @@ export default function Personnel() {
           <option value="active">Active</option>
           <option value="inactive">Inactive</option>
           <option value="probation">Probation</option>
+          <option value="suspended">Suspended</option>
+          <option value="on_leave">On Leave</option>
           <option value="terminated">Terminated</option>
         </select>
         <div style={{display:'flex',gap:'4px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'4px'}}>
@@ -898,10 +900,11 @@ function AddEmployeeModal({ companyId, onClose, onSaved }) {
 // ── Employee Status / Delete Modal ────────────────────────────────────────────
 
 const STATUS_OPTIONS = [
-  { id:'suspended',  label:'Suspend Employee',        description:'Temporarily suspends access. Employee remains in the system and can be reinstated.',                     color:'var(--color-warning)',  icon:'⏸', requiresNote:true,  noteLabel:'Reason for suspension', reversible:true },
-  { id:'terminated', label:'Terminate Employment',     description:'Ends employment. Employee record is retained for legal and payroll compliance.',                        color:'var(--color-danger)',   icon:'✕',  requiresNote:true,  noteLabel:'Reason for termination', reversible:false },
-  { id:'archived',   label:'Archive Employee',         description:'Hides from active lists. Record is preserved and can be restored at any time.',                         color:'var(--text-muted)',     icon:'📁', requiresNote:false, reversible:true },
-  { id:'deleted',    label:'Permanently Delete',       description:'IRREVERSIBLE. All data will be permanently deleted and cannot be recovered. This cannot be undone.',     color:'#dc2626',               icon:'🗑', requiresNote:true,  noteLabel:'Type DELETE to confirm', reversible:false, requiresConfirmText:'DELETE' },
+  { id:'on_leave',   label:'Place on Leave',           description:'Employee is on approved leave. Status can be reversed when they return.',                               color:'var(--color-info,#5b9fe0)',icon:'🏖', requiresNote:true,  noteLabel:'Leave reason (type, notes)', reversible:true },
+  { id:'suspended',  label:'Suspend Employee',          description:'Temporarily suspends access. Employee remains in the system and can be reinstated.',                   color:'var(--color-warning)',  icon:'⏸', requiresNote:true,  noteLabel:'Reason for suspension', reversible:true },
+  { id:'terminated', label:'Terminate Employment',      description:'Ends employment. Employee record is retained for legal and payroll compliance.',                       color:'var(--color-danger)',   icon:'✕',  requiresNote:true,  noteLabel:'Reason for termination', reversible:false },
+  { id:'archived',   label:'Archive Employee',          description:'Hides from active lists. Record is preserved and can be restored at any time.',                        color:'var(--text-muted)',     icon:'📁', requiresNote:false, reversible:true },
+  { id:'deleted',    label:'Permanently Delete',        description:'IRREVERSIBLE. All data will be permanently deleted and cannot be recovered. This cannot be undone.',   color:'#dc2626',               icon:'🗑', requiresNote:true,  noteLabel:'Type DELETE to confirm', reversible:false, requiresConfirmText:'DELETE' },
 ]
 
 function EmployeeStatusModal({ emp, profile, onClose, onDone }) {
@@ -925,6 +928,11 @@ function EmployeeStatusModal({ emp, profile, onClose, onDone }) {
       if (opt.id === 'deleted') {
         const { error: delErr } = await supabase.from('employee').delete().eq('id', emp.id)
         if (delErr) throw new Error(delErr.message)
+      } else if (opt.id === 'on_leave') {
+        const { error: updErr } = await supabase.from('employee')
+          .update({ status: 'on_leave' })
+          .eq('id', emp.id)
+        if (updErr) throw new Error(updErr.message)
       } else {
         const { error: updErr } = await supabase.from('employee')
           .update({ status: opt.id, [`${opt.id}_reason`]: note||null, [`${opt.id}_at`]: new Date().toISOString() })

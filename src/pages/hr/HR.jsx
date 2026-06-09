@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
-import { ROLE_LABELS } from '../../config/roles'
+import { ROLE_LABELS, atLeast } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
 import SignaturePad from '../../components/ui/SignaturePad'
 
