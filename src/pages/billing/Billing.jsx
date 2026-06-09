@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
 import Icon from '../../components/ui/Icon'
-import { isNative, openBrowser } from '../../lib/platform'
+import { isNative, isIOS, openBrowser } from '../../lib/platform'
 
 const PLANS = [
   {
@@ -80,8 +80,48 @@ const s = {
 function fmtMoney(n) { return new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(n||0) }
 function fmtDate(iso) { if (!iso) return '—'; return new Date(iso).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) }
 
-// Native iOS: Apple App Store guidelines prohibit in-app Stripe checkout.
-// Show a web redirect instead — subscriptions are managed at postcommand.app.
+// iOS-specific billing view: App Store guidelines prohibit showing pricing/subscribe UI in iOS apps.
+function BillingIOSView() {
+  const { companyId } = useAuth()
+  const [planName, setPlanName] = useState(null)
+
+  useEffect(() => {
+    if (!companyId) return
+    supabase.from('company').select('plan').eq('id', companyId).single()
+      .then(({ data }) => setPlanName(data?.plan ? data.plan.charAt(0).toUpperCase() + data.plan.slice(1) : null))
+  }, [companyId])
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', minHeight:'60vh', padding:'40px 24px', textAlign:'center', gap:'20px' }}>
+      <div style={{ width:'64px', height:'64px', borderRadius:'50%', background:'var(--accent-bg)', border:'1px solid var(--accent-border)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+        <Icon name="credit-card" size={28} color="var(--accent)" />
+      </div>
+      <div>
+        <h2 style={{ fontFamily:'var(--font-display)', fontSize:'24px', letterSpacing:'2px', color:'var(--text-primary)', marginBottom:'8px' }}>BILLING & SUBSCRIPTION</h2>
+        {planName && (
+          <div style={{ display:'inline-flex', alignItems:'center', gap:'6px', background:'var(--accent-bg)', border:'1px solid var(--accent-border)', borderRadius:'20px', padding:'4px 14px', marginBottom:'16px' }}>
+            <Icon name="check-circle" size={13} color="var(--accent)" />
+            <span style={{ fontSize:'13px', fontFamily:'var(--font-condensed)', fontWeight:700, letterSpacing:'0.5px', color:'var(--accent)' }}>{planName.toUpperCase()} PLAN</span>
+          </div>
+        )}
+        <p style={{ fontSize:'14px', color:'var(--text-secondary)', lineHeight:1.7, maxWidth:'320px', margin:'0 auto' }}>
+          Subscriptions and billing are managed on the web.
+          <br /><br />
+          Visit <strong>postcommand.app</strong> to upgrade your plan, update payment details, or manage your subscription.
+        </p>
+      </div>
+      <button
+        onClick={() => openBrowser('https://postcommand.app/billing')}
+        style={{ display:'inline-flex', alignItems:'center', gap:'8px', background:'var(--accent)', color:'var(--text-inverse)', border:'none', borderRadius:'var(--radius-md)', padding:'0 28px', height:'52px', fontFamily:'var(--font-condensed)', fontSize:'15px', fontWeight:700, letterSpacing:'1px', cursor:'pointer' }}
+      >
+        <Icon name="external-link" size={16} />Manage Billing
+      </button>
+      <p style={{ fontSize:'11px', color:'var(--text-muted)' }}>Opens postcommand.app in your browser</p>
+    </div>
+  )
+}
+
+// Native Android/other: Show a web redirect.
 function BillingNativeRedirect() {
   return (
     <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', minHeight:'60vh', padding:'40px 24px', textAlign:'center', gap:'20px' }}>
@@ -108,6 +148,7 @@ function BillingNativeRedirect() {
 }
 
 export default function Billing() {
+  if (isIOS())    return <BillingIOSView />
   if (isNative()) return <BillingNativeRedirect />
 
   const { profile, companyId, isNPS } = useAuth()

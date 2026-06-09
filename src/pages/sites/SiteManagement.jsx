@@ -7,6 +7,8 @@ import { supabase } from '../../lib/supabase'
 import { atLeast } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
 import { useToast } from '../../components/ui/Toast'
+import { canAddSite, NPS_COMPANY_ID } from '../../lib/plans'
+import UpgradeModal from '../../components/ui/UpgradeModal'
 
 // Fix Leaflet default icons
 delete L.Icon.Default.prototype._getIconUrl
@@ -119,17 +121,21 @@ export default function SiteManagement() {
   const [detailTab, setDetailTab]   = useState('info')
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [showImport, setShowImport] = useState(false)
+  const [showUpgrade, setShowUpgrade] = useState(false)
+  const [companyPlan, setCompanyPlan] = useState('trial')
 
   useEffect(() => { if (profile?.company_id) load() }, [profile])
 
   async function load() {
     setLoading(true)
     const today = new Date().toISOString().slice(0, 10)
-    const [{ data: siteData }, { data: tsData }] = await Promise.all([
+    const [{ data: siteData }, { data: tsData }, { data: compData }] = await Promise.all([
       supabase.from('site').select('*').eq('company_id', profile.company_id).order('name'),
       supabase.from('timesheet').select('site_id').eq('company_id', profile.company_id).is('clock_out', null).eq('date', today),
+      supabase.from('company').select('plan').eq('id', profile.company_id).single(),
     ])
     setSites(siteData || [])
+    setCompanyPlan(compData?.plan || 'trial')
     const map = {}
     for (const ts of (tsData || [])) {
       map[ts.site_id] = (map[ts.site_id] || 0) + 1
@@ -201,7 +207,13 @@ export default function SiteManagement() {
             <button style={{ ...s.addBtn, background:'var(--bg-card)', color:'var(--text-secondary)', border:'1px solid var(--border-subtle)' }} onClick={() => setShowImport(true)}>
               <Icon name="upload" size={15} />IMPORT CSV
             </button>
-            <button style={s.addBtn} onClick={() => setEditing('new')}>
+            <button style={s.addBtn} onClick={() => {
+              if (!canAddSite(companyPlan, sites.length) && profile?.company_id !== NPS_COMPANY_ID) {
+                setShowUpgrade(true)
+                return
+              }
+              setEditing('new')
+            }}>
               <Icon name="plus" size={15} />ADD SITE
             </button>
           </>
@@ -311,6 +323,8 @@ export default function SiteManagement() {
           </div>
         </div>
       )}
+
+      {showUpgrade && <UpgradeModal planId={companyPlan} resource="site" onClose={() => setShowUpgrade(false)} />}
     </div>
   )
 }

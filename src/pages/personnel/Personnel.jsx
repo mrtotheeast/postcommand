@@ -5,6 +5,8 @@ import { ROLE_LABELS, atLeast } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
 import EmployeeProfile from './EmployeeProfile'
 import { useToast } from '../../components/ui/Toast'
+import { canAddOfficer, NPS_COMPANY_ID } from '../../lib/plans'
+import UpgradeModal from '../../components/ui/UpgradeModal'
 
 const ROLE_COLORS = {
   super_admin:{bg:'rgba(201,162,39,0.15)',color:'#c9a227'},chief:{bg:'rgba(201,162,39,0.15)',color:'#c9a227'},
@@ -49,6 +51,8 @@ export default function Personnel() {
   const [mainView, setMainView]     = useState('directory') // 'directory' | 'photo_approvals'
   const [showAdd, setShowAdd]       = useState(false)
   const [tileFilter, setTileFilter] = useState(null)
+  const [showUpgrade, setShowUpgrade] = useState(false)
+  const [companyPlan, setCompanyPlan] = useState('trial')
   const [profileTab, setProfileTab] = useState('overview')
   const [statusModal, setStatusModal] = useState(null)   // emp object or null
   const [statusTab, setStatusTab]     = useState('active') // active|suspended|terminated|archived
@@ -60,13 +64,17 @@ export default function Personnel() {
   async function loadEmployees() {
     if (!profile?.company_id) return
     setLoading(true)
-    const { data, error } = await supabase
-      .from('employee')
-      .select('id,company_id,first_name,middle_name,last_name,email,phone_number,role,status,employment_type,employment_classification,position_title,pay_rate,hire_date,is_armed,has_app_access,profile_photo_url,employee_id_number,invitation_status,terminated_date,probation_end_date,emergency_contact_name,emergency_contact_phone,emergency_contact_relation,notes')
-      .eq('company_id', profile.company_id)
-      .order('last_name', { ascending: true })
+    const [{ data, error }, { data: compData }] = await Promise.all([
+      supabase
+        .from('employee')
+        .select('id,company_id,first_name,middle_name,last_name,email,phone_number,role,status,employment_type,employment_classification,position_title,pay_rate,hire_date,is_armed,has_app_access,profile_photo_url,employee_id_number,invitation_status,terminated_date,probation_end_date,emergency_contact_name,emergency_contact_phone,emergency_contact_relation,notes')
+        .eq('company_id', profile.company_id)
+        .order('last_name', { ascending: true }),
+      supabase.from('company').select('plan').eq('id', profile.company_id).single(),
+    ])
     if (error) setError(friendlyError(error))
     else setEmployees(data || [])
+    setCompanyPlan(compData?.plan || 'trial')
     setLoading(false)
   }
 
@@ -128,7 +136,14 @@ export default function Personnel() {
               <Icon name="check-square" size={15}/>{bulkMode ? 'EXIT BULK' : 'BULK SELECT'}
             </button>
             <button style={{display:'flex',alignItems:'center',gap:'8px',background:'var(--bg-card)',color:'var(--text-secondary)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'0 16px',height:'44px',fontFamily:'var(--font-condensed)',fontSize:'13px',letterSpacing:'1px',cursor:'pointer'}} onClick={() => setShowImport(true)}><Icon name="upload" size={15}/>IMPORT CSV</button>
-            <button onClick={() => setShowAdd(true)} style={{display:'flex',alignItems:'center',gap:'8px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-md)',padding:'0 20px',height:'44px',fontFamily:'var(--font-condensed)',fontSize:'14px',fontWeight:700,letterSpacing:'1px',cursor:'pointer'}}><Icon name="plus" size={16}/>ADD EMPLOYEE</button>
+            <button onClick={() => {
+              const billableCount = employees.filter(e => e.status === 'active' || e.status === 'on_leave').length
+              if (!canAddOfficer(companyPlan, billableCount) && profile?.company_id !== NPS_COMPANY_ID) {
+                setShowUpgrade(true)
+                return
+              }
+              setShowAdd(true)
+            }} style={{display:'flex',alignItems:'center',gap:'8px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-md)',padding:'0 20px',height:'44px',fontFamily:'var(--font-condensed)',fontSize:'14px',fontWeight:700,letterSpacing:'1px',cursor:'pointer'}}><Icon name="plus" size={16}/>ADD EMPLOYEE</button>
           </div>
         )}
       </div>
@@ -230,6 +245,7 @@ export default function Personnel() {
       {showAdd && <AddEmployeeModal companyId={profile.company_id} onClose={()=>setShowAdd(false)} onSaved={()=>{setShowAdd(false);loadEmployees()}}/>}
       {showImport && <CSVImportModal companyId={profile.company_id} onClose={() => setShowImport(false)} onImported={() => { setShowImport(false); loadEmployees() }} />}
       {statusModal && <EmployeeStatusModal emp={statusModal} profile={profile} onClose={()=>setStatusModal(null)} onDone={()=>{setStatusModal(null);loadEmployees()}}/>}
+      {showUpgrade && <UpgradeModal planId={companyPlan} resource="officer" onClose={() => setShowUpgrade(false)} />}
       </>
       )}
     </div>

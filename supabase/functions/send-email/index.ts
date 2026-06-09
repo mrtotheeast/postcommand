@@ -203,6 +203,58 @@ serve(async (req) => {
       break
     }
 
+    case 'enterprise_signup_alert': {
+      const { signupCompany, adminEmail, adminName, phone, state, officerCount, wantsPayroll } = data
+      emailPayload = branded(
+        `New Enterprise Signup — ${signupCompany}`,
+        `
+        <div style="background:#fff8e6;border:2px solid #c8a84b;border-radius:8px;padding:16px 20px;margin-bottom:24px;">
+          <div style="font-size:16px;font-weight:800;color:#0d0f14;margin-bottom:2px;">New Enterprise Account Created</div>
+          <div style="font-size:13px;color:#6b5a2a;">Action may be required — review and onboard this account.</div>
+        </div>
+        <table style="width:100%;font-size:14px;color:#475569;border-collapse:collapse;">
+          <tr><td style="padding:10px 0;border-bottom:1px solid #f1f5f9;font-weight:600;color:#0f172a;width:40%;">Company</td><td style="padding:10px 0;border-bottom:1px solid #f1f5f9;font-weight:700;color:#0f172a;">${signupCompany}</td></tr>
+          <tr><td style="padding:10px 0;border-bottom:1px solid #f1f5f9;font-weight:600;color:#0f172a;">Admin Name</td><td style="padding:10px 0;border-bottom:1px solid #f1f5f9;">${adminName}</td></tr>
+          <tr><td style="padding:10px 0;border-bottom:1px solid #f1f5f9;font-weight:600;color:#0f172a;">Admin Email</td><td style="padding:10px 0;border-bottom:1px solid #f1f5f9;"><a href="mailto:${adminEmail}" style="color:#1a56db;">${adminEmail}</a></td></tr>
+          <tr><td style="padding:10px 0;border-bottom:1px solid #f1f5f9;font-weight:600;color:#0f172a;">Phone</td><td style="padding:10px 0;border-bottom:1px solid #f1f5f9;">${phone}</td></tr>
+          <tr><td style="padding:10px 0;border-bottom:1px solid #f1f5f9;font-weight:600;color:#0f172a;">State</td><td style="padding:10px 0;border-bottom:1px solid #f1f5f9;">${state}</td></tr>
+          <tr><td style="padding:10px 0;border-bottom:1px solid #f1f5f9;font-weight:600;color:#0f172a;">Officer Count</td><td style="padding:10px 0;border-bottom:1px solid #f1f5f9;">${officerCount}</td></tr>
+          <tr><td style="padding:10px 0;font-weight:600;color:#0f172a;">Payroll Add-on</td><td style="padding:10px 0;">${wantsPayroll}</td></tr>
+        </table>
+        <p style="margin:24px 0 0;font-size:13px;color:#94a3b8;">This alert was generated automatically when the enterprise account was created on postcommand.app.</p>
+        `
+      )
+      break
+    }
+
+    case 'enterprise_welcome': {
+      const { firstName } = data
+      emailPayload = branded(
+        `Welcome to PostCommand Enterprise`,
+        `
+        <h2 style="margin:0 0 8px;font-size:24px;color:#0f172a;">Welcome, ${firstName}!</h2>
+        <p style="margin:0 0 16px;font-size:15px;color:#475569;line-height:1.6;">
+          Your <strong>PostCommand Enterprise</strong> account has been created and your 14-day free trial has started.
+        </p>
+        <p style="margin:0 0 24px;font-size:15px;color:#475569;line-height:1.6;">
+          Our team will reach out within one business day to schedule your onboarding call and help you get your account fully configured — including custom integrations, data migration, and team setup.
+        </p>
+        <div style="text-align:center;margin:32px 0;">
+          <a href="https://postcommand.app/login"
+             style="display:inline-block;background:#c8a84b;color:#0d0f14;font-weight:700;
+                    font-size:14px;letter-spacing:1px;text-transform:uppercase;text-decoration:none;
+                    padding:16px 40px;border-radius:8px;">
+            Sign In to PostCommand
+          </a>
+        </div>
+        <p style="margin:24px 0 0;font-size:13px;color:#94a3b8;text-align:center;">
+          Questions? Reply to this email or contact us at <a href="mailto:support@postcommand.app" style="color:#94a3b8;">support@postcommand.app</a>
+        </p>
+        `
+      )
+      break
+    }
+
     default:
       return new Response(JSON.stringify({ error: `Unknown email type: ${type}` }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }

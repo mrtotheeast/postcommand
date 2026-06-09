@@ -19,9 +19,15 @@ const PLANS = [
   {
     id: 'starter',
     name: 'STARTER',
-    price: '$2.50',
-    period: '/user/mo',
-    features: ['Single location', 'Scheduling & timesheets', 'Incident reports', 'Up to 25 officers'],
+    price: '$25',
+    period: '/mo',
+    features: [
+      'Up to 10 officers',
+      '1 job site included',
+      'Scheduling & timesheets',
+      'Incident reports',
+      '+$5/officer · +$15/site',
+    ],
     cta: 'SELECT STARTER',
     recommended: false,
     enterprise: false,
@@ -29,9 +35,15 @@ const PLANS = [
   {
     id: 'professional',
     name: 'PROFESSIONAL',
-    price: '$5.00',
-    period: '/user/mo',
-    features: ['Multiple locations', 'All Starter features', 'HR documents', 'Client portal', 'Advanced reports'],
+    price: '$75',
+    period: '/mo',
+    features: [
+      'Up to 25 officers',
+      '3 job sites included',
+      'All Starter features',
+      'HR documents & client portal',
+      '+$4/officer · +$12/site',
+    ],
     cta: 'SELECT PROFESSIONAL',
     recommended: true,
     enterprise: false,
@@ -39,10 +51,16 @@ const PLANS = [
   {
     id: 'enterprise',
     name: 'ENTERPRISE',
-    price: 'Custom',
-    period: 'pricing',
-    features: ['Unlimited locations', 'All Professional features', 'Dedicated support', 'Custom integrations'],
-    cta: 'CONTACT SALES',
+    price: '$199',
+    period: '/mo',
+    features: [
+      'Unlimited officers & sites',
+      'All Professional features',
+      'Dedicated onboarding',
+      'Custom integrations & API',
+      '+$3/officer · +$10/site',
+    ],
+    cta: 'SELECT ENTERPRISE',
     recommended: false,
     enterprise: true,
   },
@@ -56,6 +74,7 @@ export default function Register() {
   const [success, setSuccess]         = useState(false)
   const [submitError, setSubmitError] = useState(null)
   const [errors, setErrors]           = useState({})
+  const [wantsPayroll, setWantsPayroll] = useState(false)
   const [form, setForm]               = useState({
     companyName: '', fullName: '', email: '', phone: '',
     state: '', officerCount: '', password: '', confirmPassword: '',
@@ -93,10 +112,6 @@ export default function Register() {
   }
 
   async function selectPlan(planId) {
-    if (planId === 'enterprise') {
-      window.location.href = 'mailto:sales@postcommand.app?subject=Enterprise Plan Inquiry'
-      return
-    }
     setLoading(true)
     setSubmitError(null)
     try {
@@ -127,13 +142,15 @@ export default function Register() {
       const { data: company, error: compErr } = await supabase
         .from('company')
         .insert({
-          name:           form.companyName,
-          slug:           companySlug,
-          plan:           planId,
-          trial_ends_at:  new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
-          is_active:      true,
-          state:          form.state       || null,
-          officer_count:  form.officerCount || null,
+          name:            form.companyName,
+          slug:            companySlug,
+          plan:            planId,
+          billing_status:  'pending_payment',
+          trial_ends_at:   new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+          is_active:       true,
+          state:           form.state        || null,
+          officer_count:   form.officerCount || null,
+          wants_payroll:   wantsPayroll,
         })
         .select()
         .single()
@@ -149,6 +166,39 @@ export default function Register() {
         permission_level: 6,
       })
       if (profErr) throw profErr
+
+      if (planId === 'enterprise') {
+        await Promise.allSettled([
+          supabase.functions.invoke('send-email', {
+            body: {
+              type: 'enterprise_signup_alert',
+              to:   'justin.ashe@nationwidepolice.com',
+              data: {
+                company_id:   '9af02c98-04f3-4dbd-9f7e-07e7f9bbdc6c',
+                companyName:  'PostCommand',
+                signupCompany: form.companyName,
+                adminEmail:   form.email,
+                adminName:    form.fullName,
+                phone:        form.phone || '—',
+                state:        form.state || '—',
+                officerCount: form.officerCount || '—',
+                wantsPayroll: wantsPayroll ? 'Yes' : 'No',
+              },
+            },
+          }),
+          supabase.functions.invoke('send-email', {
+            body: {
+              type: 'enterprise_welcome',
+              to:   form.email,
+              data: {
+                company_id:  company.id,
+                companyName: form.companyName,
+                firstName:   firstName,
+              },
+            },
+          }),
+        ])
+      }
 
       setSuccess(true)
     } catch (e) {
@@ -182,10 +232,10 @@ export default function Register() {
         </div>
         <h1 style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '28px', letterSpacing: '2px', color: '#0d0f14', marginBottom: '12px' }}>WELCOME TO POSTCOMMAND!</h1>
         <p style={{ fontSize: '14px', color: '#495057', lineHeight: 1.7, marginBottom: '10px' }}>
-          Your 14-day free trial has started.
+          Your account is ready. Your 14-day free trial has started.
         </p>
         <p style={{ fontSize: '14px', color: '#495057', lineHeight: 1.7, marginBottom: '28px' }}>
-          Check your email to verify your account, then sign in to get started.
+          Check your email to verify your account, then sign in to get started. Our team will be in touch shortly to assist with onboarding.
         </p>
         <button onClick={() => navigate('/login')} style={{ width: '100%', height: '50px', background: '#c8a84b', color: '#0d0f14', border: 'none', borderRadius: '8px', fontFamily: "'Barlow Condensed', sans-serif", fontSize: '15px', fontWeight: 700, letterSpacing: '2px', cursor: 'pointer' }}>
           GO TO SIGN IN
@@ -390,6 +440,20 @@ export default function Register() {
                     </button>
                   </div>
                 ))}
+              </div>
+
+              {/* Payroll add-on */}
+              <div
+                onClick={() => setWantsPayroll(w => !w)}
+                style={{ display:'flex', alignItems:'center', gap:'14px', background: wantsPayroll ? 'rgba(200,168,75,0.08)' : '#f8f9fa', border: `1px solid ${wantsPayroll ? '#c8a84b' : '#e2e6ea'}`, borderRadius:'10px', padding:'14px 18px', cursor:'pointer', marginBottom:'20px', transition:'all 150ms ease' }}
+              >
+                <div style={{ width:'22px', height:'22px', borderRadius:'5px', border:`2px solid ${wantsPayroll ? '#c8a84b' : '#ccc'}`, background: wantsPayroll ? '#c8a84b' : 'transparent', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, transition:'all 150ms ease' }}>
+                  {wantsPayroll && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0d0f14" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                </div>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontFamily:"'Barlow Condensed', sans-serif", fontSize:'13px', fontWeight:700, letterSpacing:'0.5px', color:'#0d0f14' }}>Add Payroll Management — <span style={{ color:'#c8a84b' }}>+$29/mo</span></div>
+                  <div style={{ fontSize:'11px', color:'#8899aa', marginTop:'2px' }}>Run payroll, manage pay rates, and export reports directly in PostCommand.</div>
+                </div>
               </div>
 
               <button onClick={() => setStep(1)} style={{ background: 'none', border: 'none', color: '#8899aa', cursor: 'pointer', fontSize: '13px', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.5px', padding: 0, display: 'flex', alignItems: 'center', gap: '4px' }}>
