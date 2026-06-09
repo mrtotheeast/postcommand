@@ -193,9 +193,19 @@ function IncidentForm({profile,onClose,onSaved}) {
   const set=(k,v)=>setForm(f=>({...f,[k]:v}))
 
   useEffect(()=>{
-    supabase.from('site').select('id,name').eq('company_id',profile.company_id).then(({data})=>setSites(data||[]))
-    supabase.from('employee').select('id,first_name,last_name').eq('company_id',profile.company_id).eq('status','active').order('last_name').then(({data})=>setEmployees(data||[]))
-  },[])
+    if (!profile?.company_id) return
+    supabase.from('site').select('id,name,address,city,state')
+      .eq('company_id',profile.company_id)
+      .eq('is_active',true)
+      .order('name')
+      .then(({data})=>setSites(data||[]))
+    supabase.from('employee').select('id,first_name,last_name')
+      .eq('company_id',profile.company_id)
+      .eq('status','active')
+      .or('invitation_status.eq.accepted,has_app_access.eq.true')
+      .order('last_name')
+      .then(({data})=>setEmployees(data||[]))
+  },[profile?.company_id])
 
   async function generateNarrative() {
     if(!form.q_what||!form.q_where||!form.q_when){setError('Please answer What, Where, and When first.');return}
@@ -296,7 +306,7 @@ function IncidentForm({profile,onClose,onSaved}) {
             {step===0&&<>
               <div><label style={lbl}>Incident Type *</label><select value={form.incident_type} onChange={e=>set('incident_type',e.target.value)} style={inp}><option value="">Select...</option>{INCIDENT_TYPES.map(t=><option key={t} value={t}>{t}</option>)}</select></div>
               <div><label style={lbl}>Date & Time *</label><input type="datetime-local" value={form.occurred_at} onChange={e=>set('occurred_at',e.target.value)} style={inp}/></div>
-              <div><label style={lbl}>Site</label><select value={form.site_id} onChange={e=>set('site_id',e.target.value)} style={inp}><option value="">Select site...</option>{sites.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+              <div><label style={lbl}>Site</label><select value={form.site_id} onChange={e=>set('site_id',e.target.value)} style={inp}><option value="">{sites.length===0?'No sites available — add in Site Management':'Select site...'}</option>{sites.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
               <div><label style={lbl}>Specific Location</label><input type="text" value={form.location_detail} onChange={e=>set('location_detail',e.target.value)} placeholder="e.g. North parking lot..." style={inp}/></div>
               {employees.length>0&&<div>
                 <label style={lbl}>Officers Involved</label>

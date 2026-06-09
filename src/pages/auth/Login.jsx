@@ -9,6 +9,63 @@ const OAUTH_REDIRECT = isNative()
   ? 'postcommand://auth'
   : `${window.location.origin}/auth/callback`
 
+function ForgotPasswordView({ onBack }) {
+  const [email, setEmail]   = useState('')
+  const [sent, setSent]     = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError]   = useState(null)
+
+  async function sendReset() {
+    if (!email.trim()) { setError('Email required.'); return }
+    setLoading(true); setError(null)
+    const { error: err } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: 'https://postcommand.app/reset-password'
+    })
+    setLoading(false)
+    if (err) { setError(err.message); return }
+    setSent(true)
+  }
+
+  if (sent) return (
+    <div style={{ textAlign:'center', padding:'20px 0' }}>
+      <div style={{ fontSize:'32px', marginBottom:'16px' }}>✓</div>
+      <div style={{ fontFamily:'Bebas Neue, sans-serif', fontSize:'18px', letterSpacing:'2px', color:'#c8a84b', marginBottom:'12px' }}>CHECK YOUR EMAIL</div>
+      <div style={{ fontSize:'13px', color:'#8899aa', marginBottom:'24px', lineHeight:1.6 }}>
+        A password reset link has been sent to {email}. Check your inbox and follow the instructions.
+      </div>
+      <button onClick={onBack} style={{ background:'transparent', border:'none', color:'#c8a84b', cursor:'pointer', fontSize:'13px', fontFamily:'Barlow Condensed, sans-serif', letterSpacing:'1px' }}>
+        BACK TO LOGIN
+      </button>
+    </div>
+  )
+
+  return (
+    <div>
+      <div style={{ fontFamily:'Bebas Neue, sans-serif', fontSize:'20px', letterSpacing:'2px', color:'#0d0f14', marginBottom:'8px' }}>RESET PASSWORD</div>
+      <div style={{ fontSize:'13px', color:'#8899aa', marginBottom:'24px' }}>Enter your email and we'll send you a reset link.</div>
+      {error && (
+        <div style={{ background:'#fff3f3', border:'1px solid #ffcccc', borderRadius:'8px', padding:'10px 14px', fontSize:'13px', color:'#c0392b', marginBottom:'14px' }}>{error}</div>
+      )}
+      <div style={{ marginBottom:'16px' }}>
+        <input type="email" placeholder="your@email.com" value={email} onChange={e => setEmail(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && sendReset()}
+          style={{ width:'100%', padding:'12px 16px', background:'#f8f9fa', border:'1px solid #e2e6ea', borderRadius:'8px', color:'#0d0f14', fontSize:'15px', outline:'none', boxSizing:'border-box', fontFamily:'Barlow, sans-serif' }}
+          onFocus={e => e.target.style.borderColor = '#c8a84b'}
+          onBlur={e  => e.target.style.borderColor = '#e2e6ea'}
+        />
+      </div>
+      <button onClick={sendReset} disabled={loading}
+        style={{ width:'100%', height:'48px', background: loading ? '#e8d98a' : '#c8a84b', border:'none', borderRadius:'8px', color:'#0d0f14', fontFamily:'Barlow Condensed, sans-serif', fontSize:'14px', fontWeight:700, letterSpacing:'2px', cursor: loading ? 'not-allowed' : 'pointer', marginBottom:'16px' }}>
+        {loading ? 'SENDING...' : 'SEND RESET LINK'}
+      </button>
+      <button onClick={onBack}
+        style={{ width:'100%', background:'transparent', border:'none', color:'#8899aa', cursor:'pointer', fontSize:'13px', fontFamily:'Barlow Condensed, sans-serif', letterSpacing:'1px' }}>
+        BACK TO LOGIN
+      </button>
+    </div>
+  )
+}
+
 export default function Login() {
   const [email,    setEmail]    = useState('')
   const [password, setPassword] = useState('')
@@ -18,6 +75,7 @@ export default function Login() {
   const [biometricsAvailable, setBiometricsAvailable] = useState(false)
   const [hasSavedSession,     setHasSavedSession]     = useState(false)
   const [bioLoading, setBioLoading] = useState(false)
+  const [showReset, setShowReset]   = useState(false)
   const { signIn }  = useAuth()
   const navigate    = useNavigate()
 
@@ -126,6 +184,17 @@ export default function Login() {
   const showBioBtn = isNative() && biometricsAvailable && hasSavedSession
   const anyOauthLoading = oauthLoading !== null
 
+  if (showReset) return (
+    <div style={{ minHeight:'100vh', backgroundColor:'#ffffff', display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'Barlow, sans-serif', padding:'20px' }}>
+      <div style={{ backgroundColor:'#ffffff', borderRadius:'12px', padding:'48px', width:'100%', maxWidth:'420px', boxShadow:'0 4px 24px rgba(0,0,0,0.08)', border:'1px solid #e2e6ea' }}>
+        <div style={{ textAlign:'center', marginBottom:'32px' }}>
+          <h1 style={{ fontFamily:'Bebas Neue, sans-serif', fontSize:'36px', color:'#0d0f14', letterSpacing:'3px', margin:0 }}>POST<span style={{ color:'#c8a84b' }}>COMMAND</span></h1>
+        </div>
+        <ForgotPasswordView onBack={() => setShowReset(false)} />
+      </div>
+    </div>
+  )
+
   return (
     <div style={{ minHeight:'100vh', backgroundColor:'#ffffff', display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'Barlow, sans-serif', padding:'20px' }}>
       <div style={{ backgroundColor:'#ffffff', borderRadius:'12px', padding:'48px', width:'100%', maxWidth:'420px', boxShadow:'0 4px 24px rgba(0,0,0,0.08)', border:'1px solid #e2e6ea' }}>
@@ -195,7 +264,7 @@ export default function Login() {
               onBlur={e  => e.target.style.borderColor = '#e2e6ea'}/>
           </div>
 
-          <div style={{ marginBottom:'28px' }}>
+          <div style={{ marginBottom:'4px' }}>
             <label style={{ display:'block', color:'#495057', fontSize:'12px', letterSpacing:'1px', textTransform:'uppercase', marginBottom:'8px', fontFamily:'Barlow Condensed, sans-serif' }}>
               Password
             </label>
@@ -203,6 +272,10 @@ export default function Login() {
               onFocus={e => e.target.style.borderColor = '#c8a84b'}
               onBlur={e  => e.target.style.borderColor = '#e2e6ea'}/>
           </div>
+          <button type="button" onClick={() => setShowReset(true)}
+            style={{ background:'transparent', border:'none', color:'#8899aa', cursor:'pointer', fontSize:'12px', textAlign:'right', width:'100%', fontFamily:'Barlow, sans-serif', marginBottom:'20px', padding:0 }}>
+            Forgot password?
+          </button>
 
           {error && (
             <div style={{ background:'#fff3f3', border:'1px solid #ffcccc', borderRadius:'8px', padding:'12px 16px', color:'#c0392b', fontSize:'14px', marginBottom:'20px' }}>
@@ -227,7 +300,7 @@ export default function Login() {
         </div>
 
         <p style={{ textAlign:'center', color:'#8899aa', fontSize:'12px', marginTop:'24px' }}>
-          © 2026 PostCommand · Powered by Nationwide Police Services LLC
+          © 2026 PostCommand · Security Workforce Management
         </p>
       </div>
     </div>

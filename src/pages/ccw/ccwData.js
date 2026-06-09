@@ -21,7 +21,7 @@ export const DATA_META = {
   sourceUrl: 'https://handgunlaw.us/states/USStatesThatHonorMyPermit.pdf',
   lastVerified: '2026-04-18',
   nextReview: '2026-05-18',
-  disclaimer: 'Data sourced from Handgunlaw.us, referenced by law enforcement attorneys. Reviewed monthly. Laws change — always verify with the destination state\'s official authority before carrying. This is not legal advice. Nationwide Police Services LLC assumes no liability for accuracy.'
+  disclaimer: 'Data sourced from Handgunlaw.us, referenced by law enforcement attorneys. Reviewed monthly. Laws change — always verify with the destination state\'s official authority before carrying. This is not legal advice. PostCommand assumes no liability for accuracy.'
 }
 
 // honoredBy = states that honor THIS state's permit

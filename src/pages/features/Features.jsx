@@ -142,7 +142,7 @@ export default function Features() {
         <div style={{ fontFamily:'Bebas Neue, sans-serif', fontSize:'24px', letterSpacing:'3px', color:'#fff', marginBottom:'8px' }}>
           POST<span style={{ color:'#c8a84b' }}>COMMAND</span>
         </div>
-        <p style={{ color:'#888', fontSize:'13px', marginBottom:'16px' }}>Security Workforce Management · Powered by Nationwide Police Services LLC</p>
+        <p style={{ color:'#888', fontSize:'13px', marginBottom:'16px' }}>Security Workforce Management</p>
         <div style={{ display:'flex', gap:'20px', justifyContent:'center', flexWrap:'wrap' }}>
           {[['Sign In','/login'],['Privacy Policy','/privacy'],['Terms of Service','/terms'],['Support','/support']].map(([label,href])=>(
             <a key={href} href={href} style={{ color:'#c8a84b', fontSize:'13px', textDecoration:'none', fontFamily:'Barlow Condensed, sans-serif', letterSpacing:'0.5px' }}>{label}</a>

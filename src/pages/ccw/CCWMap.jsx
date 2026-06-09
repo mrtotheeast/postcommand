@@ -192,10 +192,10 @@ tr:nth-child(even){background:#fafafa}
 </table>
 <div class="disclaimer">
 <h4>⚠ DISCLAIMER</h4>
-<p>Data sourced from <strong>Handgunlaw.us</strong> (handgunlaw.us/states/USStatesThatHonorMyPermit.pdf), last verified ${DATA_META.lastVerified}. Handgunlaw.us is referenced by law enforcement and firearms attorneys nationwide. <strong>Laws change frequently — always verify with the destination state's official authority before carrying.</strong> This map is for reference only and is not legal advice. Nationwide Police Services LLC assumes no liability for accuracy.</p>
+<p>Data sourced from <strong>Handgunlaw.us</strong> (handgunlaw.us/states/USStatesThatHonorMyPermit.pdf), last verified ${DATA_META.lastVerified}. Handgunlaw.us is referenced by law enforcement and firearms attorneys nationwide. <strong>Laws change frequently — always verify with the destination state's official authority before carrying.</strong> This map is for reference only and is not legal advice. PostCommand assumes no liability for accuracy.</p>
 </div>
 <div class="footer">
-© 2026 Nationwide Police Services LLC. All rights reserved.<br/>
+© 2026 PostCommand. All rights reserved.<br/>
 Data source: Handgunlaw.us, last verified ${DATA_META.lastVerified} | Next review: ${DATA_META.nextReview}<br/>
 Laws change frequently. Always verify with official state sources. This is not legal advice.
 </div>
@@ -225,8 +225,7 @@ Laws change frequently. Always verify with official state sources. This is not l
         <header style={{ background:C.bg, borderBottom:`1px solid ${C.border}`, padding:'12px 20px', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:'10px', flexShrink:0 }}>
           <div>
             <div style={{ display:'flex', alignItems:'baseline', gap:'10px' }}>
-              <span style={{ fontFamily:"'Bebas Neue', sans-serif", fontSize:'26px', letterSpacing:'2px', color:C.gold, fontWeight:700 }}>NPS</span>
-              <span style={{ fontFamily:"'Barlow Condensed', sans-serif", fontSize:'15px', fontWeight:600, color:C.text, letterSpacing:'0.5px' }}>Nationwide Police Services</span>
+              <span style={{ fontFamily:"'Bebas Neue', sans-serif", fontSize:'26px', letterSpacing:'2px', color:C.gold, fontWeight:700 }}>POST<span style={{color:C.text}}>COMMAND</span></span>
               <span style={{ fontSize:'13px', color:C.textMuted, letterSpacing:'0.5px' }}>· CCW Reciprocity Map</span>
             </div>
             <div style={{ fontSize:'11px', color:C.textMuted, marginTop:'2px' }}>
@@ -412,7 +411,7 @@ Laws change frequently. Always verify with official state sources. This is not l
 
         {/* Footer */}
         <footer style={{ background:'#f8f9fa', borderTop:`1px solid ${C.border}`, padding:'8px 20px', fontSize:'10px', color:C.textMuted, display:'flex', justifyContent:'space-between', flexWrap:'wrap', gap:'6px', flexShrink:0 }}>
-          <span>© 2026 Nationwide Police Services LLC. All rights reserved. Data: Handgunlaw.us, verified {DATA_META.lastVerified}.</span>
+          <span>© 2026 PostCommand. All rights reserved. Data: Handgunlaw.us, verified {DATA_META.lastVerified}.</span>
           <span>For reference only · Not legal advice · Laws change frequently · Always verify with official state sources before carrying</span>
         </footer>
       </div>
@@ -583,7 +582,7 @@ function StateModal({ state, onClose, onSelect, homeState }) {
 
           {/* Disclaimer — Task 3 */}
           <div style={{ background:'#fff8e1', border:'1px solid #ffc107', borderRadius:'6px', padding:'10px 14px', fontSize:'11px', color:'#5d4037', lineHeight:1.6 }}>
-            <strong>⚠ Disclaimer:</strong> Data sourced from <strong>Handgunlaw.us</strong> (handgunlaw.us/states/USStatesThatHonorMyPermit.pdf), last verified {DATA_META.lastVerified}. Handgunlaw.us is referenced by law enforcement and firearms attorneys nationwide. Laws change frequently — always verify with the destination state's official authority before carrying. This map is for reference only and is not legal advice. Nationwide Police Services LLC assumes no liability for accuracy.
+            <strong>⚠ Disclaimer:</strong> Data sourced from <strong>Handgunlaw.us</strong> (handgunlaw.us/states/USStatesThatHonorMyPermit.pdf), last verified {DATA_META.lastVerified}. Handgunlaw.us is referenced by law enforcement and firearms attorneys nationwide. Laws change frequently — always verify with the destination state's official authority before carrying. This map is for reference only and is not legal advice. PostCommand assumes no liability for accuracy.
           </div>
         </div>
       </div>

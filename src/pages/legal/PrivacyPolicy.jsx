@@ -106,7 +106,7 @@ export default function PrivacyPolicy() {
         <P>For privacy questions or data requests:</P>
         <UL items={[
           'Email: privacy@postcommand.app',
-          'Company: Nationwide Police Services LLC',
+          'Company: PostCommand',
           'Address: Maryland, USA',
         ]}/>
       </Section>

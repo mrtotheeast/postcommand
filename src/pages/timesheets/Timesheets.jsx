@@ -69,7 +69,7 @@ export default function Timesheets() {
     setLoading(true)
     const [tsRes, empRes, siteRes] = await Promise.all([
       supabase.from('timesheet').select('*').eq('company_id', profile.company_id).order('date', { ascending: false }).order('clock_in', { ascending: false }),
-      supabase.from('employee').select('id,first_name,last_name,position_title').eq('company_id', profile.company_id),
+      supabase.from('employee').select('id,first_name,last_name,position_title').eq('company_id', profile.company_id).or('invitation_status.eq.accepted,has_app_access.eq.true'),
       supabase.from('site').select('id,name').eq('company_id', profile.company_id),
     ])
     let data = tsRes.data || []
@@ -671,7 +671,7 @@ h1{font-size:20px;font-weight:900;color:#0d1f35;margin-bottom:4px}
   <div style="font-size:13px;font-weight:bold;margin-bottom:12px">${isW2?'W-2 Wage and Tax Statement':'Form 1099 — Nonemployee Compensation'}</div>
   <div class="field"><span class="field-label">Employee Name</span><span>${emp.first_name} ${emp.last_name}</span></div>
   <div class="field"><span class="field-label">Employment Type</span><span>${emp.employment_type||'N/A'}</span></div>
-  <div class="field"><span class="field-label">Employer</span><span>Nationwide Police Services LLC</span></div>
+  <div class="field"><span class="field-label">Employer</span><span>See payroll records</span></div>
   <div class="field"><span class="field-label">Tax Year</span><span>${year}</span></div>
   <div class="field"><span class="field-label">Hours Worked</span><span>${emp.totalHours}h</span></div>
   <div class="field"><span class="field-label">Gross Wages / Compensation</span><span>${emp.grossPay ? '$'+emp.grossPay.toLocaleString() : 'See payroll records'}</span></div>
@@ -680,7 +680,7 @@ h1{font-size:20px;font-weight:900;color:#0d1f35;margin-bottom:4px}
 </div>
 <div class="disclaimer">
   <strong>⚠ FOR REFERENCE ONLY</strong><br/>
-  This document is generated for administrative reference purposes only and is NOT a valid tax form for IRS filing. Consult a licensed payroll provider to generate official W-2 and 1099 forms with proper tax calculations, withholding amounts, and IRS-required formatting. PostCommand and Nationwide Police Services LLC are not responsible for tax filing decisions made based on this document.
+  This document is generated for administrative reference purposes only and is NOT a valid tax form for IRS filing. Consult a licensed payroll provider to generate official W-2 and 1099 forms with proper tax calculations, withholding amounts, and IRS-required formatting. PostCommand is not responsible for tax filing decisions made based on this document.
 </div>
 </body></html>`)
     w.document.close(); w.print()

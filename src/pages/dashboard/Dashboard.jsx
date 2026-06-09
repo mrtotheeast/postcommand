@@ -472,7 +472,7 @@ function ClientDashboard({ profile }) {
         <Icon name="phone" size={20} color="var(--accent)"/>
         <div>
           <div style={{fontSize:'13px',fontWeight:600,color:'var(--accent)',fontFamily:'var(--font-condensed)',letterSpacing:'1px'}}>CONTACT YOUR ACCOUNT MANAGER</div>
-          <div style={{fontSize:'12px',color:'var(--text-muted)',marginTop:'2px'}}>Nationwide Police Services · nationwide.police.services@gmail.com</div>
+          <div style={{fontSize:'12px',color:'var(--text-muted)',marginTop:'2px'}}>support@postcommand.app</div>
         </div>
       </div>
     </div>

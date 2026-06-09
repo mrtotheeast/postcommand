@@ -92,7 +92,7 @@ export default function Scheduling() {
     setLoading(true)
     const [sR,eR,siR]=await Promise.all([
       supabase.from('shift').select('*').eq('company_id',profile.company_id).gte('start_time',dateRange.start.toISOString()).lte('start_time',dateRange.end.toISOString()).order('start_time'),
-      supabase.from('employee').select('id,first_name,last_name,role,is_armed,position_title,status').eq('company_id',profile.company_id).eq('status','active'),
+      supabase.from('employee').select('id,first_name,last_name,role,is_armed,position_title,status').eq('company_id',profile.company_id).eq('status','active').or('invitation_status.eq.accepted,has_app_access.eq.true'),
       supabase.from('site').select('id,name,city,state').eq('company_id',profile.company_id),
     ])
     let sd=sR.data||[]

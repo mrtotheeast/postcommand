@@ -94,7 +94,7 @@ export default function TermsOfService() {
         <UL items={[
           'General: legal@postcommand.app',
           'Support: support@postcommand.app',
-          'Company: Nationwide Police Services LLC, Maryland, USA',
+          'Company: PostCommand, Maryland, USA',
         ]}/>
       </Section>
     </LegalLayout>

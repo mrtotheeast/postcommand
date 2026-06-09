@@ -35,7 +35,7 @@ export function LegalLayout({ title, lastUpdated, children, toc = [] }) {
             <a key={href} href={href} style={{ color:'#c8a84b', fontSize:'13px', textDecoration:'none', fontFamily:'Barlow Condensed, sans-serif' }}>{label}</a>
           ))}
         </div>
-        <p style={{ color:'#aaa', fontSize:'12px', marginTop:'12px' }}>© 2026 PostCommand · Powered by Nationwide Police Services LLC</p>
+        <p style={{ color:'#aaa', fontSize:'12px', marginTop:'12px' }}>© 2026 PostCommand · Security Workforce Management</p>
       </div>
     </div>
   )

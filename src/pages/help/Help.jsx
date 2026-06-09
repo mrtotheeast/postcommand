@@ -211,7 +211,7 @@ export default function Help() {
 
       <div style={{ marginTop:'32px', padding:'18px 20px', background:'var(--accent-bg)', border:'1px solid var(--accent-border)', borderRadius:'var(--radius-md)', fontSize:'13px', color:'var(--text-secondary)', lineHeight:1.6 }}>
         <strong style={{ color:'var(--accent)', fontFamily:'var(--font-condensed)', letterSpacing:'0.5px' }}>NEED MORE HELP?</strong><br />
-        Contact NPS support: <a href="mailto:nationwide.police.services@gmail.com" style={{ color:'var(--accent)' }}>nationwide.police.services@gmail.com</a> or visit <a href="https://www.nationwidepolice.com" target="_blank" rel="noreferrer" style={{ color:'var(--accent)' }}>nationwidepolice.com</a>
+        Contact us: <a href="mailto:support@postcommand.app" style={{ color:'var(--accent)' }}>support@postcommand.app</a>
       </div>
     </div>
   )
