@@ -7,6 +7,7 @@ import { isNative } from './lib/platform'
 import AppLayout from './components/layout/AppLayout'
 import PrivacyBanner from './components/ui/PrivacyBanner'
 import Login from './pages/auth/Login'
+import Register from './pages/auth/Register'
 import Dashboard from './pages/dashboard/Dashboard'
 import Personnel from './pages/personnel/Personnel'
 import Scheduling from './pages/scheduling/Scheduling'
@@ -132,7 +133,8 @@ export default function App() {
       <Route path="/terms"       element={<TermsOfService />} />
       <Route path="/support"     element={<Support />} />
       <Route path="/auth/callback" element={<AuthCallback />} />
-      <Route path="/login" element={isAuthenticated ? <Navigate to={role === 'client' ? '/portal' : '/dashboard'} replace /> : <Login />} />
+      <Route path="/login"    element={isAuthenticated ? <Navigate to={role === 'client' ? '/portal' : '/dashboard'} replace /> : <Login />} />
+      <Route path="/register" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Register />} />
       <Route path="/portal" element={<ClientRoute><ClientPortal /></ClientRoute>} />
       <Route path="/dashboard"  element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/personnel"  element={<ProtectedRoute><Personnel /></ProtectedRoute>} />
