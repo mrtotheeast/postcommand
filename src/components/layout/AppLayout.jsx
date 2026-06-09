@@ -61,6 +61,7 @@ export default function AppLayout({ children }) {
     return init
   })
   const [isOnline, setIsOnline] = useState(navigator.onLine)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('pc-sidebar-collapsed') === '1')
   const location = useLocation()
   const navigate = useNavigate()
   const actualRole = profile?.role
@@ -132,11 +133,11 @@ export default function AppLayout({ children }) {
                 </div>
               </button>
               {isExpanded && sec.items.map(item => {
-                const active = location.pathname.startsWith(item.path)
+                const active = location.pathname === item.path || location.pathname.startsWith(item.path + '/')
                 const count = getBadgeCount(item)
                 return (
                   <button key={item.id} style={{...s.navItem,...(active?s.navItemActive:{})}}
-                    onClick={() => { navigate(item.path); document.getElementById('main-content')?.scrollTo(0,0) }}
+                    onClick={() => navigate(item.path)}
                     aria-current={active?'page':undefined}
                     data-tour={item.id}>
                     <Icon name={item.icon} size={17} />
@@ -180,7 +181,22 @@ export default function AppLayout({ children }) {
 
   return (
     <div style={s.shell}>
-      {!isMobile && <aside style={s.sidebar} className="sidebar" data-tour="sidebar"><SidebarContent /></aside>}
+      {!isMobile && (
+        <>
+          <aside
+            style={{...s.sidebar, width:sidebarCollapsed?0:'var(--sidebar-width)', minWidth:sidebarCollapsed?0:'var(--sidebar-width)', overflow:'hidden', transition:'width 250ms ease, min-width 250ms ease'}}
+            className="sidebar" data-tour="sidebar"
+          >
+            <SidebarContent />
+          </aside>
+          <button
+            onClick={() => { const next=!sidebarCollapsed; setSidebarCollapsed(next); localStorage.setItem('pc-sidebar-collapsed',next?'1':'0') }}
+            aria-label={sidebarCollapsed?'Expand sidebar':'Collapse sidebar'}
+            style={{position:'fixed',left:sidebarCollapsed?0:'var(--sidebar-width)',top:'50%',transform:'translateY(-50%)',zIndex:10,background:'var(--bg-card)',border:'1px solid var(--border)',borderLeft:'1px solid var(--border)',borderRadius:'0 6px 6px 0',padding:'10px 4px',cursor:'pointer',color:'var(--text-muted)',display:'flex',alignItems:'center',justifyContent:'center',transition:'left 250ms ease',boxShadow:'2px 0 8px rgba(0,0,0,0.12)'}}>
+            <Icon name={sidebarCollapsed?'chevron-right':'chevron-left'} size={13}/>
+          </button>
+        </>
+      )}
       {isMobile && drawerOpen && <div style={s.overlay} onClick={() => setDrawerOpen(false)} />}
       {isMobile && (
         <aside style={{...s.drawer,...(drawerOpen?s.drawerOpen:{})}} className="sidebar" data-tour="sidebar">

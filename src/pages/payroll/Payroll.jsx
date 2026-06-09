@@ -130,7 +130,8 @@ function ConnectTab({ companyId, connection, onConnected }) {
           <Icon name="link" size={16}/>CONNECT GUSTO ACCOUNT
         </button>
         <div style={{ marginTop:'12px', fontSize:'11px', color:'var(--text-muted)' }}>
-          Opens Gusto authorization page. Set VITE_GUSTO_CLIENT_ID in your .env file.
+          Need help getting started? Contact{' '}
+          <a href="mailto:support@postcommand.app" style={{ color:'var(--accent)', textDecoration:'none' }}>support@postcommand.app</a>.
         </div>
       </div>
     </div>
@@ -372,7 +373,8 @@ function SettingsTab({ companyId, connection, onSaved }) {
         </button>
       )}
       <div style={{ marginTop:'20px', padding:'14px', background:'var(--bg-surface)', borderRadius:'var(--radius-sm)', fontSize:'12px', color:'var(--text-muted)', lineHeight:1.6 }}>
-        <strong style={{ color:'var(--text-secondary)' }}>Setup required:</strong> Set <code>GUSTO_CLIENT_ID</code> and <code>GUSTO_CLIENT_SECRET</code> in your Supabase Edge Function secrets, and <code>VITE_GUSTO_CLIENT_ID</code> in your .env file.
+        For help configuring payroll or troubleshooting your Gusto connection, contact{' '}
+        <a href="mailto:support@postcommand.app" style={{ color:'var(--accent)', textDecoration:'none' }}>support@postcommand.app</a>.
       </div>
     </div>
   )
