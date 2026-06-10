@@ -211,7 +211,7 @@ function IncidentForm({profile,onClose,onSaved}) {
     if(!form.q_what||!form.q_where||!form.q_when){setError('Please answer What, Where, and When first.');return}
     setAiLoading(true);setError(null)
     try {
-      const prompt=`You are a professional security report writer. Write a formal, factual incident report narrative in third person, past tense, using clear law enforcement style language. Write only the narrative paragraphs, no headers or labels.\n\nIncident details:\n- What happened: ${form.q_what}\n- Who was involved: ${form.q_who||'Not specified'}\n- Where: ${form.q_where}\n- When: ${form.q_when}\n- How it unfolded: ${form.q_how||'Not specified'}\n- Outcome: ${form.q_result||'Not specified'}\n- Incident type: ${form.incident_type||'General incident'}\n\nWrite a professional 2-4 paragraph narrative.`
+      const prompt=`You are a professional security report writer. Write a formal, factual incident report narrative in third person, past tense, using clear law enforcement style language. Write only the narrative paragraphs, no headers or labels.\n\nIncident details:\n- What happened: ${form.q_what}\n- Who was involved: ${form.q_who||'Not specified'}\n- Where: ${form.q_where}\n- When: ${form.q_when}\n- How it unfolded: ${form.q_how||'Not specified'}\n- Outcome: ${form.q_result||'Not specified'}\n- Incident type: ${form.incident_type||'General incident'}\n- Property damage: ${form.property_damage?'Yes - '+form.damage_detail:'None reported'}\n- Weapons: ${form.weapons_involved?'Yes - '+form.weapons_detail:'None'}\n- Witnesses: ${form.witnesses||'None noted'}\n- Evidence: ${form.evidence||'None noted'}\n\nWrite a professional 2-4 paragraph narrative.`
       const {data,error:fnErr}=await supabase.functions.invoke('ai-assistant',{body:{messages:[{role:'user',content:prompt}]}})
       if(fnErr)throw fnErr
       set('narrative',data.content?.[0]?.text||'')
@@ -330,6 +330,19 @@ function IncidentForm({profile,onClose,onSaved}) {
               <GQ label="When did it happen? *" hint="Time and sequence" value={form.q_when} onChange={v=>set('q_when',v)}/>
               <GQ label="How did it unfold?" hint="Sequence of actions" value={form.q_how} onChange={v=>set('q_how',v)}/>
               <GQ label="What was the outcome?" hint="Resolution, arrests, medical" value={form.q_result} onChange={v=>set('q_result',v)}/>
+              <div style={{marginTop:'16px',paddingTop:'16px',borderTop:'1px solid var(--border)'}}>
+                <div style={{fontSize:'12px',fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',marginBottom:'8px'}}>Additional Details (included in narrative)</div>
+                <BF label="Property damage?" checked={form.property_damage} onChange={v=>set('property_damage',v)}/>
+                {form.property_damage&&<>
+                  <div style={{marginTop:'6px'}}><label style={lbl}>Damage Description</label><textarea value={form.damage_detail} onChange={e=>set('damage_detail',e.target.value)} rows={2} style={ta}/></div>
+                </>}
+                <BF label="Weapons involved?" checked={form.weapons_involved} onChange={v=>set('weapons_involved',v)}/>
+                {form.weapons_involved&&<>
+                  <div style={{marginTop:'6px'}}><label style={lbl}>Weapon Details</label><textarea value={form.weapons_detail} onChange={e=>set('weapons_detail',e.target.value)} rows={2} style={ta}/></div>
+                </>}
+                <div style={{marginTop:'6px'}}><label style={lbl}>Witnesses</label><textarea value={form.witnesses} onChange={e=>set('witnesses',e.target.value)} rows={2} style={ta} placeholder="Names, contact info..."/></div>
+                <div style={{marginTop:'6px'}}><label style={lbl}>Evidence</label><textarea value={form.evidence} onChange={e=>set('evidence',e.target.value)} rows={2} style={ta} placeholder="Video footage, photos, items..."/></div>
+              </div>
             </>}
 
             {step===2&&<>
