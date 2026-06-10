@@ -1,5 +1,8 @@
-// PostCommand Service Worker — Network First
-// Caches nothing aggressively — always fetches fresh JS/CSS
+// PostCommand Service Worker — v2
+// Auto-versioned: bump CACHE_VERSION on each deploy to force refresh
+
+const CACHE_VERSION = 'v2'
+const CACHE_NAME = `postcommand-${CACHE_VERSION}`
 
 self.addEventListener('install', e => {
   self.skipWaiting()
@@ -7,19 +10,29 @@ self.addEventListener('install', e => {
 
 self.addEventListener('activate', e => {
   e.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.map(k => caches.delete(k)))
-    ).then(() => self.clients.claim())
+    caches.keys()
+      .then(keys => Promise.all(
+        keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))
+      ))
+      .then(() => self.clients.claim())
   )
 })
 
-// Network first for everything — no stale JS
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return
   const url = new URL(e.request.url)
   if (url.origin !== self.location.origin) return
+
   e.respondWith(
-    fetch(e.request).catch(() => caches.match(e.request))
+    fetch(e.request)
+      .then(res => {
+        if (res.ok) {
+          const clone = res.clone()
+          caches.open(CACHE_NAME).then(c => c.put(e.request, clone))
+        }
+        return res
+      })
+      .catch(() => caches.match(e.request))
   )
 })
 
@@ -40,7 +53,7 @@ self.addEventListener('push', e => {
 self.addEventListener('notificationclick', e => {
   e.notification.close()
   e.waitUntil(
-    clients.matchAll({ type:'window', includeUncontrolled:true }).then(cls => {
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(cls => {
       const url = e.notification.data?.url || '/'
       const existing = cls.find(c => c.url.includes(self.location.origin))
       if (existing) { existing.focus(); existing.navigate(url); return }
