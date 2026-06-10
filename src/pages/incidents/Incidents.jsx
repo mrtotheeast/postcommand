@@ -212,8 +212,8 @@ function IncidentForm({profile,onClose,onSaved}) {
     setAiLoading(true);setError(null)
     try {
       const prompt=`You are a professional security report writer. Write a formal, factual incident report narrative in third person, past tense, using clear law enforcement style language. Write only the narrative paragraphs, no headers or labels.\n\nIncident details:\n- What happened: ${form.q_what}\n- Who was involved: ${form.q_who||'Not specified'}\n- Where: ${form.q_where}\n- When: ${form.q_when}\n- How it unfolded: ${form.q_how||'Not specified'}\n- Outcome: ${form.q_result||'Not specified'}\n- Incident type: ${form.incident_type||'General incident'}\n\nWrite a professional 2-4 paragraph narrative.`
-      const response=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,messages:[{role:'user',content:prompt}]})})
-      const data=await response.json()
+      const {data,error:fnErr}=await supabase.functions.invoke('ai-assistant',{body:{messages:[{role:'user',content:prompt}]}})
+      if(fnErr)throw fnErr
       set('narrative',data.content?.[0]?.text||'')
       setStep(2)
     } catch(e){setError('AI generation failed. Please write manually.')}
@@ -225,8 +225,8 @@ function IncidentForm({profile,onClose,onSaved}) {
     setAiLoading(true);setError(null)
     try {
       const prompt=`You are a professional security report editor. Rewrite the following incident report narrative to be formal, factual, and professional using law enforcement style language in third person, past tense. Return only the improved narrative.\n\nOriginal:\n${form.narrative}`
-      const response=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,messages:[{role:'user',content:prompt}]})})
-      const data=await response.json()
+      const {data,error:fnErr}=await supabase.functions.invoke('ai-assistant',{body:{messages:[{role:'user',content:prompt}]}})
+      if(fnErr)throw fnErr
       set('narrative',data.content?.[0]?.text||form.narrative)
     } catch(e){setError('AI polish failed.')}
     setAiLoading(false)
