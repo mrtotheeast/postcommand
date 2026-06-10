@@ -1,7 +1,7 @@
 // PostCommand Service Worker — v2
 // Auto-versioned: bump CACHE_VERSION on each deploy to force refresh
 
-const CACHE_VERSION = 'v2'
+const CACHE_VERSION = 'v3'
 const CACHE_NAME = `postcommand-${CACHE_VERSION}`
 
 self.addEventListener('install', e => {
