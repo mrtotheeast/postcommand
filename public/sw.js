@@ -1,19 +1,13 @@
-// PostCommand Service Worker — v2
-// Auto-versioned: bump CACHE_VERSION on each deploy to force refresh
-
-const CACHE_VERSION = 'v3'
+// PostCommand Service Worker — v4
+const CACHE_VERSION = 'v4'
 const CACHE_NAME = `postcommand-${CACHE_VERSION}`
 
-self.addEventListener('install', e => {
-  self.skipWaiting()
-})
+self.addEventListener('install', () => self.skipWaiting())
 
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(
-        keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))
-      ))
+      .then(keys => Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   )
 })
@@ -22,17 +16,9 @@ self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return
   const url = new URL(e.request.url)
   if (url.origin !== self.location.origin) return
-
+  // Network first, cache as fallback — never block on cache errors
   e.respondWith(
-    fetch(e.request)
-      .then(res => {
-        if (res.ok) {
-          const clone = res.clone()
-          caches.open(CACHE_NAME).then(c => c.put(e.request, clone))
-        }
-        return res
-      })
-      .catch(() => caches.match(e.request))
+    fetch(e.request).catch(() => caches.match(e.request))
   )
 })
 
