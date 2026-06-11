@@ -150,7 +150,10 @@ export default function Incidents() {
         <div style={{fontSize:'12px',color:'var(--text-secondary)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:'400px'}}>{report.narrative?.slice(0,100)}{report.narrative?.length>100?'...':''}</div>
       </div>
       <div style={{fontSize:'12px',color:'var(--text-secondary)'}}>{report.occurred_at?new Date(report.occurred_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}):'—'}</div>
-      <span style={{fontSize:'11px',fontWeight:700,padding:'3px 10px',borderRadius:'10px',background:ss.bg,color:ss.color,display:'inline-block',whiteSpace:'nowrap'}}>{ss.label}</span>
+      <div style={{display:'flex',flexDirection:'column',gap:'4px',alignItems:'flex-start'}}>
+        <span style={{fontSize:'11px',fontWeight:700,padding:'3px 10px',borderRadius:'10px',background:ss.bg,color:ss.color,display:'inline-block',whiteSpace:'nowrap'}}>{ss.label}</span>
+        {report.is_confidential&&<span style={{fontSize:'10px',fontWeight:700,padding:'2px 8px',borderRadius:'10px',background:'rgba(224,85,85,0.15)',color:'#e05555',display:'inline-block',whiteSpace:'nowrap',letterSpacing:'0.5px'}}>CONF/IA</span>}
+      </div>
       <Icon name="chevron-right" size={14} color="var(--text-muted)"/>
     </button>
   )
@@ -528,7 +531,9 @@ function IncidentForm({profile,onClose,onSaved}) {
             {report.injuries&&<span style={{fontSize:'12px',fontWeight:700,padding:'4px 12px',borderRadius:'10px',background:'var(--color-danger-bg)',color:'var(--color-danger)'}}>INJURIES</span>}
             {report.weapons_involved&&<span style={{fontSize:'12px',fontWeight:700,padding:'4px 12px',borderRadius:'10px',background:'rgba(201,162,39,0.12)',color:'var(--accent)'}}>WEAPONS</span>}
             {report.police_notified&&<span style={{fontSize:'12px',fontWeight:700,padding:'4px 12px',borderRadius:'10px',background:'var(--color-info-bg)',color:'var(--color-info)'}}>POLICE</span>}
+            {report.is_confidential&&<span style={{fontSize:'12px',fontWeight:700,padding:'4px 12px',borderRadius:'10px',background:'rgba(224,85,85,0.15)',color:'#e05555'}}>CONFIDENTIAL / IA</span>}
           </div>
+          {canApprove&&<button onClick={async()=>{await supabase.from('incident_report').update({is_confidential:!report.is_confidential}).eq('id',report.id);toast(report.is_confidential?'Confidential flag removed':'Marked confidential','info');onUpdated()}} style={{display:'flex',alignItems:'center',gap:'6px',marginBottom:'16px',padding:'8px 14px',background:report.is_confidential?'rgba(224,85,85,0.12)':'var(--bg-card)',border:report.is_confidential?'1px solid rgba(224,85,85,0.3)':'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:report.is_confidential?'#e05555':'var(--text-secondary)',fontSize:'12px',fontFamily:'var(--font-condensed)',fontWeight:700,cursor:'pointer',letterSpacing:'0.5px'}}><Icon name="shield" size={13}/>{report.is_confidential?'REMOVE CONFIDENTIAL FLAG':'MARK CONFIDENTIAL / IA'}</button>}
           <DSec title="Incident Details">
             <DR l="CAD Number" v={report.cad_number}/>
             <DR l="Type" v={report.incident_type}/>
