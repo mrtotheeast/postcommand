@@ -211,11 +211,11 @@ function IncidentForm({profile,onClose,onSaved}) {
     if(!form.q_what||!form.q_where||!form.q_when){setError('Please answer What, Where, and When first.');return}
     setAiLoading(true);setError(null)
     try {
-      const prompt=`You are a professional security report writer. Write a formal, factual incident report narrative in third person, past tense, using clear law enforcement style language. Write only the narrative paragraphs, no headers or labels.\n\nIncident details:\n- What happened: ${form.q_what}\n- Who was involved: ${form.q_who||'Not specified'}\n- Where: ${form.q_where}\n- When: ${form.q_when}\n- How it unfolded: ${form.q_how||'Not specified'}\n- Outcome: ${form.q_result||'Not specified'}\n- Incident type: ${form.incident_type||'General incident'}\n- Property damage: ${form.property_damage?'Yes - '+form.damage_detail:'None reported'}\n- Weapons: ${form.weapons_involved?'Yes - '+form.weapons_detail:'None'}\n- Witnesses: ${form.witnesses||'None noted'}\n- Evidence: ${form.evidence||'None noted'}\n\nWrite a professional 2-4 paragraph narrative.`
+      const prompt=`You are a professional security report writer. Write a formal, factual incident report narrative in third person, past tense, using clear law enforcement style language. Write only the narrative paragraphs, no headers or labels.\n\nIncident details:\n- What happened: ${form.q_what}\n- Who was involved: ${form.q_who||'Not specified'}\n- Where: ${form.q_where}\n- When: ${form.q_when}\n- How it unfolded: ${form.q_how||'Not specified'}\n- Outcome: ${form.q_result||'Not specified'}\n- Incident type: ${form.incident_type||'General incident'}\n- Property damage: ${form.property_damage?'Yes'+( form.damage_detail?' - '+form.damage_detail:''):'None reported'}\n- Weapons: ${form.weapons_involved?'Yes'+( form.weapons_detail?' - '+form.weapons_detail:''):'None'}\n- Witnesses: ${form.witnesses||'None noted'}\n- Evidence: ${form.evidence||'None noted'}\n- Injuries: ${form.injuries?'Yes'+( form.injury_detail?' - '+form.injury_detail:''):'None reported'}\n- Police notified: ${form.police_notified?'Yes'+( form.police_agency?' ('+form.police_agency+')':\''):'No'}\n- EMS called: ${form.ems_called?'Yes':'No'}\n- Suspect: ${form.suspect_involved?form.subject_name||'Unknown name'+(form.suspect_clothing?' - '+form.suspect_clothing:''):'None identified'}\n\nWrite a professional 2-4 paragraph narrative.`
       const {data,error:fnErr}=await supabase.functions.invoke('ai-assistant',{body:{messages:[{role:'user',content:prompt}]}})
       if(fnErr)throw fnErr
       set('narrative',data.content?.[0]?.text||'')
-      setStep(2)
+      setStep(3)
     } catch(e){setError('AI generation failed. Please write manually.')}
     setAiLoading(false)
   }
@@ -273,7 +273,7 @@ function IncidentForm({profile,onClose,onSaved}) {
     setSaving(false)
   }
 
-  const STEPS=[{title:'Basic Info',sub:'Incident type and time'},{title:'Guided Questions',sub:'Answer questions — AI writes your report'},{title:'Narrative',sub:'Review and edit your narrative'},{title:'Additional Details',sub:'Injuries, damage, weapons, police'}]
+  const STEPS=[{title:'Basic Info',sub:'Incident type and time'},{title:'Guided Questions',sub:'Answer questions for AI'},{title:'Additional Details',sub:'Injuries, damage, weapons, police'},{title:'Narrative',sub:'AI writes your report — review and edit'}]
 
   return (
     <>
@@ -345,7 +345,7 @@ function IncidentForm({profile,onClose,onSaved}) {
               </div>
             </>}
 
-            {step===2&&<>
+            {step===3&&<>
               <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'4px'}}>
                 <label style={{...lbl,margin:0}}>Narrative *</label>
                 <div style={{display:'flex',gap:'8px'}}>
@@ -358,7 +358,7 @@ function IncidentForm({profile,onClose,onSaved}) {
               <div style={{fontSize:'11px',color:'var(--text-muted)',padding:'8px 12px',background:'var(--bg-card)',borderRadius:'var(--radius-sm)',border:'1px solid var(--border)'}}>Review carefully. You are responsible for accuracy.</div>
             </>}
 
-            {step===3&&<>
+            {step===2&&<>
               <div style={{fontSize:'12px',fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',marginBottom:'4px'}}>Injuries</div>
               <BF label="Were there injuries?" checked={form.injuries} onChange={v=>set('injuries',v)}/>
               {form.injuries&&<>
@@ -409,17 +409,7 @@ function IncidentForm({profile,onClose,onSaved}) {
               </>}
               <div><label style={lbl}>Witnesses</label><textarea value={form.witnesses} onChange={e=>set('witnesses',e.target.value)} rows={2} style={ta} placeholder="Names, contact info..."/></div>
               <div><label style={lbl}>Evidence</label><textarea value={form.evidence} onChange={e=>set('evidence',e.target.value)} rows={2} style={ta} placeholder="Video footage, photos, items..."/></div>
-              {atLeast(profile?.role, 'lieutenant') && (
-                <label style={{display:'flex',alignItems:'center',gap:'10px',padding:'12px',background:'rgba(224,85,85,0.08)',border:'1px solid rgba(224,85,85,0.2)',borderRadius:'var(--radius-md)',cursor:'pointer',marginTop:'12px'}}>
-                  <input type="checkbox" checked={form.is_confidential||false}
-                    onChange={e=>set('is_confidential',e.target.checked)}
-                    style={{accentColor:'var(--color-danger)',width:'16px',height:'16px'}}/>
-                  <div>
-                    <div style={{fontSize:'13px',fontWeight:700,color:'var(--color-danger)'}}>CONFIDENTIAL / IA</div>
-                    <div style={{fontSize:'11px',color:'var(--text-muted)'}}>This report will only be visible to lieutenants and above</div>
-                  </div>
-                </label>
-              )}
+
             </>}
           </>}
 
