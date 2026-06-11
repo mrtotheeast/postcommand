@@ -49,7 +49,7 @@ export default function Incidents() {
   const canAnalyze = atLeast(profile?.role, 'lieutenant')
   const [mainTab, setMainTab] = useState('reports')
 
-  useEffect(() => { loadReports() }, [profile])
+  useEffect(() => { loadReports() }, [profile?.company_id, profile?.role])
 
   async function loadReports() {
     if (!profile?.company_id) return
