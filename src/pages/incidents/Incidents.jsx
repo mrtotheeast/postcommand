@@ -213,26 +213,7 @@ function IncidentForm({profile,onClose,onSaved}) {
     try {
       const policeInfo=form.police_notified?'Yes'+(form.police_agency?' ('+form.police_agency+')':''):'No'
       const suspectInfo=form.suspect_involved?(form.subject_name||'Unknown')+(form.suspect_clothing?' wearing '+form.suspect_clothing:''):'None identified'
-      const prompt='You are a professional security report writer. Write a formal, factual incident report narrative in third person, past tense, using clear law enforcement style language. Write only the narrative paragraphs, no headers or labels.
-
-Incident details:
-- What happened: '+form.q_what+'
-- Who was involved: '+(form.q_who||'Not specified')+'
-- Where: '+form.q_where+'
-- When: '+form.q_when+'
-- How it unfolded: '+(form.q_how||'Not specified')+'
-- Outcome: '+(form.q_result||'Not specified')+'
-- Incident type: '+(form.incident_type||'General incident')+'
-- Property damage: '+(form.property_damage?'Yes'+(form.damage_detail?' - '+form.damage_detail:''):'None reported')+'
-- Weapons: '+(form.weapons_involved?'Yes'+(form.weapons_detail?' - '+form.weapons_detail:''):'None')+'
-- Witnesses: '+(form.witnesses||'None noted')+'
-- Evidence: '+(form.evidence||'None noted')+'
-- Injuries: '+(form.injuries?'Yes'+(form.injury_detail?' - '+form.injury_detail:''):'None reported')+'
-- Police notified: '+policeInfo+'
-- EMS called: '+(form.ems_called?'Yes':'No')+'
-- Suspect: '+suspectInfo+'
-
-Write a professional 2-4 paragraph narrative.'
+      const prompt='You are a professional security report writer. Write a formal, factual incident report narrative in third person, past tense, using clear law enforcement style language. Write only the narrative paragraphs, no headers or labels.\n\nIncident details:\n- What happened: '+form.q_what+'\n- Who was involved: '+(form.q_who||'Not specified')+'\n- Where: '+form.q_where+'\n- When: '+form.q_when+'\n- How it unfolded: '+(form.q_how||'Not specified')+'\n- Outcome: '+(form.q_result||'Not specified')+'\n- Incident type: '+(form.incident_type||'General incident')+'\n- Property damage: '+(form.property_damage?'Yes'+(form.damage_detail?' - '+form.damage_detail:''):'None reported')+'\n- Weapons: '+(form.weapons_involved?'Yes'+(form.weapons_detail?' - '+form.weapons_detail:''):'None')+'\n- Witnesses: '+(form.witnesses||'None noted')+'\n- Evidence: '+(form.evidence||'None noted')+'\n- Injuries: '+(form.injuries?'Yes'+(form.injury_detail?' - '+form.injury_detail:''):'None reported')+'\n- Police notified: '+policeInfo+'\n- EMS called: '+(form.ems_called?'Yes':'No')+'\n- Suspect: '+suspectInfo+'\n\nWrite a professional 2-4 paragraph narrative.'
       const {data,error:fnErr}=await supabase.functions.invoke('ai-assistant',{body:{messages:[{role:'user',content:prompt}]}})
       if(fnErr)throw fnErr
       set('narrative',data.content?.[0]?.text||'')
