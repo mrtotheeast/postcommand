@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useNotifications } from '../../context/NotificationContext'
 import { supabase } from '../../lib/supabase'
-import { DASHBOARD_TILES, ROLE_LABELS } from '../../config/roles'
+import { DASHBOARD_TILES, ROLE_LABELS, atLeast } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
 import Badge from '../../components/ui/Badge'
 
@@ -25,6 +25,83 @@ export default function Dashboard() {
   if (effectiveRole === 'officer')  return <OfficerDashboard profile={profile} badges={badges} navigate={navigate} />
 
   return <MainDashboard profile={profile} effectiveRole={effectiveRole} badges={badges} navigate={navigate} />
+}
+
+// ── DAR Widgets ───────────────────────────────────────────────────────────────
+
+function DarDueWidget({ profile, navigate }) {
+  const [due, setDue] = useState([])
+  useEffect(() => {
+    if (!profile?.company_id || !atLeast(profile.role, 'sergeant')) return
+    const today = new Date().toISOString().slice(0, 10)
+    supabase.from('site').select('id,name').eq('company_id', profile.company_id).eq('requires_dar', true)
+      .then(({ data: darSites }) => {
+        if (!darSites?.length) return
+        supabase.from('dar').select('site_id').eq('company_id', profile.company_id).eq('shift_date', today)
+          .then(({ data: todayDars }) => {
+            const covered = new Set((todayDars||[]).map(d => d.site_id))
+            setDue((darSites||[]).filter(s => !covered.has(s.id)))
+          })
+      })
+  }, [profile])
+  if (!due.length) return null
+  return (
+    <div style={{ background:'var(--color-warning-bg)', border:'1px solid rgba(232,148,58,0.4)', borderRadius:'var(--radius-md)', padding:'12px 16px', marginBottom:'20px', display:'flex', alignItems:'center', gap:'12px', flexWrap:'wrap', cursor:'pointer' }}
+      onClick={() => navigate('/dar')}
+    >
+      <Icon name="alert-circle" size={16} color="var(--color-warning)" />
+      <div style={{ flex:1 }}>
+        <div style={{ fontSize:'12px', fontWeight:700, color:'var(--color-warning)', fontFamily:'var(--font-condensed)', letterSpacing:'0.5px' }}>DAR REQUIRED TODAY</div>
+        <div style={{ fontSize:'11px', color:'var(--text-secondary)', marginTop:'2px' }}>{due.map(s => s.name).join(', ')}</div>
+      </div>
+      <Icon name="chevron-right" size={14} color="var(--color-warning)" />
+    </div>
+  )
+}
+
+function ClientDarWidget({ profile, navigate }) {
+  const [items, setItems] = useState([])
+  const [unread, setUnread] = useState(0)
+  useEffect(() => {
+    if (!profile?.id) return
+    supabase.from('dar_recipient').select('id,read_at,dar:dar_id(shift_date,site:site_id(name))').eq('user_id', profile.id).order('created_at',{ascending:false}).limit(4)
+      .then(({ data }) => {
+        setItems(data||[])
+        setUnread((data||[]).filter(i => !i.read_at).length)
+      })
+  }, [profile])
+  if (!items.length) return null
+  return (
+    <div style={{ marginBottom:'20px' }}>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'10px' }}>
+        <div style={{ fontSize:'10px', color:'var(--text-muted)', letterSpacing:'1.5px', textTransform:'uppercase', fontFamily:'var(--font-condensed)', display:'flex', alignItems:'center', gap:'8px' }}>
+          Activity Reports
+          {unread > 0 && <span style={{ background:'var(--accent)', color:'var(--text-inverse)', borderRadius:'10px', padding:'1px 7px', fontSize:'10px', fontWeight:700 }}>{unread}</span>}
+        </div>
+        <button onClick={() => navigate('/inbox')} style={{ background:'transparent', border:'none', color:'var(--accent)', cursor:'pointer', fontFamily:'var(--font-condensed)', fontSize:'11px', letterSpacing:'0.5px' }}>VIEW ALL</button>
+      </div>
+      <div style={{ display:'flex', flexDirection:'column', gap:'6px' }}>
+        {items.map(item => {
+          const isRead = !!item.read_at
+          const fmtDate = item.dar?.shift_date ? new Date(item.dar.shift_date+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—'
+          return (
+            <div key={item.id} onClick={() => navigate('/inbox')}
+              style={{ display:'flex', alignItems:'center', gap:'10px', padding:'10px 14px', background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-md)', cursor:'pointer', transition:'background 150ms ease' }}
+              onMouseEnter={e => e.currentTarget.style.background='var(--bg-card-hover)'}
+              onMouseLeave={e => e.currentTarget.style.background='var(--bg-card)'}
+            >
+              <div style={{ width:'7px', height:'7px', borderRadius:'50%', background:isRead?'transparent':'var(--accent)', flexShrink:0 }} />
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:'12px', fontWeight:isRead?400:600, color:'var(--text-primary)' }}>{item.dar?.site?.name || 'Unknown Site'}</div>
+                <div style={{ fontSize:'11px', color:'var(--text-muted)' }}>Daily Activity Report · {fmtDate}</div>
+              </div>
+              <Icon name="chevron-right" size={13} color="var(--text-muted)" />
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
 }
 
 // ── Main Dashboard (Chief / Lieutenant / Sergeant / HR / Accounting) ──────────
@@ -121,6 +198,8 @@ function MainDashboard({ profile, effectiveRole, badges, navigate }) {
       </div>
 
       <StatCards role={effectiveRole} badges={badges} />
+
+      {atLeast(effectiveRole, 'sergeant') && <DarDueWidget profile={profile} navigate={navigate} />}
 
       <div style={{fontSize:'10px',color:'var(--text-muted)',letterSpacing:'1.5px',textTransform:'uppercase',fontFamily:'var(--font-condensed)',marginBottom:'10px'}}>Quick Access</div>
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:'12px'}}>
@@ -282,6 +361,7 @@ function OfficerDashboard({ profile, badges, navigate }) {
           {label:'SOS',           desc:'Emergency alert',             path:'/sos',        icon:'alert-triangle', color:'#e05555'},
           {label:'Messaging',     desc:'Team communication',          path:'/messaging',  icon:'message-circle', color:'#a07ae0', badge:badges.unread_messages},
           {label:'Training',      desc:'My assigned courses',         path:'/training',   icon:'book-open',      color:'#3aaa6a'},
+          {label:'Activity Reports',desc:'Daily activity reports',     path:'/dar',        icon:'file-text',      color:'#5b9fe0'},
         ].map(t => (
           <button key={t.path} onClick={() => navigate(t.path)}
             style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'16px',textAlign:'left',cursor:'pointer',transition:'all 150ms ease',display:'flex',flexDirection:'column',gap:'6px'}}
@@ -362,6 +442,7 @@ function CorporalDashboard({ profile, badges, navigate }) {
           {label:'SOS',desc:'Emergency alert',path:'/sos',icon:'alert-triangle',color:'#e05555'},
           {label:'Messaging',desc:'Team communication',path:'/messaging',icon:'message-circle',color:'#a07ae0',badge:badges.unread_messages},
           {label:'Training',desc:'Team training progress',path:'/training',icon:'book-open',color:'#3aaa6a'},
+          {label:'Activity Reports',desc:'Daily activity reports',path:'/dar',icon:'file-text',color:'#5b9fe0'},
         ].map(t => (
           <button key={t.path} onClick={() => navigate(t.path)}
             style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'16px',textAlign:'left',cursor:'pointer',transition:'all 150ms ease',display:'flex',flexDirection:'column',gap:'6px'}}
@@ -467,6 +548,8 @@ function ClientDashboard({ profile }) {
           }
         </div>
       </div>
+
+      <ClientDarWidget profile={profile} navigate={navigate} />
 
       <div style={{marginTop:'20px',padding:'16px 20px',background:'var(--accent-bg)',border:'1px solid var(--accent-border)',borderRadius:'var(--radius-md)',display:'flex',gap:'16px',alignItems:'center',flexWrap:'wrap'}}>
         <Icon name="phone" size={20} color="var(--accent)"/>
