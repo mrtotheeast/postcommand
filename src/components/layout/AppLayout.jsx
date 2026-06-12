@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useTheme } from '../../context/ThemeContext'
@@ -91,9 +91,9 @@ export default function AppLayout({ children }) {
   }, [])
 
   const native = isNative()
-  const visibleSections = NAV_ITEMS
+  const visibleSections = useMemo(() => NAV_ITEMS
     .map(sec => ({ ...sec, items: sec.items.filter(item => item.roles.includes(role) && !(native && item.hideOnNative)) }))
-    .filter(sec => sec.items.length > 0)
+    .filter(sec => sec.items.length > 0), [role, native])
 
   const initials = profile ? `${profile.first_name?.[0]??''}${profile.last_name?.[0]??''}`.toUpperCase() || 'U' : 'U'
   const pageTitle = visibleSections.flatMap(s => s.items).find(item => location.pathname.startsWith(item.path))?.label ?? 'Command Center'
