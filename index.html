@@ -17,6 +17,8 @@
     <link rel="manifest" href="/manifest.json" />
     <title>PostCommand</title>
     <script>
+      // Stamp theme before React hydrates to prevent flash of wrong theme.
+      // Default is 'light' for new users; existing choice is honoured.
       var t = localStorage.getItem('pc-theme');
       var theme = (t === 'light' || t === 'dark') ? t : 'light';
       document.documentElement.setAttribute('data-theme', theme);
