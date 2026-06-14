@@ -23,6 +23,78 @@ function fmt12(ts){
 }
 function fmtDate(d){ return d.toLocaleDateString('en-US',{month:'short',day:'numeric'}) }
 
+// ── OT Helper ─────────────────────────────────────────────────────────────────
+
+async function checkOT(employeeId, companyId, shiftStart, shiftEnd, weekStartDay, otThreshold) {
+  const shiftDate = new Date(shiftStart)
+  const daysBack = (shiftDate.getDay() - weekStartDay + 7) % 7
+  const weekStart = new Date(shiftDate)
+  weekStart.setDate(shiftDate.getDate() - daysBack)
+  weekStart.setHours(0, 0, 0, 0)
+  const weekEnd = new Date(weekStart)
+  weekEnd.setDate(weekStart.getDate() + 7)
+
+  const { data } = await supabase
+    .from('shift')
+    .select('start_time,end_time')
+    .eq('company_id', companyId)
+    .eq('employee_id', employeeId)
+    .neq('status', 'cancelled')
+    .gte('start_time', weekStart.toISOString())
+    .lt('start_time', weekEnd.toISOString())
+
+  const currentHours = (data || []).reduce((acc, s) => {
+    if (!s.start_time || !s.end_time) return acc
+    return acc + (new Date(s.end_time) - new Date(s.start_time)) / 3600000
+  }, 0)
+
+  const newShiftHours = (new Date(shiftEnd) - new Date(shiftStart)) / 3600000
+  const projectedHours = currentHours + newShiftHours
+  const wouldExceed = projectedHours >= otThreshold
+  const otHours = Math.max(0, projectedHours - otThreshold)
+  return { wouldExceed, currentHours, newShiftHours, projectedHours, otHours, weekStartDate: weekStart.toISOString().split('T')[0] }
+}
+
+// ── OT Warning Modal ──────────────────────────────────────────────────────────
+
+function OTWarningModal({ empName, otData, onCancel, onOverride }) {
+  const { currentHours, newShiftHours, projectedHours, otHours } = otData
+  const fmt = h => (h % 1 === 0 ? h : h.toFixed(1)) + 'h'
+  return <>
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.72)',zIndex:300,backdropFilter:'blur(3px)'}}/>
+    <div style={{position:'fixed',top:'50%',left:'50%',transform:'translate(-50%,-50%)',width:'min(400px,94vw)',background:'var(--bg-surface)',border:'1px solid rgba(232,148,58,0.35)',borderRadius:'var(--radius-lg)',zIndex:301,overflow:'hidden',boxShadow:'var(--shadow-modal)'}}>
+      <div style={{padding:'20px 22px 16px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:'12px'}}>
+        <div style={{width:'36px',height:'36px',borderRadius:'50%',background:'rgba(232,148,58,0.12)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+          <Icon name="alert-triangle" size={18} color="var(--color-warning)"/>
+        </div>
+        <div>
+          <div style={{fontFamily:'var(--font-display)',fontSize:'17px',letterSpacing:'1.5px',color:'var(--text-primary)'}}>OVERTIME WARNING</div>
+          <div style={{fontSize:'12px',color:'var(--text-muted)',marginTop:'2px'}}>This shift would put {empName} into OT</div>
+        </div>
+      </div>
+      <div style={{padding:'18px 22px'}}>
+        <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',overflow:'hidden',marginBottom:'18px'}}>
+          {[
+            ['Current hours this week', fmt(currentHours), false],
+            ['This shift adds',         fmt(newShiftHours), false],
+            ['Projected total',         fmt(projectedHours), false],
+            ['Overtime hours',          fmt(otHours), true],
+          ].map(([label, val, isOT], i, arr) => (
+            <div key={label} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 14px',borderBottom:i<arr.length-1?'1px solid var(--border)':'none'}}>
+              <span style={{fontSize:'13px',color:'var(--text-muted)'}}>{label}</span>
+              <span style={{fontFamily:'var(--font-display)',fontSize:'17px',letterSpacing:'1px',color:isOT?'var(--color-warning)':'var(--text-primary)'}}>{val}</span>
+            </div>
+          ))}
+        </div>
+        <div style={{display:'flex',gap:'10px'}}>
+          <button onClick={onCancel}   style={{flex:1,height:'44px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:'var(--text-secondary)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,cursor:'pointer',letterSpacing:'1px'}}>CANCEL</button>
+          <button onClick={onOverride} style={{flex:1,height:'44px',background:'rgba(232,148,58,0.1)',border:'1px solid rgba(232,148,58,0.35)',borderRadius:'var(--radius-md)',color:'var(--color-warning)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,cursor:'pointer',letterSpacing:'1px'}}>OVERRIDE & SAVE</button>
+        </div>
+      </div>
+    </div>
+  </>
+}
+
 function getViewDates(baseDate, weeks) {
   const start = new Date(baseDate)
   start.setDate(start.getDate() - start.getDay())
@@ -56,6 +128,7 @@ export default function Scheduling() {
   const [sidebarOpen, setSidebarOpen]   = useState(true)
   const [selPositions, setSelPositions] = useState(new Set())
   const [selSites, setSelSites]         = useState(new Set())
+  const [otSettings, setOtSettings]     = useState(null)
 
   const canCreate  = atLeast(profile?.role, 'sergeant')
   const canApprove = atLeast(profile?.role, 'lieutenant')
@@ -83,7 +156,7 @@ export default function Scheduling() {
   async function loadAll() {
     if (!profile?.company_id) return
     setLoading(true)
-    const [sR, eR, siR, ceR] = await Promise.all([
+    const [sR, eR, siR, ceR, csR] = await Promise.all([
       supabase.from('shift').select('*')
         .eq('company_id', profile.company_id)
         .gte('start_time', dateRange.start.toISOString())
@@ -97,6 +170,7 @@ export default function Scheduling() {
         .order('last_name'),
       supabase.from('site').select('id,name,city,state').eq('company_id', profile.company_id),
       supabase.from('employee').select('id').eq('company_id', profile.company_id).eq('user_id', profile.id).maybeSingle(),
+      supabase.from('company_settings').select('ot_weekly_hours,ot_week_start').eq('company_id', profile.company_id).maybeSingle(),
     ])
     let sd = sR.data || []
     if (isOfficer) {
@@ -107,6 +181,7 @@ export default function Scheduling() {
     setShifts(sd)
     setEmployees(eR.data || [])
     setSites(siR.data || [])
+    setOtSettings(csR.data || null)
     setLoading(false)
   }
 
@@ -216,7 +291,7 @@ export default function Scheduling() {
         {/* Non-schedule tabs */}
         {mainTab === 'swaps'        && <SwapsPanel companyId={profile.company_id} profile={profile} employees={employees} shifts={shifts} canApprove={canApprove}/>}
         {mainTab === 'availability' && <AvailabilityPanel companyId={profile.company_id} profile={profile} employees={employees} canEdit={canCreate}/>}
-        {mainTab === 'bids'         && <ShiftBidsPanel companyId={profile.company_id} profile={profile} employees={employees} sites={sites} canPost={canCreate}/>}
+        {mainTab === 'bids'         && <ShiftBidsPanel companyId={profile.company_id} profile={profile} employees={employees} sites={sites} canPost={canCreate} otSettings={otSettings}/>}
 
         {/* Schedule tab */}
         {mainTab === 'schedule' && (
@@ -297,6 +372,7 @@ export default function Scheduling() {
           prefillDate={showCreate?.prefillDate}
           onClose={() => setShowCreate(null)}
           onSaved={() => { setShowCreate(null); loadAll() }}
+          otSettings={otSettings}
         />
       )}
       {showAutoAssign && (
@@ -625,7 +701,7 @@ function ShiftDetail({shift,empName,siteName,canApprove,canPublish,canCreate,onC
 
 // ── Create Shift Modal ────────────────────────────────────────────────────────
 
-function CreateShiftModal({employees,sites,companyId,createdBy,prefillEmpId,prefillDate,onClose,onSaved}){
+function CreateShiftModal({employees,sites,companyId,createdBy,prefillEmpId,prefillDate,onClose,onSaved,otSettings}){
   const toast = useToast()
   const today=new Date().toISOString().split('T')[0]
   const prefillDateStr = prefillDate ? prefillDate.toISOString().split('T')[0] : today
@@ -633,6 +709,7 @@ function CreateShiftModal({employees,sites,companyId,createdBy,prefillEmpId,pref
   const [saving,setSaving]=useState(false)
   const [error,setError]=useState(null)
   const [conflict,setConflict]=useState(null)
+  const [otPending,setOtPending]=useState(null)
   const set=(k,v)=>setForm(f=>({...f,[k]:v}))
 
   useEffect(()=>{
@@ -648,15 +725,30 @@ function CreateShiftModal({employees,sites,companyId,createdBy,prefillEmpId,pref
       })
   },[form.employee_id,form.date,form.sh,form.sm,form.eh,form.em])
 
-  async function save(){
+  async function handleSave(){
     if(!form.employee_id||!form.site_id||!form.date){setError('Employee, site, and date are required.');return}
     setSaving(true);setError(null)
     const start=new Date(form.date+'T'+form.sh+':'+form.sm+':00')
     const end=new Date(form.date+'T'+form.eh+':'+form.em+':00')
     if(end<=start){setError('End time must be after start time.');setSaving(false);return}
-    const {error}=await supabase.from('shift').insert({company_id:companyId,employee_id:form.employee_id,site_id:form.site_id,start_time:start.toISOString(),end_time:end.toISOString(),role:form.role,is_armed:form.is_armed,notes:form.notes||null,status:'draft',created_by:createdBy})
+    if(otSettings?.ot_weekly_hours && otSettings?.ot_week_start!==undefined && form.employee_id){
+      try{
+        const otResult=await checkOT(form.employee_id,companyId,start,end,otSettings.ot_week_start,otSettings.ot_weekly_hours)
+        if(otResult.wouldExceed){setSaving(false);setOtPending(otResult);return}
+      }catch{}
+    }
+    await doSave(false,null)
+  }
+  async function doSave(logOT,otResult){
+    setSaving(true)
+    const start=new Date(form.date+'T'+form.sh+':'+form.sm+':00')
+    const end=new Date(form.date+'T'+form.eh+':'+form.em+':00')
+    const{data:newShift,error}=await supabase.from('shift').insert({company_id:companyId,employee_id:form.employee_id,site_id:form.site_id,start_time:start.toISOString(),end_time:end.toISOString(),role:form.role,is_armed:form.is_armed,notes:form.notes||null,status:'draft',created_by:createdBy}).select().single()
     if(error){setError(error.message);setSaving(false);return}
-    toast('Shift saved'); onSaved()
+    if(logOT&&otResult&&newShift){
+      await supabase.from('ot_override_log').insert({company_id:companyId,employee_id:form.employee_id,shift_id:newShift.id,week_start_date:otResult.weekStartDate,projected_hours:otResult.projectedHours,ot_threshold:otSettings.ot_weekly_hours,ot_hours:otResult.otHours,approved_by_employee_id:createdBy})
+    }
+    toast('Shift saved');onSaved()
   }
   const hrs=Array.from({length:24},(_,i)=>String(i).padStart(2,'0'))
   const mins=['00','15','30','45']
@@ -688,9 +780,15 @@ function CreateShiftModal({employees,sites,companyId,createdBy,prefillEmpId,pref
       </div>
       <div style={{padding:'16px 24px',borderTop:'1px solid var(--border)',display:'flex',gap:'10px',flexShrink:0}}>
         <button onClick={onClose} style={{flex:1,height:'44px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:'var(--text-secondary)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,cursor:'pointer'}}>CANCEL</button>
-        <button onClick={save} disabled={saving} style={{flex:2,height:'44px',background:saving?'var(--accent-dark)':'var(--accent)',border:'none',borderRadius:'var(--radius-md)',color:'var(--text-inverse)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,cursor:saving?'not-allowed':'pointer'}}>{saving?'SAVING...':'SAVE SHIFT'}</button>
+        <button onClick={handleSave} disabled={saving} style={{flex:2,height:'44px',background:saving?'var(--accent-dark)':'var(--accent)',border:'none',borderRadius:'var(--radius-md)',color:'var(--text-inverse)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,cursor:saving?'not-allowed':'pointer'}}>{saving?'SAVING...':'SAVE SHIFT'}</button>
       </div>
     </div>
+    {otPending&&<OTWarningModal
+      empName={(()=>{const e=employees.find(x=>x.id===form.employee_id);return e?`${e.first_name} ${e.last_name}`:'This employee'})()}
+      otData={otPending}
+      onCancel={()=>setOtPending(null)}
+      onOverride={()=>{const ot=otPending;setOtPending(null);doSave(true,ot)}}
+    />}
   </>
 }
 
@@ -1016,7 +1114,7 @@ function AutoAssignModal({ employees, sites, shifts, companyId, createdBy, onClo
 
 // ── Shift Bids Panel ──────────────────────────────────────────────────────────
 
-function ShiftBidsPanel({ companyId, profile, employees, sites, canPost }) {
+function ShiftBidsPanel({ companyId, profile, employees, sites, canPost, otSettings }) {
   const [bids, setBids]         = useState([])
   const [loading, setLoading]   = useState(true)
   const [showNew, setShowNew]   = useState(false)
@@ -1024,6 +1122,7 @@ function ShiftBidsPanel({ companyId, profile, employees, sites, canPost }) {
   const [saving, setSaving]     = useState(false)
   const [myEmpId, setMyEmpId]   = useState(null)
   const [applications, setApplications] = useState([])
+  const [otBidPending, setOtBidPending] = useState(null)
   const empMap  = Object.fromEntries(employees.map(e=>[e.id,`${e.first_name} ${e.last_name}`]))
   const siteMap = Object.fromEntries(sites.map(s=>[s.id,s.name]))
   const isOfficer = ['officer','corporal'].includes(profile?.role)
@@ -1046,7 +1145,20 @@ function ShiftBidsPanel({ companyId, profile, employees, sites, canPost }) {
   }
   async function applyBid(bidId) {
     if (!myEmpId) return
+    if(otSettings?.ot_weekly_hours && otSettings?.ot_week_start!==undefined){
+      const bid=bids.find(b=>b.id===bidId)
+      if(bid){
+        try{
+          const otResult=await checkOT(myEmpId,companyId,bid.start_time,bid.end_time,otSettings.ot_week_start,otSettings.ot_weekly_hours)
+          if(otResult.wouldExceed){setOtBidPending({bidId,otResult});return}
+        }catch{}
+      }
+    }
     await supabase.from('shift_bid_application').insert({ shift_bid_id:bidId, employee_id:myEmpId, company_id:companyId, status:'pending' }); load()
+  }
+  async function doApplyBid(bidId){
+    await supabase.from('shift_bid_application').insert({shift_bid_id:bidId,employee_id:myEmpId,company_id:companyId,status:'pending'})
+    setOtBidPending(null); load()
   }
   async function awardBid(bidId, empId) {
     await supabase.from('shift_bid').update({ status:'awarded' }).eq('id',bidId)
@@ -1114,6 +1226,12 @@ function ShiftBidsPanel({ companyId, profile, employees, sites, canPost }) {
           )
         })
       }
+      {otBidPending&&<OTWarningModal
+        empName={(()=>{const e=employees.find(x=>x.id===myEmpId);return e?`${e.first_name} ${e.last_name}`:'This officer'})()}
+        otData={otBidPending.otResult}
+        onCancel={()=>setOtBidPending(null)}
+        onOverride={()=>doApplyBid(otBidPending.bidId)}
+      />}
     </div>
   )
 }
