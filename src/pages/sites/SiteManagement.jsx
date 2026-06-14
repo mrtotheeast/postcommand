@@ -254,6 +254,11 @@ export default function SiteManagement() {
                     <Icon name="users" size={10} />{onDuty} ON DUTY
                   </span>
                 )}
+                {site.requires_dar && (
+                  <span style={{ ...s.pill, background:'rgba(91,159,224,0.12)', color:'#5b9fe0' }}>
+                    <Icon name="file-text" size={10} />DAR
+                  </span>
+                )}
                 {site.geofence_radius && (
                   <span style={{ ...s.pill, background:'var(--bg-surface)', color:'var(--text-muted)' }}>
                     <Icon name="radio" size={10} />{site.geofence_radius}m
@@ -331,7 +336,7 @@ export default function SiteManagement() {
 
 // ── Site Form Modal ──────────────────────────────────────────────────────────
 
-const EMPTY_FORM = { name:'', address:'', address_line_2:'', city:'', state:'DC', zip_code:'', description:'', contact_name:'', contact_phone:'', latitude:'', longitude:'', geofence_radius:150, is_active:true }
+const EMPTY_FORM = { name:'', address:'', address_line_2:'', city:'', state:'DC', zip_code:'', description:'', contact_name:'', contact_phone:'', latitude:'', longitude:'', geofence_radius:150, is_active:true, requires_dar:false }
 
 function SiteFormModal({ site, companyId, onClose, onSaved }) {
   const toast = useToast()
@@ -394,6 +399,7 @@ function SiteFormModal({ site, companyId, onClose, onSaved }) {
       longitude: form.longitude ? Number(form.longitude) : null,
       geofence_radius: Number(form.geofence_radius) || 150,
       is_active: form.is_active,
+      requires_dar: form.requires_dar ?? false,
     }
     let err
     if (site?.id) {
@@ -491,6 +497,10 @@ function SiteFormModal({ site, companyId, onClose, onSaved }) {
         <div style={{ display:'flex', alignItems:'center', gap:'10px', marginBottom:'4px' }}>
           <input type="checkbox" id="is_active" checked={form.is_active} onChange={e => setF('is_active', e.target.checked)} style={{ accentColor:'var(--accent)', width:'16px', height:'16px', cursor:'pointer' }} />
           <label htmlFor="is_active" style={{ fontSize:'13px', color:'var(--text-primary)', cursor:'pointer' }}>Site is active</label>
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap:'10px', marginBottom:'4px', marginTop:'8px' }}>
+          <input type="checkbox" id="requires_dar" checked={form.requires_dar ?? false} onChange={e => setF('requires_dar', e.target.checked)} style={{ accentColor:'var(--accent)', width:'16px', height:'16px', cursor:'pointer' }} />
+          <label htmlFor="requires_dar" style={{ fontSize:'13px', color:'var(--text-primary)', cursor:'pointer' }}>Requires Daily Activity Report</label>
         </div>
 
         <div style={s.sectionLbl}>Contact</div>

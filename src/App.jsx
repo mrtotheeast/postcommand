@@ -28,6 +28,8 @@ import Reports from './pages/reports/Reports'
 import Training from './pages/training/Training'
 import CCWMap from './pages/ccw/CCWMap'
 import Billing from './pages/billing/Billing'
+import DAR from './pages/dar/DAR'
+import Inbox from './pages/inbox/Inbox'
 import Archived from './pages/archived/Archived'
 import SuperAdmin from './pages/admin/SuperAdmin'
 import More from './pages/more/More'
@@ -154,6 +156,8 @@ export default function App() {
       <Route path="/messaging" element={<ProtectedRoute><Messaging /></ProtectedRoute>} />
       <Route path="/settings"   element={<ProtectedRoute><Settings /></ProtectedRoute>} />
       <Route path="/billing"    element={<ProtectedRoute><Billing /></ProtectedRoute>} />
+      <Route path="/dar"        element={<ProtectedRoute><DAR /></ProtectedRoute>} />
+      <Route path="/inbox"      element={<ProtectedRoute><Inbox /></ProtectedRoute>} />
       <Route path="/archived"   element={<ProtectedRoute><Archived /></ProtectedRoute>} />
       <Route path="/admin"      element={<ProtectedRoute><SuperAdmin /></ProtectedRoute>} />
       <Route path="/more"       element={<ProtectedRoute><More /></ProtectedRoute>} />

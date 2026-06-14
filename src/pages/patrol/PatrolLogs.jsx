@@ -199,7 +199,7 @@ export default function PatrolLogs() {
         </div>
       </div>
       <p style={s.sub}>Start a patrol, log checkpoints, and view patrol history.</p>
-      {mainTab === 'analytics' && <PatrolAnalytics patrols={patrols} employees={employees} siteMap={siteMap} empMap={empMap} />}
+      {mainTab === 'analytics' && <PatrolAnalytics patrols={patrols} employees={Object.values(empMap)} siteMap={siteMap} empMap={empMap} />}
 
       <div style={s.stats}>
         {[
