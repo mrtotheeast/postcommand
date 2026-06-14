@@ -741,14 +741,24 @@ function CreateShiftModal({employees,sites,companyId,createdBy,prefillEmpId,pref
   }
   async function doSave(logOT,otResult){
     setSaving(true)
-    const start=new Date(form.date+'T'+form.sh+':'+form.sm+':00')
-    const end=new Date(form.date+'T'+form.eh+':'+form.em+':00')
-    const{data:newShift,error}=await supabase.from('shift').insert({company_id:companyId,employee_id:form.employee_id,site_id:form.site_id,start_time:start.toISOString(),end_time:end.toISOString(),role:form.role,is_armed:form.is_armed,notes:form.notes||null,status:'draft',created_by:createdBy}).select().single()
-    if(error){setError(error.message);setSaving(false);return}
-    if(logOT&&otResult&&newShift){
-      await supabase.from('ot_override_log').insert({company_id:companyId,employee_id:form.employee_id,shift_id:newShift.id,week_start_date:otResult.weekStartDate,projected_hours:otResult.projectedHours,ot_threshold:otSettings.ot_weekly_hours,ot_hours:otResult.otHours,approved_by_employee_id:createdBy})
+    try{
+      const start=new Date(form.date+'T'+form.sh+':'+form.sm+':00')
+      const end=new Date(form.date+'T'+form.eh+':'+form.em+':00')
+      const payload={company_id:companyId,employee_id:form.employee_id,site_id:form.site_id,start_time:start.toISOString(),end_time:end.toISOString(),role:form.role,is_armed:form.is_armed,notes:form.notes||null,status:'draft',created_by:createdBy}
+      // Only request the returned id when we need it for the override log — avoids SELECT RLS issues on plain saves
+      const q=logOT?supabase.from('shift').insert(payload).select('id').single():supabase.from('shift').insert(payload)
+      const{data:newShift,error}=await q
+      if(error){setError(error.message);setSaving(false);return}
+      if(logOT&&otResult&&newShift?.id){
+        try{
+          await supabase.from('ot_override_log').insert({company_id:companyId,employee_id:form.employee_id,shift_id:newShift.id,week_start_date:otResult.weekStartDate,projected_hours:otResult.projectedHours,ot_threshold:otSettings.ot_weekly_hours,ot_hours:otResult.otHours,approved_by_employee_id:createdBy})
+        }catch{}
+      }
+      toast('Shift saved');onSaved()
+    }catch(err){
+      setError(err?.message||'Failed to save shift.')
+      setSaving(false)
     }
-    toast('Shift saved');onSaved()
   }
   const hrs=Array.from({length:24},(_,i)=>String(i).padStart(2,'0'))
   const mins=['00','15','30','45']
