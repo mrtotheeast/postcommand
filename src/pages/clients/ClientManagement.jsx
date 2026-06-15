@@ -315,10 +315,10 @@ function ClientFormModal({ client, companyId, onClose, onSaved }) {
       const { error: contactErr } = await supabase.from('client_contact').insert({
         client_id: newClient.id,
         company_id: companyId,
-        name: form.contact_name.trim() || null,
+        full_name: form.contact_name.trim() || null,
         email: form.email.trim() || null,
         phone: form.phone.trim() || null,
-        is_primary: true,
+        is_main_contact: true,
       })
       if (contactErr) throw contactErr
 
