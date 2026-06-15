@@ -357,20 +357,7 @@ export default function Scheduling() {
             }
             setSelected(null); loadAll()
           }}
-          onDelete={async (id) => {
-            console.log('[ShiftDelete] deleting id:', id)
-            try {
-              const { error } = await supabase.from('shift').delete().eq('id', id)
-              console.log('[ShiftDelete] result error:', error)
-              if (error) { toast('Failed to delete shift', 'error'); return }
-              toast('Shift deleted')
-              setSelected(null)
-              loadAll()
-            } catch (err) {
-              console.error('[ShiftDelete] exception:', err)
-              toast('Failed to delete shift', 'error')
-            }
-          }}
+          onDeleted={() => { setSelected(null); loadAll() }}
         />
       )}
       {showCreate && (
@@ -695,9 +682,27 @@ function ShiftBlock({ shift, siteName, onClick, onCopy }) {
 
 // ── Shift Detail ──────────────────────────────────────────────────────────────
 
-function ShiftDetail({shift,empName,siteName,canApprove,canPublish,canCreate,onClose,onStatusChange,onDelete}){
+function ShiftDetail({shift,empName,siteName,canApprove,canPublish,canCreate,onClose,onStatusChange,onDeleted}){
   const ss=STATUS_STYLES[shift.status]||STATUS_STYLES.draft
   const [conf,setConf]=useState(false)
+  const [deleting,setDeleting]=useState(false)
+  const toast=useToast()
+  async function handleDelete(e){
+    e.stopPropagation()
+    console.log('[ShiftDetail] handleDelete shift.id:', shift.id)
+    setDeleting(true)
+    try {
+      const { error } = await supabase.from('shift').delete().eq('id', shift.id)
+      console.log('[ShiftDetail] delete result error:', error)
+      if (error) { toast('Failed to delete shift','error'); setDeleting(false); return }
+      toast('Shift deleted')
+      onDeleted?.()
+    } catch(err) {
+      console.error('[ShiftDetail] delete exception:', err)
+      toast('Failed to delete shift','error')
+      setDeleting(false)
+    }
+  }
   const dur=shift.start_time&&shift.end_time?((new Date(shift.end_time)-new Date(shift.start_time))/3600000).toFixed(1)+'h':'—'
   return <>
     <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:100,backdropFilter:'blur(2px)'}}/>
@@ -721,7 +726,7 @@ function ShiftDetail({shift,empName,siteName,canApprove,canPublish,canCreate,onC
         {canCreate&&shift.status!=='cancelled'&&(conf?
           <div style={{display:'flex',gap:'8px'}}>
             <button onClick={()=>setConf(false)} style={{flex:1,height:'44px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:'var(--text-secondary)',cursor:'pointer',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700}}>BACK</button>
-            <button onClick={()=>onDelete(shift.id)} style={{flex:1,height:'44px',background:'var(--color-danger-bg)',border:'1px solid rgba(224,85,85,0.3)',borderRadius:'var(--radius-md)',color:'var(--color-danger)',cursor:'pointer',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700}}>DELETE</button>
+            <button onClick={handleDelete} disabled={deleting} style={{flex:1,height:'44px',background:'var(--color-danger-bg)',border:'1px solid rgba(224,85,85,0.3)',borderRadius:'var(--radius-md)',color:'var(--color-danger)',cursor:deleting?'not-allowed':'pointer',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,opacity:deleting?0.7:1}}>{deleting?'DELETING...':'DELETE'}</button>
           </div>:
           <button onClick={()=>setConf(true)} style={{height:'44px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:'var(--text-muted)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}><Icon name="trash" size={15}/>DELETE SHIFT</button>
         )}
