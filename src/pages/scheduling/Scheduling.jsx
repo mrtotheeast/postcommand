@@ -678,7 +678,7 @@ function ShiftBlock({ shift, siteName, onClick, onCopy }) {
       )}
       {hover && onCopy && (
         <button onClick={e=>{e.stopPropagation();onCopy(shift)}} title="Copy to other days" style={{position:'absolute',top:'2px',right:'2px',background:'var(--accent)',border:'none',borderRadius:'3px',width:'18px',height:'18px',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',padding:0,flexShrink:0}}>
-          <Icon name="copy" size={10} color="var(--text-inverse)"/>
+          <Icon name="copy" size={12}/>
         </button>
       )}
     </div>

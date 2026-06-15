@@ -64,6 +64,7 @@ const paths = {
   "refresh-cw":"M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15",
   "play-circle":"M12 22a10 10 0 100-20 10 10 0 000 20zM10 8l6 4-6 4V8z",
   "external-link":"M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3",
+  copy:"M20 9h-9a2 2 0 00-2 2v9a2 2 0 002 2h9a2 2 0 002-2v-9a2 2 0 00-2-2zM5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1",
 }
 export default function Icon({ name, size=20, color, className, style, strokeWidth=1.8 }) {
   const d = paths[name]
