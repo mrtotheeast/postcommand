@@ -140,10 +140,10 @@ export const NAV_ITEMS = [
     { id:'billing',  label:'Billing',  path:'/billing',  icon:'credit-card', roles:['super_admin'], hideOnNative:true },
     { id:'admin',    label:'Platform',  path:'/admin',    icon:'globe',       roles:['super_admin'] },
     { id:'audit',    label:'Audit Log', path:'/audit',    icon:'archive',     roles:['super_admin','chief'] },
-    { id:'more',     label:'More',     path:'/more',     icon:'grid',    roles:['super_admin','chief'] },
     { id:'reviews',  label:'Reviews',  path:'/reviews',  icon:'star',    roles:['super_admin','chief','lieutenant'] },
     { id:'clients',  label:'Clients',  path:'/clients',  icon:'users',   roles:['super_admin','chief'] },
     { id:'settings', label:'Settings', path:'/settings', icon:'settings', roles:['super_admin','chief'], hideInSidebar:true },
+    { id:'more',     label:'More',     path:'/more',     icon:'grid',    roles:['super_admin','chief'] },
     { id:'help',     label:'Help',     path:'/help',     icon:'help-circle', roles:['super_admin','chief','lieutenant','sergeant','corporal','officer','hr','accounting','office_staff'] },
   ]},
 ]

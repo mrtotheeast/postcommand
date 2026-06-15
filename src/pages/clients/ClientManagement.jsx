@@ -47,13 +47,13 @@ export default function ClientManagement() {
   async function load() {
     setLoading(true)
     const [{ data:cl }, { data:si }] = await Promise.all([
-      supabase.from('client').select('*').eq('company_id',profile.company_id).order('company_name'),
+      supabase.from('client').select('*').eq('company_id',profile.company_id).order('name'),
       supabase.from('site').select('id,name,client_id').eq('company_id',profile.company_id),
     ])
     setClients(cl||[]); setSites(si||[]); setLoading(false)
   }
 
-  const filtered = useMemo(() => clients.filter(c => !search || c.company_name?.toLowerCase().includes(search.toLowerCase()) || c.contact_name?.toLowerCase().includes(search.toLowerCase())), [clients,search])
+  const filtered = useMemo(() => clients.filter(c => !search || c.name?.toLowerCase().includes(search.toLowerCase())), [clients,search])
 
   const clientSites = (id) => sites.filter(s=>s.client_id===id)
 
@@ -74,10 +74,10 @@ export default function ClientManagement() {
           <tbody>
             {filtered.map(c => {
               const cnt = clientSites(c.id).length
-              const st  = CONTRACT_STATUS[c.contract_status||'active']
+              const st  = CONTRACT_STATUS[c.status||'active']
               return (
                 <tr key={c.id} style={s.tr} onClick={()=>{setSelected(c);setPanelTab('overview')}} onMouseEnter={e=>e.currentTarget.style.background='var(--bg-card-hover)'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
-                  <td style={s.tdName}>{c.company_name||'—'}</td>
+                  <td style={s.tdName}>{c.name||'—'}</td>
                   <td style={s.td}>{c.contact_name||'—'}</td>
                   <td style={s.td}>{c.phone||'—'}</td>
                   <td style={s.td}>{c.email||'—'}</td>
@@ -100,8 +100,8 @@ export default function ClientManagement() {
           <div style={s.panel}>
             <div style={s.panelHead}>
               <div>
-                <div style={{fontFamily:'var(--font-display)',fontSize:'18px',letterSpacing:'2px',color:'var(--text-primary)',lineHeight:1}}>{selected.company_name}</div>
-                <div style={{fontSize:'12px',color:'var(--text-muted)',marginTop:'2px'}}>{selected.contact_name} · {clientSites(selected.id).length} sites</div>
+                <div style={{fontFamily:'var(--font-display)',fontSize:'18px',letterSpacing:'2px',color:'var(--text-primary)',lineHeight:1}}>{selected.name}</div>
+                <div style={{fontSize:'12px',color:'var(--text-muted)',marginTop:'2px'}}>{clientSites(selected.id).length} sites</div>
               </div>
               <button onClick={()=>setSelected(null)} style={{background:'transparent',border:'none',color:'var(--text-muted)',cursor:'pointer',display:'flex',minHeight:'44px',minWidth:'44px',alignItems:'center',justifyContent:'center'}}><Icon name="x" size={18}/></button>
             </div>
@@ -126,12 +126,9 @@ export default function ClientManagement() {
 
 function ClientOverview({ client, sites }) {
   const fields = [
-    {l:'Company',    v:client.company_name},
-    {l:'Contact',    v:client.contact_name},
-    {l:'Email',      v:client.email},
-    {l:'Phone',      v:client.phone},
-    {l:'Address',    v:client.address},
-    {l:'Contract',   v:client.contract_status?.toUpperCase()},
+    {l:'Company',    v:client.name},
+    {l:'Address',    v:client.billing_address},
+    {l:'Contract',   v:client.status?.toUpperCase()},
     {l:'Notes',      v:client.notes},
   ]
   return (
@@ -269,7 +266,7 @@ function ClientFormModal({ client, companyId, onClose, onSaved }) {
   // step is only used in create mode: 'client' | 'site' | 'done'
   const [step, setStep] = useState('client')
   const [form, setForm] = useState(client
-    ? { company_name:client.company_name||'', contact_name:client.contact_name||'', phone:client.phone||'', email:client.email||'', address:client.address||'', contract_status:client.contract_status||'active', notes:client.notes||'' }
+    ? { company_name:client.name||'', contact_name:'', phone:'', email:'', address:client.billing_address||'', contract_status:client.status||'active', notes:client.notes||'' }
     : { company_name:'', contact_name:'', phone:'', email:'', address:'', contract_status:'active', notes:'' })
   const [site, setSite] = useState({ name:'', address:'', city:'', state:'', latitude:'', longitude:'', geofence_feet:'500' })
   const [saving, setSaving] = useState(false)
