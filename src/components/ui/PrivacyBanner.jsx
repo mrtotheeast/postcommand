@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { openBrowser } from '../../lib/platform'
 
-const STORAGE_KEY = 'pc-privacy-accepted'
+const STORAGE_KEY = 'pc-privacy-dismissed'
 const PRIVACY_URL = 'https://www.nationwidepolice.com/post-command'
 
 export default function PrivacyBanner() {
@@ -12,7 +12,7 @@ export default function PrivacyBanner() {
   }, [])
 
   function accept() {
-    localStorage.setItem(STORAGE_KEY, '1')
+    localStorage.setItem(STORAGE_KEY, 'true')
     setVisible(false)
   }
 
@@ -57,7 +57,7 @@ export default function PrivacyBanner() {
           flexShrink: 0,
         }}
       >
-        Got It
+        Got It — Don't Show Again
       </button>
     </div>
   )
