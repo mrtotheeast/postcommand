@@ -50,7 +50,7 @@ async function checkOT(employeeId, companyId, shiftStart, shiftEnd, weekStartDay
 
   const newShiftHours = (new Date(shiftEnd) - new Date(shiftStart)) / 3600000
   const projectedHours = currentHours + newShiftHours
-  const wouldExceed = projectedHours >= otThreshold
+  const wouldExceed = projectedHours > otThreshold
   const otHours = Math.max(0, projectedHours - otThreshold)
   return { wouldExceed, currentHours, newShiftHours, projectedHours, otHours, weekStartDate: weekStart.toISOString().split('T')[0] }
 }
@@ -129,6 +129,7 @@ export default function Scheduling() {
   const [selPositions, setSelPositions] = useState(new Set())
   const [selSites, setSelSites]         = useState(new Set())
   const [otSettings, setOtSettings]     = useState(null)
+  const [copyShift, setCopyShift]        = useState(null)
 
   const canCreate  = atLeast(profile?.role, 'sergeant')
   const canApprove = atLeast(profile?.role, 'lieutenant')
@@ -327,6 +328,7 @@ export default function Scheduling() {
                 onCellClick={(emp, date) => setShowCreate({ prefillEmp: emp.id, prefillDate: date })}
                 siteName={siteName}
                 viewWeeks={viewWeeks}
+                onCopyShift={setCopyShift}
               />
             )}
           </>
@@ -370,8 +372,10 @@ export default function Scheduling() {
           createdBy={creatorEmpId}
           prefillEmpId={showCreate?.prefillEmp}
           prefillDate={showCreate?.prefillDate}
+          prefillSiteId={selSites.size===1?[...selSites][0]:''}
           onClose={() => setShowCreate(null)}
           onSaved={() => { setShowCreate(null); loadAll() }}
+          onRefresh={loadAll}
           otSettings={otSettings}
         />
       )}
@@ -384,6 +388,18 @@ export default function Scheduling() {
           createdBy={creatorEmpId}
           onClose={() => setShowAutoAssign(false)}
           onSaved={() => { setShowAutoAssign(false); loadAll() }}
+        />
+      )}
+      {copyShift && (
+        <CopyShiftModal
+          shift={copyShift}
+          shifts={shifts}
+          companyId={profile.company_id}
+          createdBy={creatorEmpId}
+          otSettings={otSettings}
+          empName={empName(copyShift.employee_id)}
+          onClose={() => setCopyShift(null)}
+          onSaved={() => { setCopyShift(null); loadAll() }}
         />
       )}
     </div>
@@ -473,7 +489,7 @@ function FilterSidebar({ positions, sites, activeSiteIds, selPositions, selSites
 
 const EMP_COL = 224
 
-function StaffingGrid({ dates, employees, allEmployees, shifts, sites, today, canCreate, onSelectShift, onCellClick, siteName, viewWeeks }) {
+function StaffingGrid({ dates, employees, allEmployees, shifts, sites, today, canCreate, onSelectShift, onCellClick, siteName, viewWeeks, onCopyShift }) {
   const dayColMin = viewWeeks === 1 ? 140 : viewWeeks === 2 ? 110 : 84
 
   function getEmpDayShifts(empId, date) {
@@ -596,7 +612,7 @@ function StaffingGrid({ dates, employees, allEmployees, shifts, sites, today, ca
                         <div style={{minHeight:'48px', display:'flex', alignItems:'center', justifyContent:'center', color:'var(--accent)', fontSize:'20px', opacity:0.15, pointerEvents:'none'}}>+</div>
                       )}
                       {dayShifts.map(s => (
-                        <ShiftBlock key={s.id} shift={s} siteName={siteName} onClick={e => { e.stopPropagation(); onSelectShift(s) }}/>
+                        <ShiftBlock key={s.id} shift={s} siteName={siteName} onClick={e => { e.stopPropagation(); onSelectShift(s) }} onCopy={canCreate?onCopyShift:null}/>
                       ))}
                     </td>
                   )
@@ -632,7 +648,7 @@ function StaffingGrid({ dates, employees, allEmployees, shifts, sites, today, ca
 
 // ── Shift Block ───────────────────────────────────────────────────────────────
 
-function ShiftBlock({ shift, siteName, onClick }) {
+function ShiftBlock({ shift, siteName, onClick, onCopy }) {
   const ss = STATUS_STYLES[shift.status] || STATUS_STYLES.draft
   const site = (siteName(shift.site_id) || '').slice(0, 5).toUpperCase()
   const [hover, setHover] = useState(false)
@@ -642,6 +658,7 @@ function ShiftBlock({ shift, siteName, onClick }) {
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       style={{
+        position: 'relative',
         background: hover ? 'var(--bg-surface)' : 'var(--bg-card)',
         border: `1px solid ${hover ? 'var(--accent)' : 'var(--accent-border)'}`,
         borderLeft: '3px solid var(--accent)',
@@ -657,6 +674,11 @@ function ShiftBlock({ shift, siteName, onClick }) {
       <div style={{fontSize:'10px', color:'var(--text-muted)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', marginTop:'1px'}}>{site || '—'}</div>
       {shift.status !== 'draft' && (
         <div style={{fontSize:'8px', color:ss.color, fontFamily:'var(--font-condensed)', fontWeight:700, letterSpacing:'0.5px', marginTop:'2px'}}>{ss.label.toUpperCase()}</div>
+      )}
+      {hover && onCopy && (
+        <button onClick={e=>{e.stopPropagation();onCopy(shift)}} title="Copy to other days" style={{position:'absolute',top:'2px',right:'2px',background:'var(--accent)',border:'none',borderRadius:'3px',width:'18px',height:'18px',display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',padding:0,flexShrink:0}}>
+          <Icon name="copy" size={10} color="var(--text-inverse)"/>
+        </button>
       )}
     </div>
   )
@@ -701,15 +723,16 @@ function ShiftDetail({shift,empName,siteName,canApprove,canPublish,canCreate,onC
 
 // ── Create Shift Modal ────────────────────────────────────────────────────────
 
-function CreateShiftModal({employees,sites,companyId,createdBy,prefillEmpId,prefillDate,onClose,onSaved,otSettings}){
+function CreateShiftModal({employees,sites,companyId,createdBy,prefillEmpId,prefillDate,prefillSiteId,onClose,onSaved,onRefresh,otSettings}){
   const toast = useToast()
   const today=new Date().toISOString().split('T')[0]
   const prefillDateStr = prefillDate ? prefillDate.toISOString().split('T')[0] : today
-  const [form,setForm]=useState({employee_id:prefillEmpId||'',site_id:'',date:prefillDateStr,sh:'08',sm:'00',eh:'16',em:'00',role:'officer',is_armed:false,notes:''})
+  const [form,setForm]=useState({employee_id:prefillEmpId||'',site_id:prefillSiteId||'',date:prefillDateStr,sh:'08',sm:'00',eh:'16',em:'00',role:'officer',is_armed:false,notes:''})
   const [saving,setSaving]=useState(false)
   const [error,setError]=useState(null)
   const [conflict,setConflict]=useState(null)
   const [otPending,setOtPending]=useState(null)
+  const [addAnotherMode,setAddAnotherMode]=useState(false)
   const set=(k,v)=>setForm(f=>({...f,[k]:v}))
 
   useEffect(()=>{
@@ -754,7 +777,9 @@ function CreateShiftModal({employees,sites,companyId,createdBy,prefillEmpId,pref
           await supabase.from('ot_override_log').insert({company_id:companyId,employee_id:form.employee_id,shift_id:newShift.id,week_start_date:otResult.weekStartDate,projected_hours:otResult.projectedHours,ot_threshold:otSettings.ot_weekly_hours,ot_hours:otResult.otHours,approved_by_employee_id:createdBy})
         }catch{}
       }
-      toast('Shift saved');onSaved()
+      toast('Shift saved')
+      setAddAnotherMode(true)
+      onRefresh?.()
     }catch(err){
       setError(err?.message||'Failed to save shift.')
       setSaving(false)
@@ -788,16 +813,178 @@ function CreateShiftModal({employees,sites,companyId,createdBy,prefillEmpId,pref
         </div>
         <div><label style={lbl}>Notes (optional)</label><textarea value={form.notes} onChange={e=>set('notes',e.target.value)} rows={3} placeholder="Special instructions..." style={{...inp,height:'auto',resize:'vertical',lineHeight:1.5}}/></div>
       </div>
-      <div style={{padding:'16px 24px',borderTop:'1px solid var(--border)',display:'flex',gap:'10px',flexShrink:0}}>
-        <button onClick={onClose} style={{flex:1,height:'44px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:'var(--text-secondary)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,cursor:'pointer'}}>CANCEL</button>
-        <button onClick={handleSave} disabled={saving} style={{flex:2,height:'44px',background:saving?'var(--accent-dark)':'var(--accent)',border:'none',borderRadius:'var(--radius-md)',color:'var(--text-inverse)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,cursor:saving?'not-allowed':'pointer'}}>{saving?'SAVING...':'SAVE SHIFT'}</button>
-      </div>
+      {addAnotherMode?(
+        <div style={{padding:'16px 24px',borderTop:'1px solid var(--border)',display:'flex',gap:'10px',flexShrink:0,alignItems:'center'}}>
+          <div style={{flex:1,display:'flex',alignItems:'center',gap:'6px',color:'var(--color-success)',fontSize:'12px',fontFamily:'var(--font-condensed)',fontWeight:700,letterSpacing:'0.5px'}}><Icon name="check-circle" size={14} color="var(--color-success)"/>SAVED</div>
+          <button onClick={onSaved} style={{height:'44px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:'var(--text-secondary)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,cursor:'pointer',padding:'0 20px'}}>DONE</button>
+          <button onClick={()=>{setForm(f=>({employee_id:f.employee_id,site_id:f.site_id,date:f.date,sh:'08',sm:'00',eh:'16',em:'00',role:'officer',is_armed:false,notes:''}));setAddAnotherMode(false);setError(null);setConflict(null)}} style={{height:'44px',background:'var(--accent)',border:'none',borderRadius:'var(--radius-md)',color:'var(--text-inverse)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,cursor:'pointer',padding:'0 20px'}}>ADD ANOTHER</button>
+        </div>
+      ):(
+        <div style={{padding:'16px 24px',borderTop:'1px solid var(--border)',display:'flex',gap:'10px',flexShrink:0}}>
+          <button onClick={onClose} style={{flex:1,height:'44px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:'var(--text-secondary)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,cursor:'pointer'}}>CANCEL</button>
+          <button onClick={handleSave} disabled={saving} style={{flex:2,height:'44px',background:saving?'var(--accent-dark)':'var(--accent)',border:'none',borderRadius:'var(--radius-md)',color:'var(--text-inverse)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,cursor:saving?'not-allowed':'pointer'}}>{saving?'SAVING...':'SAVE SHIFT'}</button>
+        </div>
+      )}
     </div>
     {otPending&&<OTWarningModal
       empName={(()=>{const e=employees.find(x=>x.id===form.employee_id);return e?`${e.first_name} ${e.last_name}`:'This employee'})()}
       otData={otPending}
       onCancel={()=>setOtPending(null)}
       onOverride={()=>{const ot=otPending;setOtPending(null);doSave(true,ot)}}
+    />}
+  </>
+}
+
+// ── Copy Shift Modal ──────────────────────────────────────────────────────────
+
+function CopyShiftModal({ shift, shifts, companyId, createdBy, otSettings, empName, onClose, onSaved }) {
+  const toast = useToast()
+  const [selectedDays, setSelectedDays] = useState(new Set())
+  const [saving, setSaving] = useState(false)
+  const [otPending, setOtPending] = useState(null)
+
+  // 7 days of the week containing the original shift (Sun-Sat)
+  const weekDays = useMemo(() => {
+    const d = new Date(shift.start_time)
+    d.setHours(0, 0, 0, 0)
+    d.setDate(d.getDate() - d.getDay())
+    return Array.from({length:7}, (_, i) => { const day=new Date(d); day.setDate(d.getDate()+i); return day })
+  }, [shift.start_time])
+
+  // Days where this employee already has any non-cancelled shift
+  const occupiedKeys = useMemo(() => {
+    const s = new Set()
+    shifts.forEach(sh => {
+      if (sh.employee_id === shift.employee_id && sh.status !== 'cancelled')
+        s.add(new Date(sh.start_time).toDateString())
+    })
+    return s
+  }, [shifts, shift.employee_id])
+
+  const shiftDuration = (new Date(shift.end_time) - new Date(shift.start_time)) / 3600000
+
+  function toggleDay(d) {
+    const k = d.toDateString()
+    setSelectedDays(prev => { const n=new Set(prev); n.has(k)?n.delete(k):n.add(k); return n })
+  }
+
+  async function batchOTCheck(selDateObjs) {
+    if (!otSettings?.ot_weekly_hours || otSettings?.ot_week_start === undefined) return { wouldExceed: false }
+    const weekStartDay = otSettings.ot_week_start
+    const threshold = otSettings.ot_weekly_hours
+    const weekGroups = new Map()
+    for (const date of selDateObjs) {
+      const daysBack = (date.getDay() - weekStartDay + 7) % 7
+      const ws = new Date(date); ws.setDate(date.getDate() - daysBack); ws.setHours(0,0,0,0)
+      const k = ws.getTime()
+      if (!weekGroups.has(k)) weekGroups.set(k, { ws, count: 0 })
+      weekGroups.get(k).count++
+    }
+    let worst = null
+    for (const { ws, count } of weekGroups.values()) {
+      const we = new Date(ws); we.setDate(ws.getDate() + 7)
+      const { data } = await supabase.from('shift').select('start_time,end_time')
+        .eq('company_id', companyId).eq('employee_id', shift.employee_id)
+        .neq('status', 'cancelled').gte('start_time', ws.toISOString()).lt('start_time', we.toISOString())
+      const currentHours = (data||[]).reduce((acc, s) =>
+        acc + (s.start_time&&s.end_time ? (new Date(s.end_time)-new Date(s.start_time))/3600000 : 0), 0)
+      const newHours = count * shiftDuration
+      const projected = currentHours + newHours
+      if (projected > threshold) {
+        const otH = projected - threshold
+        if (!worst || otH > worst.otHours)
+          worst = { wouldExceed:true, currentHours, newShiftHours:newHours, projectedHours:projected, otHours:otH, weekStartDate:ws.toISOString().split('T')[0] }
+      }
+    }
+    return worst || { wouldExceed: false }
+  }
+
+  async function handleSave() {
+    if (selectedDays.size === 0) return
+    setSaving(true)
+    try {
+      const selDateObjs = weekDays.filter(d => selectedDays.has(d.toDateString()))
+      const otResult = await batchOTCheck(selDateObjs)
+      if (otResult.wouldExceed) { setSaving(false); setOtPending(otResult); return }
+      await doSaveCopies(selDateObjs)
+    } catch { setSaving(false) }
+  }
+
+  async function doSaveCopies(selDateObjs) {
+    setSaving(true)
+    try {
+      const origStart = new Date(shift.start_time)
+      const origEnd   = new Date(shift.end_time)
+      const sh = String(origStart.getHours()).padStart(2,'0')
+      const sm = String(origStart.getMinutes()).padStart(2,'0')
+      const eh = String(origEnd.getHours()).padStart(2,'0')
+      const em = String(origEnd.getMinutes()).padStart(2,'0')
+      const rows = (selDateObjs || weekDays.filter(d => selectedDays.has(d.toDateString()))).map(date => {
+        const ds = date.toISOString().split('T')[0]
+        return {
+          company_id: companyId, employee_id: shift.employee_id, site_id: shift.site_id,
+          start_time: new Date(`${ds}T${sh}:${sm}:00`).toISOString(),
+          end_time:   new Date(`${ds}T${eh}:${em}:00`).toISOString(),
+          role: shift.role, is_armed: shift.is_armed, notes: shift.notes||null,
+          status: 'draft', created_by: createdBy,
+        }
+      })
+      const { error } = await supabase.from('shift').insert(rows)
+      if (error) throw error
+      toast(`${rows.length} shift${rows.length!==1?'s':''} copied`)
+      onSaved()
+    } catch (err) {
+      toast('Failed to copy shifts', 'error')
+      setSaving(false)
+    }
+  }
+
+  const origDateKey = new Date(shift.start_time).toDateString()
+
+  return <>
+    <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:250,backdropFilter:'blur(2px)'}}/>
+    <div style={{position:'fixed',top:'50%',left:'50%',transform:'translate(-50%,-50%)',width:'min(360px,95vw)',background:'var(--bg-surface)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-lg)',zIndex:251,display:'flex',flexDirection:'column',boxShadow:'var(--shadow-modal)'}}>
+      <div style={{padding:'16px 20px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
+        <div style={{fontFamily:'var(--font-display)',fontSize:'16px',letterSpacing:'2px',color:'var(--text-primary)'}}>COPY SHIFT</div>
+        <button onClick={onClose} style={{background:'transparent',border:'none',color:'var(--text-muted)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',minHeight:'44px',minWidth:'44px'}}><Icon name="x" size={18}/></button>
+      </div>
+      <div style={{padding:'16px 20px'}}>
+        <div style={{fontSize:'12px',color:'var(--text-muted)',marginBottom:'14px'}}>
+          Select days to copy {empName}'s {fmt12(shift.start_time)}–{fmt12(shift.end_time)} shift to
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:'4px',marginBottom:'14px'}}>
+          {weekDays.map((d, i) => {
+            const k = d.toDateString()
+            const isOrig = k === origDateKey
+            const isOccupied = occupiedKeys.has(k)
+            const disabled = isOrig || isOccupied
+            const isSelected = selectedDays.has(k)
+            return (
+              <div key={i} onClick={() => !disabled && toggleDay(d)} style={{textAlign:'center',padding:'8px 2px',borderRadius:'6px',cursor:disabled?'default':'pointer',background:isSelected?'var(--accent)':disabled?'var(--bg-card)':'var(--bg-card)',border:isOrig?'1px solid var(--accent-border)':'1px solid var(--border-subtle)',opacity:disabled?0.35:1,transition:'all 100ms',userSelect:'none'}}>
+                <div style={{fontSize:'9px',color:isSelected?'rgba(255,255,255,0.8)':'var(--text-muted)',fontFamily:'var(--font-condensed)',letterSpacing:'0.5px',textTransform:'uppercase'}}>{DAYS_SHORT[d.getDay()]}</div>
+                <div style={{fontSize:'15px',fontFamily:'var(--font-display)',fontWeight:700,color:isSelected?'#fff':isOrig?'var(--accent)':'var(--text-primary)',lineHeight:1.3}}>{d.getDate()}</div>
+              </div>
+            )
+          })}
+        </div>
+        {selectedDays.size > 0 && (
+          <div style={{fontSize:'11px',color:'var(--text-muted)',textAlign:'center',fontFamily:'var(--font-condensed)',letterSpacing:'0.5px'}}>
+            {selectedDays.size} DAY{selectedDays.size!==1?'S':''} SELECTED
+          </div>
+        )}
+      </div>
+      <div style={{padding:'12px 20px 16px',borderTop:'1px solid var(--border)',display:'flex',gap:'10px',flexShrink:0}}>
+        <button onClick={onClose} style={{flex:1,height:'44px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:'var(--text-secondary)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,cursor:'pointer'}}>CANCEL</button>
+        <button onClick={handleSave} disabled={!selectedDays.size||saving} style={{flex:2,height:'44px',background:(!selectedDays.size||saving)?'var(--accent-dark)':'var(--accent)',border:'none',borderRadius:'var(--radius-md)',color:'var(--text-inverse)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,cursor:(!selectedDays.size||saving)?'not-allowed':'pointer',opacity:!selectedDays.size?0.5:1}}>
+          {saving?'COPYING...':`COPY TO ${selectedDays.size||0} DAY${selectedDays.size!==1?'S':''}`}
+        </button>
+      </div>
+    </div>
+    {otPending && <OTWarningModal
+      empName={empName}
+      otData={otPending}
+      onCancel={() => setOtPending(null)}
+      onOverride={() => { const sd=weekDays.filter(d=>selectedDays.has(d.toDateString())); setOtPending(null); doSaveCopies(sd) }}
     />}
   </>
 }
