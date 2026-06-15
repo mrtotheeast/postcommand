@@ -778,6 +778,7 @@ function CreateShiftModal({employees,sites,companyId,createdBy,prefillEmpId,pref
         }catch{}
       }
       toast('Shift saved')
+      setSaving(false)
       setAddAnotherMode(true)
       onRefresh?.()
     }catch(err){
