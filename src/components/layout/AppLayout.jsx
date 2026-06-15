@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useTheme } from '../../context/ThemeContext'
@@ -104,7 +104,13 @@ export default function AppLayout({ children }) {
     return badges[map[item.id]] || 0
   }
 
-  const SidebarContent = () => (
+  const SidebarContent = () => {
+    const navRef = useRef(null)
+    useLayoutEffect(() => {
+      const saved = localStorage.getItem('pc-sidebar-scroll')
+      if (saved && navRef.current) navRef.current.scrollTop = parseInt(saved, 10)
+    }, [])
+    return (
     <>
       <div style={s.logoBar}>
         <img src="/app-icon-transparent.png" alt="" style={{width:'36px',height:'36px',objectFit:'contain',marginBottom:'6px',display:'block'}}/>
@@ -121,7 +127,7 @@ export default function AppLayout({ children }) {
           </div>
         )}
       </div>
-      <nav style={s.nav}>
+      <nav ref={navRef} style={s.nav} onScroll={e => localStorage.setItem('pc-sidebar-scroll', String(e.currentTarget.scrollTop))}>
         {visibleSections.map(sec => {
           const isExpanded = expandedSections[sec.section] !== false
           return (
@@ -178,7 +184,8 @@ export default function AppLayout({ children }) {
         )}
       </div>
     </>
-  )
+    )
+  }
 
   return (
     <div style={s.shell}>
