@@ -37,6 +37,7 @@ export function AuthProvider({ children }) {
   const isNPS = profile?.company_id === NPS_COMPANY_ID
 
   async function loadProfile(userId, sessionUser) {
+    console.log('[Auth] loadProfile called — userId:', userId, 'email:', sessionUser?.email)
     try {
       // Use the already-resolved session user — avoids a getUser() network call
       // that can hang on hard refresh and leave loading=true forever.
@@ -47,6 +48,8 @@ export function AuthProvider({ children }) {
         .select('*, company(role_style, custom_titles, custom_ranks, name)')
         .eq('id', userId)
         .single()
+
+      console.log('[Auth] user_profile row:', JSON.stringify(profile))
 
       if (profile) {
         // Backfill name from employee record if missing
@@ -66,6 +69,21 @@ export function AuthProvider({ children }) {
             profile.first_name = emp.first_name
             profile.last_name  = emp.last_name  || profile.last_name
             if (emp.company_id && !profile.company_id) profile.company_id = emp.company_id
+          }
+        }
+
+        // Guard: if company_id is still null, fetch it from employee regardless of first_name
+        if (!profile.company_id && user?.email) {
+          console.log('[Auth] profile.company_id is null — querying employee for company_id')
+          const { data: emp } = await supabase
+            .from('employee')
+            .select('company_id')
+            .eq('email', user.email)
+            .maybeSingle()
+          if (emp?.company_id) {
+            console.log('[Auth] backfilling company_id from employee:', emp.company_id)
+            await supabase.from('user_profile').update({ company_id: emp.company_id }).eq('id', userId)
+            profile.company_id = emp.company_id
           }
         }
       } else {
@@ -109,10 +127,11 @@ export function AuthProvider({ children }) {
         }
       }
 
+      console.log('[Auth] setProfile — id:', profile?.id, 'company_id:', profile?.company_id, 'role:', profile?.role, 'full:', JSON.stringify(profile))
       setProfile(profile)
       if (profile?.id) loadViewAs(profile.id)
-    } catch {
-      // silent
+    } catch (err) {
+      console.error('[Auth] loadProfile error:', err)
     } finally {
       clearTimeout(loadingTimeoutRef.current)
       setLoading(false)
@@ -136,6 +155,7 @@ export function AuthProvider({ children }) {
     // getUser() would make a network round-trip that can hang on hard refresh.
     supabase.auth.getSession()
       .then(({ data: { session } }) => {
+        console.log('[Auth] getSession result — userId:', session?.user?.id || 'none', 'email:', session?.user?.email || 'none')
         if (session?.user) {
           setUser(session.user)
           loadProfile(session.user.id, session.user)
@@ -155,8 +175,10 @@ export function AuthProvider({ children }) {
         setProfile(null)
         setLoading(false)
       } else if (event === 'SIGNED_IN' && session?.user) {
+        console.log('[Auth] SIGNED_IN event — userId:', session.user.id, 'email:', session.user.email)
         setUser(session.user)
         await loadProfile(session.user.id, session.user)
+        console.log('[Auth] SIGNED_IN — loadProfile resolved')
         // On magic link login: mark employee record as having app access
         const meta = session.user.user_metadata
         if (meta?.company_id && session.user.email) {
