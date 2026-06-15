@@ -358,10 +358,18 @@ export default function Scheduling() {
             setSelected(null); loadAll()
           }}
           onDelete={async (id) => {
-            const { error } = await supabase.from('shift').delete().eq('id',id).eq('company_id',profile.company_id)
-            if (error) { toast('Failed to delete shift','error'); return }
-            toast('Shift deleted','info')
-            setSelected(null); loadAll()
+            console.log('[ShiftDelete] deleting id:', id)
+            try {
+              const { error } = await supabase.from('shift').delete().eq('id', id)
+              console.log('[ShiftDelete] result error:', error)
+              if (error) { toast('Failed to delete shift', 'error'); return }
+              toast('Shift deleted')
+              setSelected(null)
+              loadAll()
+            } catch (err) {
+              console.error('[ShiftDelete] exception:', err)
+              toast('Failed to delete shift', 'error')
+            }
           }}
         />
       )}
