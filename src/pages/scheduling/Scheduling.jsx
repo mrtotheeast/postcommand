@@ -358,7 +358,8 @@ export default function Scheduling() {
             setSelected(null); loadAll()
           }}
           onDelete={async (id) => {
-            await supabase.from('shift').delete().eq('id',id)
+            const { error } = await supabase.from('shift').delete().eq('id',id).eq('company_id',profile.company_id)
+            if (error) { toast('Failed to delete shift','error'); return }
             toast('Shift deleted','info')
             setSelected(null); loadAll()
           }}
@@ -751,22 +752,24 @@ function CreateShiftModal({employees,sites,companyId,createdBy,prefillEmpId,pref
   async function handleSave(){
     if(!form.employee_id||!form.site_id||!form.date){setError('Employee, site, and date are required.');return}
     setSaving(true);setError(null)
+    // Compute start/end once here so doSave always uses the date that was
+    // visible when the user clicked Save — avoids any stale-closure mismatch
+    // when the component re-renders between the date change and the save.
     const start=new Date(form.date+'T'+form.sh+':'+form.sm+':00')
     const end=new Date(form.date+'T'+form.eh+':'+form.em+':00')
+    if(isNaN(start.getTime())||isNaN(end.getTime())){setError('Invalid date or time.');setSaving(false);return}
     if(end<=start){setError('End time must be after start time.');setSaving(false);return}
     if(otSettings?.ot_weekly_hours && otSettings?.ot_week_start!==undefined && form.employee_id){
       try{
         const otResult=await checkOT(form.employee_id,companyId,start,end,otSettings.ot_week_start,otSettings.ot_weekly_hours)
-        if(otResult.wouldExceed){setSaving(false);setOtPending(otResult);return}
-      }catch{}
+        if(otResult.wouldExceed){setSaving(false);setOtPending({result:otResult,start,end});return}
+      }catch{setSaving(false);return}
     }
-    await doSave(false,null)
+    await doSave(false,null,start,end)
   }
-  async function doSave(logOT,otResult){
+  async function doSave(logOT,otResult,start,end){
     setSaving(true)
     try{
-      const start=new Date(form.date+'T'+form.sh+':'+form.sm+':00')
-      const end=new Date(form.date+'T'+form.eh+':'+form.em+':00')
       const payload={company_id:companyId,employee_id:form.employee_id,site_id:form.site_id,start_time:start.toISOString(),end_time:end.toISOString(),role:form.role,is_armed:form.is_armed,notes:form.notes||null,status:'draft',created_by:createdBy}
       // Only request the returned id when we need it for the override log — avoids SELECT RLS issues on plain saves
       const q=logOT?supabase.from('shift').insert(payload).select('id').single():supabase.from('shift').insert(payload)
@@ -829,9 +832,9 @@ function CreateShiftModal({employees,sites,companyId,createdBy,prefillEmpId,pref
     </div>
     {otPending&&<OTWarningModal
       empName={(()=>{const e=employees.find(x=>x.id===form.employee_id);return e?`${e.first_name} ${e.last_name}`:'This employee'})()}
-      otData={otPending}
+      otData={otPending.result}
       onCancel={()=>setOtPending(null)}
-      onOverride={()=>{const ot=otPending;setOtPending(null);doSave(true,ot)}}
+      onOverride={()=>{const ot=otPending;setOtPending(null);doSave(true,ot.result,ot.start,ot.end)}}
     />}
   </>
 }
