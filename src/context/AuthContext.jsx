@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { subscribeToPush, requestNotificationPermission } from '../lib/pushNotifications'
 import { requestPushPermission } from '../lib/pushPermission'
@@ -12,6 +12,7 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
   const [viewRole, setViewRoleState] = useState(null)
+  const userRef = useRef(null)
 
   // Load persisted viewAs when profile is set
   function loadViewAs(profileId) {
@@ -114,6 +115,9 @@ export function AuthProvider({ children }) {
     }
   }
 
+  // Keep ref in sync so visibilitychange handler sees current user without stale closure
+  useEffect(() => { userRef.current = user }, [user])
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
@@ -141,10 +145,32 @@ export function AuthProvider({ children }) {
             .eq('company_id', meta.company_id)
             .then(() => {}).catch(() => {})
         }
+      } else if ((event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') && session?.user) {
+        // Silently update the user object with the refreshed token — no loading state change
+        setUser(session.user)
       }
     })
 
-    return () => subscription.unsubscribe()
+    // Recover session silently when the tab becomes visible again.
+    // Browsers throttle timers in background tabs so the Supabase auto-refresh
+    // may not have fired; calling getSession() forces an immediate check.
+    async function handleVisibility() {
+      if (document.visibilityState !== 'visible') return
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.user) {
+        setUser(session.user)
+      } else if (userRef.current) {
+        // Session expired while the tab was hidden — clear auth state
+        setUser(null)
+        setProfile(null)
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+
+    return () => {
+      subscription.unsubscribe()
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
   }, [])
 
   async function signIn(email, password) {
