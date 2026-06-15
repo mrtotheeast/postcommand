@@ -284,23 +284,43 @@ function ClientFormModal({ client, companyId, onClose, onSaved }) {
   async function saveEdit() {
     if (!form.company_name.trim()) return
     setSaving(true)
-    await supabase.from('client').update({ ...form }).eq('id', client.id)
+    await supabase.from('client').update({
+      name: form.company_name.trim(),
+      billing_address: form.address.trim() || null,
+      status: form.contract_status || 'active',
+      notes: form.notes.trim() || null,
+    }).eq('id', client.id)
     toast('Client saved')
     setSaving(false)
     onSaved()
   }
 
-  // Create mode — step 2: save client row then site row
+  // Create mode — step 2: save client row, contact row, then site row
   async function saveFull() {
     if (!site.name.trim()) return
     setSaving(true)
     try {
       const { data: newClient, error: clientErr } = await supabase
         .from('client')
-        .insert({ company_id: companyId, ...form })
+        .insert({
+          company_id: companyId,
+          name: form.company_name.trim(),
+          billing_address: form.address.trim() || null,
+          status: 'active',
+        })
         .select('id')
         .single()
       if (clientErr) throw clientErr
+
+      const { error: contactErr } = await supabase.from('client_contact').insert({
+        client_id: newClient.id,
+        company_id: companyId,
+        name: form.contact_name.trim() || null,
+        email: form.email.trim() || null,
+        phone: form.phone.trim() || null,
+        is_primary: true,
+      })
+      if (contactErr) throw contactErr
 
       // Convert feet → meters for storage
       const geofenceMeters = Math.round((Number(site.geofence_feet) || 500) * 0.3048)
