@@ -13,6 +13,7 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
   const [viewRole, setViewRoleState] = useState(null)
   const userRef = useRef(null)
+  const loadingTimeoutRef = useRef(null)
 
   // Load persisted viewAs when profile is set
   function loadViewAs(profileId) {
@@ -35,9 +36,11 @@ export function AuthProvider({ children }) {
   const effectiveRole = viewRole || profile?.role
   const isNPS = profile?.company_id === NPS_COMPANY_ID
 
-  async function loadProfile(userId) {
+  async function loadProfile(userId, sessionUser) {
     try {
-      const { data: { user } } = await supabase.auth.getUser()
+      // Use the already-resolved session user — avoids a getUser() network call
+      // that can hang on hard refresh and leave loading=true forever.
+      const user = sessionUser
 
       let { data: profile } = await supabase
         .from('user_profile')
@@ -111,6 +114,7 @@ export function AuthProvider({ children }) {
     } catch {
       // silent
     } finally {
+      clearTimeout(loadingTimeoutRef.current)
       setLoading(false)
     }
   }
@@ -119,14 +123,31 @@ export function AuthProvider({ children }) {
   useEffect(() => { userRef.current = user }, [user])
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        setUser(session.user)
-        loadProfile(session.user.id)
-      } else {
+    // Hard timeout — if anything in the initial auth check hangs for 8 seconds,
+    // force loading=false so the app falls through to the login screen instead of
+    // spinning forever. Cleared immediately in loadProfile's finally block on success.
+    loadingTimeoutRef.current = setTimeout(() => {
+      setLoading(false)
+      setUser(null)
+      setProfile(null)
+    }, 8000)
+
+    // getSession() resolves from the stored token — no network call required.
+    // getUser() would make a network round-trip that can hang on hard refresh.
+    supabase.auth.getSession()
+      .then(({ data: { session } }) => {
+        if (session?.user) {
+          setUser(session.user)
+          loadProfile(session.user.id, session.user)
+        } else {
+          clearTimeout(loadingTimeoutRef.current)
+          setLoading(false)
+        }
+      })
+      .catch(() => {
+        clearTimeout(loadingTimeoutRef.current)
         setLoading(false)
-      }
-    })
+      })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_OUT') {
@@ -135,7 +156,7 @@ export function AuthProvider({ children }) {
         setLoading(false)
       } else if (event === 'SIGNED_IN' && session?.user) {
         setUser(session.user)
-        await loadProfile(session.user.id)
+        await loadProfile(session.user.id, session.user)
         // On magic link login: mark employee record as having app access
         const meta = session.user.user_metadata
         if (meta?.company_id && session.user.email) {
@@ -168,6 +189,7 @@ export function AuthProvider({ children }) {
     document.addEventListener('visibilitychange', handleVisibility)
 
     return () => {
+      clearTimeout(loadingTimeoutRef.current)
       subscription.unsubscribe()
       document.removeEventListener('visibilitychange', handleVisibility)
     }
@@ -177,7 +199,7 @@ export function AuthProvider({ children }) {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) throw error
     setUser(data.user)
-    await loadProfile(data.user.id)
+    await loadProfile(data.user.id, data.user)
     // Register Capacitor push notifications (native only)
     registerPushNotifications(data.user.id, supabase).catch(() => {})
     // Request push permission — web VAPID path + native APNs path
