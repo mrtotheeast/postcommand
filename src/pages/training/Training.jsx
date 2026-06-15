@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { useNotifications } from '../../context/NotificationContext'
 import { supabase } from '../../lib/supabase'
@@ -72,32 +72,74 @@ export default function Training() {
   const [assignments, setAssignments] = useState([])
   const [employees, setEmployees]   = useState([])
   const [loading, setLoading]       = useState(true)
+  const [error, setError]           = useState(null)
+  const loadTimeoutRef              = useRef(null)
   const [editing, setEditing]       = useState(null)
   const [viewing, setViewing]       = useState(null)
   const [assigning, setAssigning]   = useState(null)
   const [search, setSearch]         = useState('')
 
-  useEffect(() => { if (profile?.company_id) load() }, [profile])
+  useEffect(() => {
+    if (profile?.company_id) load()
+    return () => clearTimeout(loadTimeoutRef.current)
+  }, [profile])
 
   async function load() {
     setLoading(true)
-    const [{ data: empData }, { data: allEmp }, { data: courseData }, { data: assignData }] = await Promise.all([
-      supabase.from('employee').select('id,first_name,last_name,role').eq('user_id', profile.id).single(),
-      supabase.from('employee').select('id,first_name,last_name,role,status').eq('company_id', profile.company_id).eq('status','active').order('last_name'),
-      supabase.from('training_course').select('*').eq('company_id', profile.company_id).order('created_at', { ascending:false }),
-      supabase.from('training_assignment').select('*').eq('company_id', profile.company_id).order('created_at', { ascending:false }),
-    ])
-    setEmployee(empData)
-    setEmployees(allEmp || [])
-    setCourses(courseData || [])
-    setAssignments(assignData || [])
+    setError(null)
 
-    // Badge: pending assignments for this employee
-    const pending = (assignData||[]).filter(a => empData && a.employee_id === empData.id && (a.status === 'pending' || a.status === 'in_progress'))
-    if (pending.length > 0) incrementBadge('pending_training')
-    else clearBadge('pending_training')
+    clearTimeout(loadTimeoutRef.current)
+    loadTimeoutRef.current = setTimeout(() => {
+      setLoading(false)
+      setError('Failed to load data. Please refresh.')
+    }, 10000)
 
-    setLoading(false)
+    console.log('[Training] load() — company_id:', profile?.company_id, 'user_id (profile.id):', profile?.id)
+
+    try {
+      console.log('[Training] querying employee, employees, training_course, training_assignment')
+      const [
+        { data: empData,    error: empErr    },
+        { data: allEmp,     error: allEmpErr },
+        { data: courseData, error: courseErr },
+        { data: assignData, error: assignErr },
+      ] = await Promise.all([
+        supabase.from('employee').select('id,first_name,last_name,role').eq('user_id', profile.id).single(),
+        supabase.from('employee').select('id,first_name,last_name,role,status').eq('company_id', profile.company_id).eq('status','active').order('last_name'),
+        supabase.from('training_course').select('*').eq('company_id', profile.company_id).order('created_at', { ascending:false }),
+        supabase.from('training_assignment').select('*').eq('company_id', profile.company_id).order('created_at', { ascending:false }),
+      ])
+
+      console.log('[Training] employee row:', JSON.stringify(empData), '| error:', empErr)
+      console.log('[Training] employees count:', allEmp?.length, '| error:', allEmpErr)
+      console.log('[Training] courses count:', courseData?.length, '| error:', courseErr)
+      console.log('[Training] assignments count:', assignData?.length, '| error:', assignErr)
+
+      const firstErr = empErr || allEmpErr || courseErr || assignErr
+      if (firstErr) {
+        console.error('[Training] Supabase query error:', firstErr)
+        setError(`Failed to load training data: ${firstErr.message}`)
+        return
+      }
+
+      setEmployee(empData)
+      setEmployees(allEmp || [])
+      setCourses(courseData || [])
+      setAssignments(assignData || [])
+
+      // Badge: pending assignments for this employee
+      const pending = (assignData||[]).filter(a => empData && a.employee_id === empData.id && (a.status === 'pending' || a.status === 'in_progress'))
+      if (pending.length > 0) incrementBadge('pending_training')
+      else clearBadge('pending_training')
+
+      console.log('[Training] load() complete — courses:', courseData?.length, 'assignments:', assignData?.length)
+    } catch (err) {
+      console.error('[Training] load() threw:', err)
+      setError(`Failed to load data: ${err.message}`)
+    } finally {
+      clearTimeout(loadTimeoutRef.current)
+      setLoading(false)
+    }
   }
 
   async function deleteCourse(id) {
@@ -136,6 +178,12 @@ export default function Training() {
   const myPending        = myAssignments.filter(a => a.status === 'pending' || a.status === 'in_progress').length
 
   if (loading) return <div style={{ padding:'24px' }}>{[...Array(4)].map((_,i) => <div key={i} className="skeleton" style={{ height:'120px', borderRadius:'10px', marginBottom:'12px' }} />)}</div>
+  if (error) return (
+    <div style={{ padding:'40px', textAlign:'center' }}>
+      <div style={{ color:'var(--color-danger)', marginBottom:'16px', fontSize:'14px' }}>{error}</div>
+      <button onClick={load} style={{ padding:'10px 20px', background:'var(--accent)', color:'var(--text-inverse)', border:'none', borderRadius:'var(--radius-sm)', cursor:'pointer', fontFamily:'var(--font-condensed)', fontSize:'13px', fontWeight:700, letterSpacing:'1px' }}>RETRY</button>
+    </div>
+  )
 
   const TABS = [
     ...(isAdmin ? [{ id:'library', label:'Course Library' }, { id:'assignments', label:`Assignments (${totalAssigned})` }, { id:'leaderboard', label:'Leaderboard' }, { id:'badges', label:'Badges' }, { id:'certificates', label:'Certificates' }, { id:'ai', label:'AI Suggestions' }] : []),

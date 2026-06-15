@@ -53,6 +53,7 @@ export default function Personnel() {
   const [tileFilter, setTileFilter] = useState(null)
   const [showUpgrade, setShowUpgrade] = useState(false)
   const [companyPlan, setCompanyPlan] = useState('trial')
+  const loadTimeoutRef = useRef(null)
   const [profileTab, setProfileTab] = useState('overview')
   const [statusModal, setStatusModal] = useState(null)   // emp object or null
   const [statusTab, setStatusTab]     = useState('active') // active|suspended|terminated|archived
@@ -62,20 +63,47 @@ export default function Personnel() {
   useEffect(() => { loadEmployees() }, [profile])
 
   async function loadEmployees() {
-    if (!profile?.company_id) return
+    if (!profile?.company_id) {
+      console.log('[Personnel] loadEmployees skipped — no company_id. profile:', JSON.stringify(profile))
+      setLoading(false)
+      return
+    }
+
     setLoading(true)
-    const [{ data, error }, { data: compData }] = await Promise.all([
-      supabase
-        .from('employee')
-        .select('id,company_id,first_name,middle_name,last_name,email,phone_number,role,status,employment_type,employment_classification,position_title,pay_rate,hire_date,is_armed,has_app_access,profile_photo_url,employee_id_number,invitation_status,terminated_date,probation_end_date,emergency_contact_name,emergency_contact_phone,emergency_contact_relation,notes')
-        .eq('company_id', profile.company_id)
-        .order('last_name', { ascending: true }),
-      supabase.from('company').select('plan').eq('id', profile.company_id).single(),
-    ])
-    if (error) setError(friendlyError(error))
-    else setEmployees(data || [])
-    setCompanyPlan(compData?.plan || 'trial')
-    setLoading(false)
+    setError(null)
+
+    clearTimeout(loadTimeoutRef.current)
+    loadTimeoutRef.current = setTimeout(() => {
+      setLoading(false)
+      setError('Failed to load data. Please refresh.')
+    }, 10000)
+
+    console.log('[Personnel] loadEmployees — company_id:', profile.company_id)
+
+    try {
+      console.log('[Personnel] querying employee and company')
+      const [{ data, error }, { data: compData, error: compErr }] = await Promise.all([
+        supabase
+          .from('employee')
+          .select('id,company_id,first_name,middle_name,last_name,email,phone_number,role,status,employment_type,employment_classification,position_title,pay_rate,hire_date,is_armed,has_app_access,profile_photo_url,employee_id_number,invitation_status,terminated_date,probation_end_date,emergency_contact_name,emergency_contact_phone,emergency_contact_relation,notes')
+          .eq('company_id', profile.company_id)
+          .order('last_name', { ascending: true }),
+        supabase.from('company').select('plan').eq('id', profile.company_id).single(),
+      ])
+
+      console.log('[Personnel] employees count:', data?.length, '| error:', error)
+      console.log('[Personnel] company data:', JSON.stringify(compData), '| error:', compErr)
+
+      if (error) setError(friendlyError(error))
+      else setEmployees(data || [])
+      setCompanyPlan(compData?.plan || 'trial')
+    } catch (err) {
+      console.error('[Personnel] loadEmployees threw:', err)
+      setError('Failed to load data. Please refresh.')
+    } finally {
+      clearTimeout(loadTimeoutRef.current)
+      setLoading(false)
+    }
   }
 
   const filtered = useMemo(() => employees.filter(e => {
