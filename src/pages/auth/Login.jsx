@@ -205,14 +205,8 @@ export default function Login() {
       <div style={{ position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(circle, rgba(201,162,39,0.06) 1px, transparent 1px)', backgroundSize: '28px 28px', pointerEvents: 'none' }}/>
 
       <div style={{ position: 'relative', zIndex: 1, maxWidth: '320px', width: '100%', textAlign: 'center' }}>
-        {/* Shield icon */}
-        <div style={{ marginBottom: '28px' }}>
-          <svg width="64" height="72" viewBox="0 0 64 72" fill="none">
-            <path d="M32 2L4 13V36C4 52 17 66 32 70C47 66 60 52 60 36V13L32 2Z" fill="rgba(201,162,39,0.12)" stroke="#c8a84b" strokeWidth="1.5"/>
-            <path d="M32 16L12 23V36C12 48 21 59 32 62C43 59 52 48 52 36V23L32 16Z" fill="rgba(201,162,39,0.18)"/>
-            <polyline points="22,36 29,43 43,29" stroke="#c8a84b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
-          </svg>
-        </div>
+        {/* Logo */}
+        <img src="/app-icon-dark.png" alt="PostCommand" style={{width:'120px',height:'120px',objectFit:'contain',marginBottom:'24px'}}/>
 
         {/* Wordmark */}
         <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '32px', letterSpacing: '4px', color: '#c8a84b', lineHeight: 1, marginBottom: '4px' }}>
