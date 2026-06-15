@@ -11,6 +11,7 @@ import Register from './pages/auth/Register'
 import Dashboard from './pages/dashboard/Dashboard'
 import Personnel from './pages/personnel/Personnel'
 import Scheduling from './pages/scheduling/Scheduling'
+import OpenShifts from './pages/scheduling/OpenShifts'
 import Timesheets from './pages/timesheets/Timesheets'
 import ClockIn from './pages/clockin/clockin'
 import Incidents from './pages/incidents/Incidents'
@@ -141,7 +142,8 @@ export default function App() {
       <Route path="/portal" element={<ClientRoute><ClientPortal /></ClientRoute>} />
       <Route path="/dashboard"  element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/personnel"  element={<ProtectedRoute><Personnel /></ProtectedRoute>} />
-      <Route path="/scheduling" element={<ProtectedRoute><Scheduling /></ProtectedRoute>} />
+      <Route path="/scheduling"  element={<ProtectedRoute><Scheduling /></ProtectedRoute>} />
+      <Route path="/open-shifts" element={<ProtectedRoute><OpenShifts /></ProtectedRoute>} />
       <Route path="/timesheets" element={<ProtectedRoute><Timesheets /></ProtectedRoute>} />
       <Route path="/incidents" element={<ProtectedRoute><Incidents /></ProtectedRoute>} />
       <Route path="/map"        element={<ProtectedRoute><LiveMap /></ProtectedRoute>} />
