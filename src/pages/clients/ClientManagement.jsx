@@ -266,39 +266,195 @@ function ClientContracts({ client, companyId }) {
 
 function ClientFormModal({ client, companyId, onClose, onSaved }) {
   const toast = useToast()
-  const [form, setForm] = useState(client ? { company_name:client.company_name||'', contact_name:client.contact_name||'', phone:client.phone||'', email:client.email||'', address:client.address||'', contract_status:client.contract_status||'active', notes:client.notes||'' }
+  // step is only used in create mode: 'client' | 'site' | 'done'
+  const [step, setStep] = useState('client')
+  const [form, setForm] = useState(client
+    ? { company_name:client.company_name||'', contact_name:client.contact_name||'', phone:client.phone||'', email:client.email||'', address:client.address||'', contract_status:client.contract_status||'active', notes:client.notes||'' }
     : { company_name:'', contact_name:'', phone:'', email:'', address:'', contract_status:'active', notes:'' })
+  const [site, setSite] = useState({ name:'', address:'', city:'', state:'', latitude:'', longitude:'', geofence_feet:'500' })
   const [saving, setSaving] = useState(false)
-  function setF(k,v) { setForm(p=>({...p,[k]:v})) }
-  const foc=e=>e.target.style.borderColor='var(--border-focus)'; const blr=e=>e.target.style.borderColor='var(--border)'
-  async function save() {
+  const [inviteSending, setInviteSending] = useState(false)
+
+  function setF(k, v) { setForm(p => ({ ...p, [k]: v })) }
+  function setS(k, v) { setSite(p => ({ ...p, [k]: v })) }
+  const foc = e => e.target.style.borderColor = 'var(--border-focus)'
+  const blr = e => e.target.style.borderColor = 'var(--border)'
+
+  // Edit mode — single-step save
+  async function saveEdit() {
     if (!form.company_name.trim()) return
     setSaving(true)
-    if (client?.id) await supabase.from('client').update({...form}).eq('id',client.id)
-    else await supabase.from('client').insert({company_id:companyId,...form})
+    await supabase.from('client').update({ ...form }).eq('id', client.id)
     toast('Client saved')
-    setSaving(false); onSaved()
+    setSaving(false)
+    onSaved()
   }
+
+  // Create mode — step 2: save client row then site row
+  async function saveFull() {
+    if (!site.name.trim()) return
+    setSaving(true)
+    try {
+      const { data: newClient, error: clientErr } = await supabase
+        .from('client')
+        .insert({ company_id: companyId, ...form })
+        .select('id')
+        .single()
+      if (clientErr) throw clientErr
+
+      // Convert feet → meters for storage
+      const geofenceMeters = Math.round((Number(site.geofence_feet) || 500) * 0.3048)
+
+      const { error: siteErr } = await supabase.from('site').insert({
+        company_id: companyId,
+        client_id: newClient.id,
+        name: site.name.trim(),
+        address: site.address.trim() || null,
+        city: site.city.trim() || null,
+        state: site.state.trim() || null,
+        latitude: site.latitude ? Number(site.latitude) : null,
+        longitude: site.longitude ? Number(site.longitude) : null,
+        geofence_radius: geofenceMeters,
+        is_active: true,
+        requires_dar: false,
+      })
+      if (siteErr) throw siteErr
+
+      setStep('done')
+    } catch (err) {
+      toast('Failed to save: ' + (err.message || 'Unknown error'), 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function sendInvite() {
+    if (!form.email) return
+    setInviteSending(true)
+    try {
+      await supabase.functions.invoke('send-email', {
+        body: {
+          type: 'welcome',
+          to: form.email,
+          data: {
+            firstName: form.contact_name?.split(' ')[0] || 'there',
+            loginUrl: 'https://postcommand.app',
+            company_id: companyId,
+          },
+        },
+      })
+      toast('Invite sent to ' + form.email)
+    } catch {
+      toast('Failed to send invite', 'error')
+    } finally {
+      setInviteSending(false)
+    }
+  }
+
+  // ── Edit mode ──────────────────────────────────────────────────────────────
+  if (client) {
+    return (
+      <div style={s.overlay} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+        <div style={s.modal}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'20px' }}>
+            <div style={{ fontFamily:'var(--font-display)', fontSize:'20px', letterSpacing:'1.5px', color:'var(--text-primary)' }}>EDIT CLIENT</div>
+            <button style={{ background:'transparent', border:'none', color:'var(--text-muted)', cursor:'pointer', padding:'4px', display:'flex' }} onClick={onClose}><Icon name="x" size={18}/></button>
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px', marginBottom:'12px' }}>
+            <div><div style={s.lbl}>Company Name *</div><input style={s.inp} value={form.company_name} onChange={e=>setF('company_name',e.target.value)} onFocus={foc} onBlur={blr} placeholder="Acme Corp"/></div>
+            <div><div style={s.lbl}>Contact Name</div><input style={s.inp} value={form.contact_name} onChange={e=>setF('contact_name',e.target.value)} onFocus={foc} onBlur={blr}/></div>
+            <div><div style={s.lbl}>Contact Email</div><input style={s.inp} type="email" value={form.email} onChange={e=>setF('email',e.target.value)} onFocus={foc} onBlur={blr}/></div>
+            <div><div style={s.lbl}>Contact Phone</div><input style={s.inp} value={form.phone} onChange={e=>setF('phone',e.target.value)} onFocus={foc} onBlur={blr}/></div>
+            <div style={{ gridColumn:'1/-1' }}><div style={s.lbl}>Billing Address</div><input style={s.inp} value={form.address} onChange={e=>setF('address',e.target.value)} onFocus={foc} onBlur={blr}/></div>
+            <div><div style={s.lbl}>Contract Status</div><select style={{ ...s.inp, cursor:'pointer' }} value={form.contract_status} onChange={e=>setF('contract_status',e.target.value)}><option value="active">Active</option><option value="pending">Pending</option><option value="expired">Expired</option></select></div>
+          </div>
+          <div style={{ marginBottom:'18px' }}><div style={s.lbl}>Notes</div><textarea style={{ ...s.inp, minHeight:'60px', resize:'vertical', lineHeight:1.5 }} value={form.notes} onChange={e=>setF('notes',e.target.value)} onFocus={foc} onBlur={blr}/></div>
+          <div style={{ display:'flex', gap:'10px' }}>
+            <button style={{ ...s.btn, opacity:(!form.company_name.trim()||saving)?0.6:1 }} onClick={saveEdit} disabled={!form.company_name.trim()||saving}>{saving?'SAVING...':'SAVE CHANGES'}</button>
+            <button style={s.ghost} onClick={onClose}>CANCEL</button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Create mode — step 1: basic info ──────────────────────────────────────
+  if (step === 'client') {
+    return (
+      <div style={s.overlay} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+        <div style={s.modal}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'4px' }}>
+            <div style={{ fontFamily:'var(--font-display)', fontSize:'20px', letterSpacing:'1.5px', color:'var(--text-primary)' }}>NEW CLIENT</div>
+            <button style={{ background:'transparent', border:'none', color:'var(--text-muted)', cursor:'pointer', padding:'4px', display:'flex' }} onClick={onClose}><Icon name="x" size={18}/></button>
+          </div>
+          <div style={{ fontSize:'11px', color:'var(--text-muted)', marginBottom:'18px', fontFamily:'var(--font-condensed)', letterSpacing:'1px' }}>STEP 1 OF 2 — BASIC INFO</div>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px', marginBottom:'16px' }}>
+            <div><div style={s.lbl}>Company Name *</div><input style={s.inp} value={form.company_name} onChange={e=>setF('company_name',e.target.value)} onFocus={foc} onBlur={blr} placeholder="Acme Corp"/></div>
+            <div><div style={s.lbl}>Contact Name</div><input style={s.inp} value={form.contact_name} onChange={e=>setF('contact_name',e.target.value)} onFocus={foc} onBlur={blr}/></div>
+            <div><div style={s.lbl}>Contact Email</div><input style={s.inp} type="email" value={form.email} onChange={e=>setF('email',e.target.value)} onFocus={foc} onBlur={blr}/></div>
+            <div><div style={s.lbl}>Contact Phone</div><input style={s.inp} value={form.phone} onChange={e=>setF('phone',e.target.value)} onFocus={foc} onBlur={blr}/></div>
+            <div style={{ gridColumn:'1/-1' }}><div style={s.lbl}>Billing Address</div><input style={s.inp} value={form.address} onChange={e=>setF('address',e.target.value)} onFocus={foc} onBlur={blr} placeholder="123 Main St, Suite 100"/></div>
+          </div>
+          <div style={{ display:'flex', gap:'10px' }}>
+            <button style={{ ...s.btn, opacity:!form.company_name.trim()?0.6:1 }} onClick={()=>setStep('site')} disabled={!form.company_name.trim()}>NEXT: SITE INFO <Icon name="arrow-right" size={14}/></button>
+            <button style={s.ghost} onClick={onClose}>CANCEL</button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Create mode — step 2: site info ───────────────────────────────────────
+  if (step === 'site') {
+    return (
+      <div style={s.overlay} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+        <div style={s.modal}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'4px' }}>
+            <div style={{ fontFamily:'var(--font-display)', fontSize:'20px', letterSpacing:'1.5px', color:'var(--text-primary)' }}>NEW CLIENT</div>
+            <button style={{ background:'transparent', border:'none', color:'var(--text-muted)', cursor:'pointer', padding:'4px', display:'flex' }} onClick={onClose}><Icon name="x" size={18}/></button>
+          </div>
+          <div style={{ fontSize:'11px', color:'var(--text-muted)', marginBottom:'18px', fontFamily:'var(--font-condensed)', letterSpacing:'1px' }}>STEP 2 OF 2 — SITE INFORMATION</div>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px', marginBottom:'16px' }}>
+            <div style={{ gridColumn:'1/-1' }}><div style={s.lbl}>Site Name *</div><input style={s.inp} value={site.name} onChange={e=>setS('name',e.target.value)} onFocus={foc} onBlur={blr} placeholder="Main Office"/></div>
+            <div style={{ gridColumn:'1/-1' }}><div style={s.lbl}>Site Address</div><input style={s.inp} value={site.address} onChange={e=>setS('address',e.target.value)} onFocus={foc} onBlur={blr} placeholder="123 Main St"/></div>
+            <div><div style={s.lbl}>City</div><input style={s.inp} value={site.city} onChange={e=>setS('city',e.target.value)} onFocus={foc} onBlur={blr}/></div>
+            <div><div style={s.lbl}>State</div><input style={s.inp} value={site.state} onChange={e=>setS('state',e.target.value)} onFocus={foc} onBlur={blr} placeholder="DC"/></div>
+            <div><div style={s.lbl}>Latitude</div><input style={s.inp} type="number" step="any" value={site.latitude} onChange={e=>setS('latitude',e.target.value)} onFocus={foc} onBlur={blr} placeholder="38.9072"/></div>
+            <div><div style={s.lbl}>Longitude</div><input style={s.inp} type="number" step="any" value={site.longitude} onChange={e=>setS('longitude',e.target.value)} onFocus={foc} onBlur={blr} placeholder="-77.0369"/></div>
+            <div style={{ gridColumn:'1/-1' }}><div style={s.lbl}>Geofence Radius (feet)</div><input style={s.inp} type="number" value={site.geofence_feet} onChange={e=>setS('geofence_feet',e.target.value)} onFocus={foc} onBlur={blr} placeholder="500"/></div>
+          </div>
+          <div style={{ display:'flex', gap:'10px' }}>
+            <button style={{ ...s.btn, opacity:(!site.name.trim()||saving)?0.6:1 }} onClick={saveFull} disabled={!site.name.trim()||saving}>{saving?'SAVING...':'CREATE CLIENT'}</button>
+            <button style={s.ghost} onClick={()=>setStep('client')}>BACK</button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Create mode — step done: success + invite ──────────────────────────────
   return (
-    <div style={s.overlay} onClick={e=>{if(e.target===e.currentTarget)onClose()}}>
+    <div style={s.overlay}>
       <div style={s.modal}>
-        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'20px'}}>
-          <div style={{fontFamily:'var(--font-display)',fontSize:'20px',letterSpacing:'1.5px',color:'var(--text-primary)'}}>{client?'EDIT CLIENT':'NEW CLIENT'}</div>
-          <button style={{background:'transparent',border:'none',color:'var(--text-muted)',cursor:'pointer',padding:'4px',display:'flex'}} onClick={onClose}><Icon name="x" size={18}/></button>
+        <div style={{ textAlign:'center', padding:'8px 0 20px' }}>
+          <div style={{ width:'56px', height:'56px', borderRadius:'50%', background:'var(--color-success-bg)', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 16px' }}>
+            <Icon name="check-circle" size={28} color="var(--color-success)"/>
+          </div>
+          <div style={{ fontFamily:'var(--font-display)', fontSize:'20px', letterSpacing:'1.5px', color:'var(--text-primary)', marginBottom:'6px' }}>CLIENT CREATED</div>
+          <div style={{ fontSize:'13px', color:'var(--text-muted)' }}>{form.company_name} and their first site have been saved.</div>
         </div>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px',marginBottom:'12px'}}>
-          <div><div style={s.lbl}>Company Name *</div><input style={s.inp} value={form.company_name} onChange={e=>setF('company_name',e.target.value)} onFocus={foc} onBlur={blr} placeholder="Acme Corp"/></div>
-          <div><div style={s.lbl}>Contact Name</div><input style={s.inp} value={form.contact_name} onChange={e=>setF('contact_name',e.target.value)} onFocus={foc} onBlur={blr}/></div>
-          <div><div style={s.lbl}>Phone</div><input style={s.inp} value={form.phone} onChange={e=>setF('phone',e.target.value)} onFocus={foc} onBlur={blr}/></div>
-          <div><div style={s.lbl}>Email</div><input style={s.inp} type="email" value={form.email} onChange={e=>setF('email',e.target.value)} onFocus={foc} onBlur={blr}/></div>
-          <div style={{gridColumn:'1/-1'}}><div style={s.lbl}>Address</div><input style={s.inp} value={form.address} onChange={e=>setF('address',e.target.value)} onFocus={foc} onBlur={blr}/></div>
-          <div><div style={s.lbl}>Contract Status</div><select style={{...s.inp,cursor:'pointer'}} value={form.contract_status} onChange={e=>setF('contract_status',e.target.value)}><option value="active">Active</option><option value="pending">Pending</option><option value="expired">Expired</option></select></div>
-        </div>
-        <div style={{marginBottom:'18px'}}><div style={s.lbl}>Notes</div><textarea style={{...s.inp,minHeight:'60px',resize:'vertical',lineHeight:1.5}} value={form.notes} onChange={e=>setF('notes',e.target.value)} onFocus={foc} onBlur={blr}/></div>
-        <div style={{display:'flex',gap:'10px'}}>
-          <button style={{...s.btn,opacity:(!form.company_name.trim()||saving)?0.6:1}} onClick={save} disabled={!form.company_name.trim()||saving}>{saving?'SAVING...':client?'SAVE CHANGES':'CREATE CLIENT'}</button>
-          <button style={s.ghost} onClick={onClose}>CANCEL</button>
-        </div>
+        {form.email && (
+          <div style={{ background:'var(--bg-surface)', border:'1px solid var(--border)', borderRadius:'var(--radius-md)', padding:'16px', marginBottom:'16px' }}>
+            <div style={{ fontSize:'13px', fontWeight:600, color:'var(--text-primary)', marginBottom:'4px' }}>Send Welcome Email?</div>
+            <div style={{ fontSize:'12px', color:'var(--text-muted)', marginBottom:'12px' }}>
+              Send a welcome email to <strong>{form.email}</strong> introducing {form.contact_name || 'the contact'} to PostCommand.
+            </div>
+            <button style={{ ...s.btn, height:'36px', fontSize:'12px', padding:'0 16px', opacity:inviteSending?0.6:1 }} onClick={sendInvite} disabled={inviteSending}>
+              <Icon name="mail" size={13}/>{inviteSending?'SENDING...':'SEND INVITE EMAIL'}
+            </button>
+          </div>
+        )}
+        <button style={s.btn} onClick={onSaved}>DONE</button>
       </div>
     </div>
   )
