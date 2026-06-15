@@ -233,13 +233,13 @@ export default function Login() {
               <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'rgba(201,162,39,0.15)', border: '1px solid rgba(201,162,39,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '1px' }}>
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#c8a84b" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
               </div>
-              <span style={{ fontSize: '13px', color: '#a0aab8', lineHeight: 1.5 }}>{text}</span>
+              <span style={{ fontSize: '13px', color: 'rgba(255,255,255,0.92)', lineHeight: 1.5 }}>{text}</span>
             </div>
           ))}
         </div>
 
         {/* Tagline */}
-        <div style={{ fontSize: '11px', color: '#3a4050', letterSpacing: '1px', fontFamily: "'Barlow Condensed', sans-serif" }}>
+        <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)', letterSpacing: '1px', fontFamily: "'Barlow Condensed', sans-serif" }}>
           TRUSTED BY SECURITY PROFESSIONALS
         </div>
       </div>
