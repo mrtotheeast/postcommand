@@ -28,6 +28,13 @@ export function NotificationProvider({ children }) {
       .order('created_at', { ascending: false })
       .limit(50)
     if (data) setNotifications(data)
+
+    const { count } = await supabase
+      .from('incident_report')
+      .select('id', { count: 'exact', head: true })
+      .eq('company_id', profile.company_id)
+      .in('status', ['submitted', 'open', 'under_review', 'pending'])
+    setBadges(prev => ({ ...prev, open_incidents: count || 0 }))
   }
 
   async function markRead(id) {
