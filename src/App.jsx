@@ -49,14 +49,14 @@ function ComingSoon({ name }) {
 }
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading, role } = useAuth()
-  if (loading) return <div style={{minHeight:'100vh',backgroundColor:'var(--bg-base)',display:'flex',alignItems:'center',justifyContent:'center'}}><style>{`@keyframes spinY{0%{transform:rotateY(0deg)}100%{transform:rotateY(360deg)}}`}</style><img src="/app-icon-navy.png" alt="PostCommand" style={{width:'80px',height:'80px',objectFit:'contain',animation:'spinY 1.4s linear infinite',transformStyle:'preserve-3d'}}/></div>
+  if (loading) return <div style={{minHeight:'100vh',backgroundColor:'var(--bg-base)',display:'flex',alignItems:'center',justifyContent:'center'}}><style>{`@keyframes spinY{0%{transform:rotateY(0deg)}100%{transform:rotateY(360deg)}}`}</style><img src="/app-icon-transparent.png" alt="PostCommand" style={{width:'80px',height:'80px',objectFit:'contain',animation:'spinY 1.4s linear infinite',transformStyle:'preserve-3d'}}/></div>
   if (!isAuthenticated) return <Navigate to="/login" replace />
   if (role === 'client') return <Navigate to="/portal" replace />
   return <AppLayout>{children}</AppLayout>
 }
 function ClientRoute({ children }) {
   const { isAuthenticated, loading, role } = useAuth()
-  if (loading) return <div style={{minHeight:'100vh',backgroundColor:'var(--bg-base)',display:'flex',alignItems:'center',justifyContent:'center'}}><style>{`@keyframes spinY{0%{transform:rotateY(0deg)}100%{transform:rotateY(360deg)}}`}</style><img src="/app-icon-navy.png" alt="PostCommand" style={{width:'80px',height:'80px',objectFit:'contain',animation:'spinY 1.4s linear infinite',transformStyle:'preserve-3d'}}/></div>
+  if (loading) return <div style={{minHeight:'100vh',backgroundColor:'var(--bg-base)',display:'flex',alignItems:'center',justifyContent:'center'}}><style>{`@keyframes spinY{0%{transform:rotateY(0deg)}100%{transform:rotateY(360deg)}}`}</style><img src="/app-icon-transparent.png" alt="PostCommand" style={{width:'80px',height:'80px',objectFit:'contain',animation:'spinY 1.4s linear infinite',transformStyle:'preserve-3d'}}/></div>
   if (!isAuthenticated) return <Navigate to="/login" replace />
   return children
 }
@@ -123,7 +123,7 @@ export default function App() {
     return () => window.removeEventListener('start-tour', handler)
   }, [])
 
-  if (loading) return <div style={{minHeight:'100vh',backgroundColor:'var(--bg-base)',display:'flex',alignItems:'center',justifyContent:'center'}}><style>{`@keyframes spinY{0%{transform:rotateY(0deg)}100%{transform:rotateY(360deg)}}`}</style><img src="/app-icon-navy.png" alt="PostCommand" style={{width:'80px',height:'80px',objectFit:'contain',animation:'spinY 1.4s linear infinite',transformStyle:'preserve-3d'}}/></div>
+  if (loading) return <div style={{minHeight:'100vh',backgroundColor:'var(--bg-base)',display:'flex',alignItems:'center',justifyContent:'center'}}><style>{`@keyframes spinY{0%{transform:rotateY(0deg)}100%{transform:rotateY(360deg)}}`}</style><img src="/app-icon-transparent.png" alt="PostCommand" style={{width:'80px',height:'80px',objectFit:'contain',animation:'spinY 1.4s linear infinite',transformStyle:'preserve-3d'}}/></div>
   return (
     <>
     {showTour && profile && <GuidedTour profile={profile} onDone={() => setShowTour(false)} />}

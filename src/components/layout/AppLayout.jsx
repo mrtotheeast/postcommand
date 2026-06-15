@@ -107,7 +107,7 @@ export default function AppLayout({ children }) {
   const SidebarContent = () => (
     <>
       <div style={s.logoBar}>
-        <img src="/app-icon-navy.png" alt="" style={{width:'36px',height:'36px',objectFit:'contain',marginBottom:'6px',display:'block'}}/>
+        <img src="/app-icon-transparent.png" alt="" style={{width:'36px',height:'36px',objectFit:'contain',marginBottom:'6px',display:'block'}}/>
         <div style={s.logo}>POST<span style={{color:'var(--text-primary)'}}>COMMAND</span></div>
         <div style={s.logoSub}>Security Workforce Management</div>
         {profile?.company_slug && (

@@ -206,7 +206,7 @@ export default function Login() {
 
       <div style={{ position: 'relative', zIndex: 1, maxWidth: '320px', width: '100%', textAlign: 'center' }}>
         {/* Logo */}
-        <img src="/app-icon-dark.png" alt="PostCommand" style={{width:'120px',height:'120px',objectFit:'contain',marginBottom:'24px'}}/>
+        <img src="/app-icon-transparent.png" alt="PostCommand" style={{width:'120px',height:'120px',objectFit:'contain',marginBottom:'24px'}}/>
 
         {/* Wordmark */}
         <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: '32px', letterSpacing: '4px', color: '#c8a84b', lineHeight: 1, marginBottom: '4px' }}>
