@@ -584,7 +584,7 @@ function PatrolDetailPanel({ patrol, siteMap, empMap, onClose }) {
         )}
 
         {tab === 'map' && (
-          <div style={{ flex:1, overflow:'hidden' }}>
+          <div style={{ flex:1, overflow:'hidden', minHeight:'300px' }}>
             {geoPoints.length === 0 ? (
               <div style={{ padding:'32px', textAlign:'center', color:'var(--text-muted)', fontSize:'13px' }}>
                 <Icon name="map-pin" size={28} color="var(--border)" />
@@ -592,7 +592,7 @@ function PatrolDetailPanel({ patrol, siteMap, empMap, onClose }) {
               </div>
             ) : (
               <MapContainer center={mapCenter} zoom={15} style={{ width:'100%', height:'100%' }}>
-                <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
+                <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution="© OpenStreetMap contributors" />
                 {site?.latitude && site?.longitude && (
                   <Marker position={[Number(site.latitude), Number(site.longitude)]} icon={siteIcon()}>
                     <Popup><div style={{fontFamily:'Barlow,sans-serif',fontSize:'12px'}}><strong>{site.name}</strong><br/>Site location</div></Popup>
@@ -606,7 +606,7 @@ function PatrolDetailPanel({ patrol, siteMap, empMap, onClose }) {
                 {geoPoints.length > 1 && (
                   <Polyline positions={geoPoints.map(cp => [Number(cp.latitude), Number(cp.longitude)])} pathOptions={{ color:'#c8a84b', weight:2, dashArray:'6 4', opacity:0.8 }} />
                 )}
-                <style>{`.leaflet-container{background:#0d0f14}.leaflet-popup-content-wrapper{background:#1a1d2a;border:1px solid #252838;border-radius:8px;color:#f0f2f8}.leaflet-popup-tip{background:#1a1d2a}.leaflet-popup-close-button{color:#7a8299!important}.leaflet-control-zoom a{background:#1a1d2a!important;color:#c8a84b!important;border-color:#252838!important}`}</style>
+                <style>{`.leaflet-container{background:#e8f4f8}.leaflet-popup-content-wrapper{background:#1a1d2a;border:1px solid #252838;border-radius:8px;color:#f0f2f8}.leaflet-popup-tip{background:#1a1d2a}.leaflet-popup-close-button{color:#7a8299!important}.leaflet-control-zoom a{background:#1a1d2a!important;color:#c8a84b!important;border-color:#252838!important}`}</style>
               </MapContainer>
             )}
           </div>

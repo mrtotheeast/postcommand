@@ -458,6 +458,10 @@ function FilterSidebar({ positions, sites, activeSiteIds, selPositions, selSites
               <button style={{...miniBtn, color:'var(--text-muted)'}} onClick={() => onSitesChange(new Set(sites.map(s=>s.id)))}>NONE</button>
             </div>
           </div>
+          <label style={{...rowStyle, paddingBottom:'6px', marginBottom:'4px', borderBottom:'1px solid var(--border)'}}>
+            <input type="checkbox" checked={selSites.size === 0} onChange={() => onSitesChange(new Set())} style={{width:'14px', height:'14px', accentColor:'var(--accent)', cursor:'pointer', flexShrink:0}}/>
+            <span style={{fontSize:'12px', color: selSites.size === 0 ? 'var(--accent)' : 'var(--text-muted)', lineHeight:1.4, flex:1, fontFamily:'var(--font-condensed)', letterSpacing:'0.5px'}}>ALL SITES</span>
+          </label>
           {sites.map(s => {
             const checked = selSites.size === 0 || selSites.has(s.id)
             return (

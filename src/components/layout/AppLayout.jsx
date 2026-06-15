@@ -92,7 +92,7 @@ export default function AppLayout({ children }) {
 
   const native = isNative()
   const visibleSections = useMemo(() => NAV_ITEMS
-    .map(sec => ({ ...sec, items: sec.items.filter(item => item.roles.includes(role) && !(native && item.hideOnNative)) }))
+    .map(sec => ({ ...sec, items: sec.items.filter(item => item.roles.includes(role) && !(native && item.hideOnNative) && !item.hideInSidebar) }))
     .filter(sec => sec.items.length > 0), [role, native])
 
   const initials = profile ? `${profile.first_name?.[0]??''}${profile.last_name?.[0]??''}`.toUpperCase() || 'U' : 'U'
