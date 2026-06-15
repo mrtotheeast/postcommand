@@ -129,6 +129,7 @@ export function AuthProvider({ children }) {
 
       console.log('[Auth] setProfile — id:', profile?.id, 'company_id:', profile?.company_id, 'role:', profile?.role, 'full:', JSON.stringify(profile))
       setProfile(profile)
+      console.log('[Auth] profile set:', profile?.company_id)
       if (profile?.id) loadViewAs(profile.id)
     } catch (err) {
       console.error('[Auth] loadProfile error:', err)

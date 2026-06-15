@@ -60,7 +60,10 @@ export default function Personnel() {
   const canViewSensitive = atLeast(profile?.role, 'lieutenant')
   const canEdit = atLeast(profile?.role, 'lieutenant')
 
-  useEffect(() => { loadEmployees() }, [profile])
+  useEffect(() => {
+    console.log('[Personnel] useEffect fired, company_id:', profile?.company_id)
+    loadEmployees()
+  }, [profile])
 
   async function loadEmployees() {
     if (!profile?.company_id) {
