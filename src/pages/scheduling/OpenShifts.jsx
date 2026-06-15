@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
 import { useToast } from '../../components/ui/Toast'
+import { ROLE_LEVELS, ROLE_LABELS } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -48,6 +49,60 @@ async function checkOT(employeeId, companyId, shiftStart, shiftEnd, weekStartDay
   const wouldExceed = projectedHours > otThreshold
   const otHours = Math.max(0, projectedHours - otThreshold)
   return { wouldExceed, currentHours, newShiftHours, projectedHours, otHours }
+}
+
+// ── Shared bottom-sheet primitives ────────────────────────────────────────────
+
+function SheetBackdrop({ onClose }) {
+  return <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:100, backdropFilter:'blur(2px)' }}/>
+}
+
+function Sheet({ children }) {
+  return (
+    <div style={{ position:'fixed', bottom:0, left:0, right:0, background:'var(--bg-surface)', borderRadius:'16px 16px 0 0', zIndex:101, maxHeight:'85vh', display:'flex', flexDirection:'column', boxShadow:'0 -4px 24px rgba(0,0,0,0.3)' }}>
+      <div style={{ display:'flex', justifyContent:'center', padding:'12px 0 4px', flexShrink:0 }}>
+        <div style={{ width:'40px', height:'4px', borderRadius:'2px', background:'var(--border-subtle)' }}/>
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function SheetHeader({ title, onClose, onBack }) {
+  return (
+    <div style={{ padding:'4px 20px 14px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
+      <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
+        {onBack && (
+          <button onClick={onBack} style={{ background:'transparent', border:'none', color:'var(--text-muted)', cursor:'pointer', display:'flex', alignItems:'center', padding:'0', minHeight:'44px', minWidth:'36px' }}>
+            <Icon name="arrow-left" size={18}/>
+          </button>
+        )}
+        <div style={{ fontFamily:'var(--font-display)', fontSize:'16px', letterSpacing:'2px', color:'var(--text-primary)' }}>{title}</div>
+      </div>
+      <button onClick={onClose} style={{ background:'transparent', border:'none', color:'var(--text-muted)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', minHeight:'44px', minWidth:'44px' }}>
+        <Icon name="x" size={18}/>
+      </button>
+    </div>
+  )
+}
+
+function WarningBox({ text }) {
+  return (
+    <div style={{ background:'rgba(232,148,58,0.08)', border:'1px solid rgba(232,148,58,0.3)', borderRadius:'var(--radius-md)', padding:'12px 14px', marginBottom:'16px' }}>
+      <div style={{ fontSize:'13px', color:'var(--color-warning)', lineHeight:1.5 }}>⚠ {text}</div>
+    </div>
+  )
+}
+
+function ShiftSummary({ shift, siteName }) {
+  if (!shift) return null
+  return (
+    <div style={{ background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-md)', padding:'12px 14px', marginBottom:'16px' }}>
+      <div style={{ fontFamily:'var(--font-condensed)', fontSize:'14px', fontWeight:700, color:'var(--text-primary)', marginBottom:'4px' }}>{siteName}</div>
+      <div style={{ fontSize:'13px', color:'var(--text-secondary)' }}>{fmtDate(shift.start_time)}</div>
+      <div style={{ fontSize:'13px', color:'var(--text-muted)', marginTop:'2px' }}>{fmt12(shift.start_time)} – {fmt12(shift.end_time)} · {fmtDur(shift.start_time, shift.end_time)}</div>
+    </div>
+  )
 }
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
@@ -126,17 +181,31 @@ function OpenShiftCard({ os, onSelect }) {
 export default function OpenShifts() {
   const { profile } = useAuth()
   const toast = useToast()
-  const [tab, setTab]               = useState('schedule')
-  const [loading, setLoading]       = useState(true)
-  const [empId, setEmpId]           = useState(null)
-  const [myShifts, setMyShifts]     = useState([])
-  const [openShifts, setOpenShifts] = useState([])
-  const [droppedShifts, setDroppedShifts] = useState([])
-  const [sites, setSites]           = useState([])
-  const [otSettings, setOtSettings] = useState(null)
-  const [selected, setSelected]     = useState(null)
-  const [claiming, setClaiming]     = useState(false)
-  const [otWarning, setOtWarning]   = useState(null)
+
+  const [tab, setTab]                   = useState('schedule')
+  const [loading, setLoading]           = useState(true)
+  const [empId, setEmpId]               = useState(null)
+  const [myShifts, setMyShifts]         = useState([])
+  const [openShifts, setOpenShifts]     = useState([])
+  const [availableShifts, setAvailableShifts] = useState([])
+  const [sites, setSites]               = useState([])
+  const [employees, setEmployees]       = useState([])
+  const [otSettings, setOtSettings]     = useState(null)
+
+  // Claim sheet state (existing)
+  const [selected, setSelected]         = useState(null)
+  const [claiming, setClaiming]         = useState(false)
+  const [otWarning, setOtWarning]       = useState(null)
+
+  // Drop sheet state
+  const [dropShift, setDropShift]       = useState(null)
+  const [submittingDrop, setSubmittingDrop] = useState(false)
+
+  // Swap sheet state
+  const [swapShift, setSwapShift]       = useState(null)
+  const [swapStep, setSwapStep]         = useState('choose') // 'choose' | 'specific'
+  const [selectedTarget, setSelectedTarget] = useState(null)
+  const [submittingSwap, setSubmittingSwap] = useState(false)
 
   useEffect(() => { if (profile?.company_id) load() }, [profile])
 
@@ -144,7 +213,6 @@ export default function OpenShifts() {
     if (!profile?.company_id) return
     setLoading(true)
 
-    // Find employee record for this user
     const { data: empRow } = await supabase
       .from('employee')
       .select('id')
@@ -157,10 +225,13 @@ export default function OpenShifts() {
 
     const now = new Date().toISOString()
 
-    const [sitesR, openR, csR, myR] = await Promise.all([
+    const [sitesR, openR, csR, myR, empsR] = await Promise.all([
       supabase.from('site').select('id,name,city,state').eq('company_id', profile.company_id),
       supabase.from('open_shift').select('*').eq('company_id', profile.company_id).eq('status', 'open').order('created_at', { ascending: false }),
-      supabase.from('company_settings').select('ot_weekly_hours,ot_week_start').eq('company_id', profile.company_id).maybeSingle(),
+      supabase.from('company_settings')
+        .select('ot_weekly_hours,ot_week_start,shift_drop_min_hours_before,shift_swap_min_hours_before')
+        .eq('company_id', profile.company_id)
+        .maybeSingle(),
       myEmpId
         ? supabase.from('shift').select('*')
             .eq('employee_id', myEmpId)
@@ -170,12 +241,17 @@ export default function OpenShifts() {
             .order('start_time')
             .limit(30)
         : Promise.resolve({ data: [] }),
+      supabase.from('employee')
+        .select('id,first_name,last_name,role,position_title')
+        .eq('company_id', profile.company_id)
+        .eq('status', 'active')
+        .or('invitation_status.eq.accepted,has_app_access.eq.true')
+        .order('last_name'),
     ])
 
     const siteList = sitesR.data || []
     const allOpen  = openR.data  || []
 
-    // Fetch shift details for all open_shift records in one query
     const shiftIds = [...new Set(allOpen.map(os => os.shift_id).filter(Boolean))]
     let shiftMap = {}
     if (shiftIds.length > 0) {
@@ -183,20 +259,21 @@ export default function OpenShifts() {
       ;(sd || []).forEach(s => { shiftMap[s.id] = s })
     }
 
-    // Merge open_shift records with their shift + site data
     const merged = allOpen
       .map(os => ({
         ...os,
         shift: os.shift_id ? shiftMap[os.shift_id] || null : null,
         site:  siteList.find(s => s.id === os.site_id) || null,
       }))
-      .filter(os => os.shift) // only show if we have the underlying shift details
+      .filter(os => os.shift)
 
+    const availableSources = ['dropped', 'swap_pool']
     setSites(siteList)
-    setOpenShifts(merged.filter(os => os.source !== 'dropped'))
-    setDroppedShifts(merged.filter(os => os.source === 'dropped'))
+    setOpenShifts(merged.filter(os => !availableSources.includes(os.source)))
+    setAvailableShifts(merged.filter(os => availableSources.includes(os.source)))
     setOtSettings(csR.data || null)
     setMyShifts(myR.data || [])
+    setEmployees((empsR.data || []).filter(e => e.id !== myEmpId))
     setLoading(false)
   }
 
@@ -205,7 +282,15 @@ export default function OpenShifts() {
     return s ? s.name : '—'
   }
 
-  function closeSheet() { setSelected(null); setOtWarning(null) }
+  function closeAll() {
+    setSelected(null); setOtWarning(null)
+    setDropShift(null)
+    setSwapShift(null); setSwapStep('choose'); setSelectedTarget(null)
+  }
+
+  // ── Claim ──────────────────────────────────────────────────────────────────
+
+  function closeClaimSheet() { setSelected(null); setOtWarning(null) }
 
   async function handleClaim(override = false) {
     if (!selected?.shift || !empId) return
@@ -226,31 +311,149 @@ export default function OpenShifts() {
 
     const { error } = await supabase
       .from('open_shift')
-      .update({
-        status: 'claimed',
-        claimed_by_employee_id: empId,
-        claimed_at: new Date().toISOString(),
-      })
+      .update({ status:'claimed', claimed_by_employee_id:empId, claimed_at:new Date().toISOString() })
       .eq('id', selected.id)
-      .eq('status', 'open') // optimistic lock — bail if already claimed
+      .eq('status', 'open')
 
     setClaiming(false)
-
-    if (error) {
-      toast('Failed to claim — shift may have already been taken', 'error')
-      return
-    }
-
+    if (error) { toast('Failed to claim — shift may have already been taken', 'error'); return }
     toast('Shift claimed!')
-    closeSheet()
+    closeClaimSheet()
     load()
   }
+
+  // ── Drop ───────────────────────────────────────────────────────────────────
+
+  function handleDropCheck(shift) {
+    const buffer = otSettings?.shift_drop_min_hours_before ?? 2
+    const hoursUntil = (new Date(shift.start_time) - Date.now()) / 3600000
+    if (hoursUntil < buffer) {
+      toast('Too close to shift start to drop this shift', 'error')
+      return
+    }
+    setDropShift(shift)
+  }
+
+  async function handleDropConfirm() {
+    if (!dropShift || !empId) return
+    setSubmittingDrop(true)
+    const buffer = otSettings?.shift_drop_min_hours_before ?? 2
+    const expiresAt = new Date(new Date(dropShift.start_time).getTime() - buffer * 3600000).toISOString()
+
+    const { error } = await supabase.from('open_shift').insert({
+      company_id: profile.company_id,
+      site_id: dropShift.site_id,
+      shift_id: dropShift.id,
+      source: 'dropped',
+      original_employee_id: empId,
+      status: 'open',
+      expires_at: expiresAt,
+    })
+
+    setSubmittingDrop(false)
+    if (error) { toast('Failed to post shift to pool', 'error'); return }
+    toast('Shift posted to the pool')
+    setDropShift(null)
+    load()
+  }
+
+  // ── Swap ───────────────────────────────────────────────────────────────────
+
+  function handleSwapCheck(shift) {
+    const buffer = otSettings?.shift_swap_min_hours_before ?? 2
+    const hoursUntil = (new Date(shift.start_time) - Date.now()) / 3600000
+    if (hoursUntil < buffer) {
+      toast('Too close to shift start to request a swap', 'error')
+      return
+    }
+    setSwapShift(shift)
+    setSwapStep('choose')
+    setSelectedTarget(null)
+  }
+
+  async function handleSwapPool() {
+    if (!swapShift || !empId) return
+    setSubmittingSwap(true)
+    const buffer = otSettings?.shift_swap_min_hours_before ?? 2
+    const expiresAt = new Date(new Date(swapShift.start_time).getTime() - buffer * 3600000).toISOString()
+
+    const { error: osErr } = await supabase.from('open_shift').insert({
+      company_id: profile.company_id,
+      site_id: swapShift.site_id,
+      shift_id: swapShift.id,
+      source: 'swap_pool',
+      original_employee_id: empId,
+      status: 'open',
+      expires_at: expiresAt,
+    })
+    if (osErr) { setSubmittingSwap(false); toast('Failed to post swap', 'error'); return }
+
+    await supabase.from('shift_swap_request').insert({
+      company_id: profile.company_id,
+      requesting_employee_id: empId,
+      shift_id: swapShift.id,
+      request_type: 'swap',
+      posted_to_pool: true,
+      status: 'pending',
+      expires_at: expiresAt,
+    })
+
+    setSubmittingSwap(false)
+    toast('Swap posted to the pool')
+    setSwapShift(null)
+    load()
+  }
+
+  async function handleSwapSpecific() {
+    if (!swapShift || !empId || !selectedTarget) return
+    setSubmittingSwap(true)
+    const buffer = otSettings?.shift_swap_min_hours_before ?? 2
+    const expiresAt = new Date(new Date(swapShift.start_time).getTime() - buffer * 3600000).toISOString()
+
+    const { error } = await supabase.from('shift_swap_request').insert({
+      company_id: profile.company_id,
+      requesting_employee_id: empId,
+      shift_id: swapShift.id,
+      target_employee_id: selectedTarget.id,
+      request_type: 'swap',
+      posted_to_pool: false,
+      status: 'pending',
+      expires_at: expiresAt,
+    })
+
+    setSubmittingSwap(false)
+    if (error) { toast('Failed to send swap request', 'error'); return }
+    toast(`Swap request sent to ${selectedTarget.first_name}`)
+    setSwapShift(null)
+    load()
+  }
+
+  // Eligible swap targets: same role level or higher, excluding self
+  const myLevel = ROLE_LEVELS[profile?.role] ?? 0
+  const eligibleEmployees = employees.filter(e => (ROLE_LEVELS[e.role] ?? 0) >= myLevel)
 
   const TABS = [
     { id:'schedule',  label:'MY SCHEDULE' },
     { id:'open',      label:'OPEN SHIFTS' },
     { id:'available', label:'AVAILABLE'   },
   ]
+
+  const btnSmall = (bg, border, color) => ({
+    flex:1, height:'34px', background:bg, border:`1px solid ${border}`, borderRadius:'var(--radius-sm)',
+    color, fontFamily:'var(--font-condensed)', fontSize:'11px', fontWeight:700, cursor:'pointer', letterSpacing:'0.5px',
+  })
+
+  const btnPrimary = (disabled) => ({
+    width:'100%', height:'52px', background:'var(--accent)', border:'none', borderRadius:'var(--radius-md)',
+    color:'var(--text-inverse)', fontFamily:'var(--font-condensed)', fontSize:'15px', fontWeight:700,
+    cursor:disabled?'not-allowed':'pointer', letterSpacing:'1.5px', opacity:disabled?0.7:1,
+  })
+
+  const btnSecondary = {
+    flex:1, height:'48px', background:'transparent', border:'1px solid var(--border-subtle)',
+    borderRadius:'var(--radius-md)', color:'var(--text-secondary)', fontFamily:'var(--font-condensed)',
+    fontSize:'13px', fontWeight:700, cursor:'pointer', letterSpacing:'1px',
+  }
 
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%', background:'var(--bg-base)' }}>
@@ -269,7 +472,7 @@ export default function OpenShifts() {
       <div style={{ flex:1, overflowY:'auto', padding:'16px' }}>
         {loading ? (
           <div style={{ display:'flex', flexDirection:'column', gap:'12px' }}>
-            {[1,2,3].map(i => <div key={i} style={{ height:'88px', borderRadius:'var(--radius-md)' }} className="skeleton"/>)}
+            {[1,2,3].map(i => <div key={i} style={{ height:'100px', borderRadius:'var(--radius-md)' }} className="skeleton"/>)}
           </div>
         ) : (
           <>
@@ -291,6 +494,19 @@ export default function OpenShifts() {
                         <div style={{ fontSize:'13px', color:'var(--text-muted)', marginTop:'2px' }}>
                           {fmt12(s.start_time)} – {fmt12(s.end_time)} · {fmtDur(s.start_time, s.end_time)}
                         </div>
+                        {/* Action buttons */}
+                        <div style={{ display:'flex', gap:'8px', marginTop:'12px' }}>
+                          <button
+                            onClick={e => { e.stopPropagation(); handleDropCheck(s) }}
+                            style={btnSmall('rgba(224,85,85,0.07)','rgba(224,85,85,0.3)','var(--color-danger)')}>
+                            DROP SHIFT
+                          </button>
+                          <button
+                            onClick={e => { e.stopPropagation(); handleSwapCheck(s) }}
+                            style={btnSmall('var(--accent-bg)','var(--accent-border)','var(--accent)')}>
+                            SWAP SHIFT
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -308,13 +524,13 @@ export default function OpenShifts() {
                 )
             )}
 
-            {/* AVAILABLE — dropped shifts */}
+            {/* AVAILABLE — dropped + swap_pool */}
             {tab === 'available' && (
-              droppedShifts.length === 0
-                ? <EmptyState icon="refresh-cw" title="No dropped shifts" sub="No officers have dropped a shift yet." />
+              availableShifts.length === 0
+                ? <EmptyState icon="refresh-cw" title="No available shifts" sub="No officers have dropped or posted a swap yet." />
                 : (
                   <div style={{ display:'flex', flexDirection:'column', gap:'10px' }}>
-                    {droppedShifts.map(os => <OpenShiftCard key={os.id} os={os} onSelect={setSelected}/>)}
+                    {availableShifts.map(os => <OpenShiftCard key={os.id} os={os} onSelect={setSelected}/>)}
                   </div>
                 )
             )}
@@ -322,23 +538,12 @@ export default function OpenShifts() {
         )}
       </div>
 
-      {/* ── Bottom sheet ── */}
+      {/* ── CLAIM bottom sheet ─────────────────────────────────────────────── */}
       {selected && (
         <>
-          <div onClick={closeSheet} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:100, backdropFilter:'blur(2px)' }}/>
-          <div style={{ position:'fixed', bottom:0, left:0, right:0, background:'var(--bg-surface)', borderRadius:'16px 16px 0 0', zIndex:101, maxHeight:'82vh', display:'flex', flexDirection:'column', boxShadow:'0 -4px 24px rgba(0,0,0,0.3)' }}>
-            {/* drag handle */}
-            <div style={{ display:'flex', justifyContent:'center', padding:'12px 0 4px' }}>
-              <div style={{ width:'40px', height:'4px', borderRadius:'2px', background:'var(--border-subtle)' }}/>
-            </div>
-            {/* header */}
-            <div style={{ padding:'6px 20px 14px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
-              <div style={{ fontFamily:'var(--font-display)', fontSize:'16px', letterSpacing:'2px', color:'var(--text-primary)' }}>SHIFT DETAILS</div>
-              <button onClick={closeSheet} style={{ background:'transparent', border:'none', color:'var(--text-muted)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', minHeight:'44px', minWidth:'44px' }}>
-                <Icon name="x" size={18}/>
-              </button>
-            </div>
-            {/* body */}
+          <SheetBackdrop onClose={closeClaimSheet}/>
+          <Sheet>
+            <SheetHeader title="SHIFT DETAILS" onClose={closeClaimSheet}/>
             <div style={{ flex:1, overflowY:'auto', padding:'4px 20px 8px' }}>
               <DetailRow label="SITE"     value={selected.site?.name || '—'}/>
               <DetailRow label="DATE"     value={selected.shift ? fmtDate(selected.shift.start_time) : '—'}/>
@@ -346,9 +551,9 @@ export default function OpenShifts() {
               <DetailRow label="DURATION" value={selected.shift ? fmtDur(selected.shift.start_time, selected.shift.end_time) : '—'}/>
               {selected.shift?.role  && <DetailRow label="ROLE"  value={selected.shift.role}/>}
               {selected.shift?.notes && <DetailRow label="NOTES" value={selected.shift.notes}/>}
-              {selected.source === 'dropped' && <DetailRow label="TYPE" value="Dropped shift"/>}
+              {selected.source === 'dropped'   && <DetailRow label="TYPE" value="Dropped shift"/>}
+              {selected.source === 'swap_pool' && <DetailRow label="TYPE" value="Swap requested"/>}
 
-              {/* OT warning inline */}
               {otWarning && (
                 <div style={{ marginTop:'16px', background:'rgba(232,148,58,0.08)', border:'1px solid rgba(232,148,58,0.35)', borderRadius:'var(--radius-md)', padding:'14px' }}>
                   <div style={{ fontFamily:'var(--font-condensed)', fontSize:'12px', fontWeight:700, color:'var(--color-warning)', letterSpacing:'1px', marginBottom:'10px' }}>⚠ OVERTIME WARNING</div>
@@ -366,27 +571,126 @@ export default function OpenShifts() {
                 </div>
               )}
             </div>
-            {/* footer */}
             <div style={{ padding:'16px 20px', borderTop:'1px solid var(--border)', flexShrink:0 }}>
               {otWarning ? (
                 <div style={{ display:'flex', gap:'10px' }}>
-                  <button onClick={() => setOtWarning(null)}
-                    style={{ flex:1, height:'48px', background:'transparent', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-md)', color:'var(--text-secondary)', fontFamily:'var(--font-condensed)', fontSize:'13px', fontWeight:700, cursor:'pointer', letterSpacing:'1px' }}>
-                    CANCEL
-                  </button>
+                  <button onClick={() => setOtWarning(null)} style={btnSecondary}>CANCEL</button>
                   <button onClick={() => handleClaim(true)} disabled={claiming}
                     style={{ flex:2, height:'48px', background:'rgba(232,148,58,0.1)', border:'1px solid rgba(232,148,58,0.35)', borderRadius:'var(--radius-md)', color:'var(--color-warning)', fontFamily:'var(--font-condensed)', fontSize:'13px', fontWeight:700, cursor:claiming?'not-allowed':'pointer', letterSpacing:'1px', opacity:claiming?0.7:1 }}>
                     {claiming ? 'CLAIMING...' : 'CLAIM ANYWAY'}
                   </button>
                 </div>
               ) : (
-                <button onClick={() => handleClaim(false)} disabled={claiming}
-                  style={{ width:'100%', height:'52px', background:'var(--accent)', border:'none', borderRadius:'var(--radius-md)', color:'var(--text-inverse)', fontFamily:'var(--font-condensed)', fontSize:'15px', fontWeight:700, cursor:claiming?'not-allowed':'pointer', letterSpacing:'1.5px', opacity:claiming?0.7:1 }}>
+                <button onClick={() => handleClaim(false)} disabled={claiming} style={btnPrimary(claiming)}>
                   {claiming ? 'CLAIMING...' : 'CLAIM SHIFT'}
                 </button>
               )}
             </div>
-          </div>
+          </Sheet>
+        </>
+      )}
+
+      {/* ── DROP bottom sheet ──────────────────────────────────────────────── */}
+      {dropShift && (
+        <>
+          <SheetBackdrop onClose={() => setDropShift(null)}/>
+          <Sheet>
+            <SheetHeader title="DROP SHIFT" onClose={() => setDropShift(null)}/>
+            <div style={{ flex:1, overflowY:'auto', padding:'16px 20px 8px' }}>
+              <ShiftSummary shift={dropShift} siteName={siteName(dropShift.site_id)}/>
+              <WarningBox text="You will remain responsible for this shift until someone accepts it. Your supervisor will be notified."/>
+              <p style={{ fontSize:'13px', color:'var(--text-secondary)', lineHeight:1.6, margin:0 }}>
+                This shift will be posted to the Available pool. Any eligible officer may claim it. If unclaimed, the shift remains assigned to you.
+              </p>
+            </div>
+            <div style={{ padding:'16px 20px', borderTop:'1px solid var(--border)', flexShrink:0, display:'flex', gap:'10px' }}>
+              <button onClick={() => setDropShift(null)} style={btnSecondary}>CANCEL</button>
+              <button onClick={handleDropConfirm} disabled={submittingDrop}
+                style={{ flex:2, height:'48px', background:'rgba(224,85,85,0.1)', border:'1px solid rgba(224,85,85,0.35)', borderRadius:'var(--radius-md)', color:'var(--color-danger)', fontFamily:'var(--font-condensed)', fontSize:'13px', fontWeight:700, cursor:submittingDrop?'not-allowed':'pointer', letterSpacing:'1px', opacity:submittingDrop?0.7:1 }}>
+                {submittingDrop ? 'POSTING...' : 'CONFIRM DROP'}
+              </button>
+            </div>
+          </Sheet>
+        </>
+      )}
+
+      {/* ── SWAP bottom sheet ──────────────────────────────────────────────── */}
+      {swapShift && (
+        <>
+          <SheetBackdrop onClose={() => setSwapShift(null)}/>
+          <Sheet>
+            {swapStep === 'choose' && (
+              <>
+                <SheetHeader title="SWAP SHIFT" onClose={() => setSwapShift(null)}/>
+                <div style={{ flex:1, overflowY:'auto', padding:'16px 20px 8px' }}>
+                  <ShiftSummary shift={swapShift} siteName={siteName(swapShift.site_id)}/>
+                  <WarningBox text="You will remain responsible for this shift until someone accepts the swap."/>
+                  <div style={{ display:'flex', flexDirection:'column', gap:'10px' }}>
+                    <button onClick={handleSwapPool} disabled={submittingSwap}
+                      style={{ width:'100%', textAlign:'left', padding:'16px', background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-md)', cursor:submittingSwap?'not-allowed':'pointer', opacity:submittingSwap?0.7:1, transition:'border-color 150ms ease' }}
+                      onMouseEnter={e => e.currentTarget.style.borderColor='var(--accent-border)'}
+                      onMouseLeave={e => e.currentTarget.style.borderColor='var(--border-subtle)'}>
+                      <div style={{ fontFamily:'var(--font-condensed)', fontSize:'14px', fontWeight:700, color:'var(--accent)', marginBottom:'4px' }}>
+                        {submittingSwap ? 'POSTING...' : 'POST TO POOL'}
+                      </div>
+                      <div style={{ fontSize:'12px', color:'var(--text-muted)' }}>Make this shift available to all eligible officers</div>
+                    </button>
+                    <button onClick={() => setSwapStep('specific')}
+                      style={{ width:'100%', textAlign:'left', padding:'16px', background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-md)', cursor:'pointer', transition:'border-color 150ms ease' }}
+                      onMouseEnter={e => e.currentTarget.style.borderColor='var(--accent-border)'}
+                      onMouseLeave={e => e.currentTarget.style.borderColor='var(--border-subtle)'}>
+                      <div style={{ fontFamily:'var(--font-condensed)', fontSize:'14px', fontWeight:700, color:'var(--text-primary)', marginBottom:'4px' }}>REQUEST SPECIFIC OFFICER</div>
+                      <div style={{ fontSize:'12px', color:'var(--text-muted)' }}>Ask a specific officer to take this shift</div>
+                    </button>
+                  </div>
+                </div>
+                <div style={{ padding:'16px 20px', borderTop:'1px solid var(--border)', flexShrink:0 }}>
+                  <button onClick={() => setSwapShift(null)} style={{ ...btnSecondary, width:'100%', flex:'unset' }}>CANCEL</button>
+                </div>
+              </>
+            )}
+
+            {swapStep === 'specific' && (
+              <>
+                <SheetHeader
+                  title="SELECT OFFICER"
+                  onClose={() => setSwapShift(null)}
+                  onBack={() => { setSwapStep('choose'); setSelectedTarget(null) }}
+                />
+                <div style={{ flex:1, overflowY:'auto', padding:'8px 20px' }}>
+                  {eligibleEmployees.length === 0 ? (
+                    <EmptyState icon="users" title="No eligible officers" sub="No officers with matching or higher rank found."/>
+                  ) : (
+                    eligibleEmployees.map(emp => {
+                      const isSelected = selectedTarget?.id === emp.id
+                      return (
+                        <button key={emp.id}
+                          onClick={() => setSelectedTarget(isSelected ? null : emp)}
+                          style={{ width:'100%', textAlign:'left', display:'flex', alignItems:'center', justifyContent:'space-between', padding:'12px 0', background:'transparent', border:'none', borderBottom:'1px solid var(--border)', cursor:'pointer' }}>
+                          <div>
+                            <div style={{ fontSize:'14px', fontWeight:600, color:'var(--text-primary)' }}>
+                              {emp.first_name} {emp.last_name}
+                            </div>
+                            <div style={{ fontSize:'11px', color:'var(--text-muted)', marginTop:'2px', fontFamily:'var(--font-condensed)', letterSpacing:'0.5px' }}>
+                              {ROLE_LABELS[emp.role] || emp.role}{emp.position_title ? ` · ${emp.position_title}` : ''}
+                            </div>
+                          </div>
+                          <div style={{ width:'22px', height:'22px', borderRadius:'50%', border:`2px solid ${isSelected?'var(--accent)':'var(--border-subtle)'}`, background:isSelected?'var(--accent)':'transparent', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                            {isSelected && <Icon name="check" size={12} color="var(--text-inverse)"/>}
+                          </div>
+                        </button>
+                      )
+                    })
+                  )}
+                </div>
+                <div style={{ padding:'16px 20px', borderTop:'1px solid var(--border)', flexShrink:0 }}>
+                  <button onClick={handleSwapSpecific} disabled={!selectedTarget || submittingSwap} style={btnPrimary(!selectedTarget || submittingSwap)}>
+                    {submittingSwap ? 'SENDING...' : selectedTarget ? `REQUEST ${selectedTarget.first_name.toUpperCase()}` : 'SELECT AN OFFICER'}
+                  </button>
+                </div>
+              </>
+            )}
+          </Sheet>
         </>
       )}
     </div>
