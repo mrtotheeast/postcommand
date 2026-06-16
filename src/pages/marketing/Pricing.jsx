@@ -79,7 +79,7 @@ const PLANS = [
     price: '$25',
     desc: 'For small teams getting started with digital workforce management.',
     features: [
-      'Up to 15 officers',
+      'Up to 5 officers',
       'Scheduling and timesheets',
       'Incident and activity reports',
       'Mobile app (iOS and Android)',
@@ -93,7 +93,7 @@ const PLANS = [
     desc: 'For growing companies managing multiple sites and clients.',
     featured: true,
     features: [
-      'Up to 75 officers',
+      'Up to 15 officers',
       'Everything in Starter',
       'Live officer GPS tracking',
       'HR document management',
@@ -107,7 +107,7 @@ const PLANS = [
     price: '$199',
     desc: 'For large operations requiring advanced controls and compliance.',
     features: [
-      'Unlimited officers',
+      'Up to 25 officers (unlimited add-ons)',
       'Everything in Professional',
       'Full audit log',
       'Performance reviews',
@@ -120,7 +120,7 @@ const PLANS = [
 ]
 
 const ADDONS = [
-  { name: 'Additional Officers', desc: 'Add officer seats beyond your plan limit.', price: '$2/officer/mo' },
+  { name: 'Officer blocks (5 officers)', desc: 'Add officer capacity beyond your plan limit.', price: '$10/mo Starter · $12/mo Professional · $15/mo Enterprise' },
   { name: 'Payroll Integration', desc: 'Connect to ADP, Gusto, or Paychex for direct payroll export.', price: 'Contact us' },
   { name: 'Custom Branding', desc: 'Apply your company logo and colors to client-facing documents and the officer app.', price: 'Contact us' },
 ]
@@ -225,7 +225,7 @@ export default function Pricing() {
           ['Can I switch plans later?', 'Yes. You can upgrade or downgrade your plan at any time from your billing settings. Changes take effect at the start of the next billing cycle.'],
           ['What happens after the free trial?', 'After 14 days your account transitions to the plan you selected. You will be notified before any charge occurs. If you choose not to continue, your account is deactivated and your data is retained for 30 days.'],
           ['Is there a setup fee?', 'No. There are no setup fees, no onboarding fees, and no annual commitments. All plans are billed month-to-month.'],
-          ['Can I add more officers later?', 'Yes. Additional officer seats can be added at any time through your account settings. Additional seats are billed at $2 per officer per month beyond your plan limit.'],
+          ['Can I add more officers later?', 'Yes. Additional officer capacity can be added at any time in blocks of 5 officers. Block pricing is $10/mo on Starter, $12/mo on Professional, and $15/mo on Enterprise.'],
           ['Is my data secure?', 'Yes. PostCommand is hosted on enterprise-grade cloud infrastructure with encryption at rest and in transit. See our Privacy Policy for details on data handling and retention.'],
         ].map(([q, a]) => (
           <div key={q} style={{ borderTop: `1px solid ${C.border}`, padding: '24px 0' }}>
