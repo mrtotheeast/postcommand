@@ -164,9 +164,7 @@ function OverviewTab({ sites, onDutyMap, totalOnDuty, staffedSites, incidents, s
     async function loadBalance() {
       const { data: contact } = await supabase.from('client_contact').select('client_id').eq('email', profile.email).eq('company_id', companyId).maybeSingle()
       if (!contact?.client_id) return
-      const { data: client } = await supabase.from('client').select('name').eq('id', contact.client_id).single()
-      if (!client?.name) return
-      const { data: invs } = await supabase.from('invoice').select('total').eq('company_id', companyId).eq('client_name', client.name).neq('status','paid').neq('status','void').neq('status','cancelled')
+      const { data: invs } = await supabase.from('invoice').select('total').eq('company_id', companyId).eq('client_id', contact.client_id).neq('status','paid').neq('status','void').neq('status','cancelled')
       if (invs && invs.length > 0) {
         setInvoiceSummary({ count: invs.length, amount: invs.reduce((a,b) => a+(b.total||0), 0) })
       }
@@ -654,7 +652,7 @@ function MessagesTab({ companyId, profile }) {
 function InvoicesTab({ companyId, profile }) {
   const [invoices, setInvoices] = useState([])
   const [loading, setLoading]   = useState(true)
-  const [clientName, setClientName] = useState(null)
+  const [hasClient, setHasClient] = useState(false)
 
   useEffect(() => {
     if (!companyId || !profile?.email) { setLoading(false); return }
@@ -667,22 +665,13 @@ function InvoicesTab({ companyId, profile }) {
         .maybeSingle()
 
       if (!contactData?.client_id) { setLoading(false); return }
-
-      const { data: clientData } = await supabase
-        .from('client')
-        .select('name')
-        .eq('id', contactData.client_id)
-        .single()
-
-      const cName = clientData?.name || null
-      setClientName(cName)
-      if (!cName) { setLoading(false); return }
+      setHasClient(true)
 
       const { data } = await supabase
         .from('invoice')
         .select('id,invoice_number,issue_date,due_date,total,status,pdf_url')
         .eq('company_id', companyId)
-        .eq('client_name', cName)
+        .eq('client_id', contactData.client_id)
         .order('created_at', { ascending: false })
 
       setInvoices(data || [])
@@ -727,7 +716,7 @@ function InvoicesTab({ companyId, profile }) {
         <div style={{ color:'var(--text-muted)', fontSize:'12px', fontFamily:'var(--font-condensed)', letterSpacing:'1px' }}>LOADING...</div>
       ) : invoices.length === 0 ? (
         <div style={{ ...s.card, textAlign:'center', padding:'48px', color:'var(--text-muted)' }}>
-          {clientName ? 'No invoices on file.' : 'No billing account linked to this email address.'}
+          {hasClient ? 'No invoices on file.' : 'No billing account linked to this email address.'}
         </div>
       ) : (
         <div style={{ background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-md)', overflow:'hidden' }}>
