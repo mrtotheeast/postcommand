@@ -82,7 +82,7 @@ export default function Invoices() {
 
   async function load() {
     setLoading(true)
-    const { data } = await supabase.from('invoice').select('*, invoice_item(*)').eq('company_id', profile.company_id).order('created_at', { ascending:false })
+    const { data } = await supabase.from('invoice').select('*, invoice_item(*), client:client_id(name)').eq('company_id', profile.company_id).order('created_at', { ascending:false })
     setInvoices(data || [])
     const ids = (data || []).map(i => i.id)
     if (ids.length > 0) {
@@ -105,7 +105,7 @@ export default function Invoices() {
     if (tileFilter === 'overdue' && inv.status !== 'overdue') return false
     if (search) {
       const q = search.toLowerCase()
-      if (!inv.invoice_number?.toLowerCase().includes(q) && !inv.client_name?.toLowerCase().includes(q)) return false
+      if (!inv.invoice_number?.toLowerCase().includes(q) && !inv.client?.name?.toLowerCase().includes(q)) return false
     }
     return true
   }), [invoices, search, filterStatus, tileFilter])
@@ -186,7 +186,7 @@ export default function Invoices() {
                 onMouseLeave={e => e.currentTarget.style.background='transparent'}
               >
                 <td style={s.tdName}>{inv.invoice_number}</td>
-                <td style={s.td}>{inv.client_name}</td>
+                <td style={s.td}>{inv.client?.name}</td>
                 <td style={s.td}>{fmtDate(inv.issue_date)}</td>
                 <td style={{ ...s.td, color: inv.status === 'overdue' ? 'var(--color-danger)' : 'var(--text-secondary)' }}>{fmtDate(inv.due_date)}</td>
                 <td style={{ ...s.td, fontFamily:'var(--font-condensed)', color:'var(--text-primary)', fontWeight:600 }}>{fmtMoney(inv.total)}</td>
@@ -244,7 +244,7 @@ const EMPTY_ITEM = { id: Date.now(), description:'', quantity:1, unit_price:0, a
 function InvoiceFormModal({ invoices, mode, invoice, companyId, onClose, onSaved }) {
   const [form, setForm] = useState(invoice ? {
     invoice_number: invoice.invoice_number,
-    client_name: invoice.client_name || '',
+    client_name: invoice.client?.name || '',
     client_email: invoice.client_email || '',
     client_address: invoice.client_address || '',
     issue_date: invoice.issue_date || new Date().toISOString().slice(0,10),
@@ -304,7 +304,7 @@ function InvoiceFormModal({ invoices, mode, invoice, companyId, onClose, onSaved
     setSaving(true); setError(null)
     let ok = false
     try {
-      const payload = { company_id:companyId, invoice_number:form.invoice_number, client_name:form.client_name.trim(), client_email:form.client_email.trim()||null, client_address:form.client_address.trim()||null, issue_date:form.issue_date, due_date:form.due_date||null, tax_rate:parseFloat(form.tax_rate)||0, tax_amount:taxAmount, subtotal, total, notes:form.notes.trim()||null, status: invoice?.status || 'draft' }
+      const payload = { company_id:companyId, invoice_number:form.invoice_number, client_id:invoice?.client_id||selectedClientId||null, client_email:form.client_email.trim()||null, client_address:form.client_address.trim()||null, issue_date:form.issue_date, due_date:form.due_date||null, tax:taxAmount, subtotal, total, notes:form.notes.trim()||null, status: invoice?.status || 'draft' }
       let invId = invoice?.id
       if (invoice?.id) {
         const { error: updErr } = await supabase.from('invoice').update(payload).eq('id', invoice.id)
@@ -482,7 +482,7 @@ function InvoiceDetailModal({ invoice, company, onClose, onEdit, onDelete, onSta
       <div style="text-align:right"><div class="inv-num">${invoice.invoice_number}</div><div class="status" style="margin-top:8px">${invoice.status}</div></div>
     </div>
     <div class="meta">
-      <div class="meta-section"><h4>Bill To</h4><p><strong>${invoice.client_name}</strong>${invoice.client_email ? '<br>'+invoice.client_email : ''}${invoice.client_address ? '<br>'+invoice.client_address : ''}</p></div>
+      <div class="meta-section"><h4>Bill To</h4><p><strong>${invoice.client?.name || ''}</strong>${invoice.client_email ? '<br>'+invoice.client_email : ''}${invoice.client_address ? '<br>'+invoice.client_address : ''}</p></div>
       <div class="meta-section"><h4>Invoice Details</h4><p>Issue Date: <strong>${fmtDate(invoice.issue_date)}</strong>${invoice.due_date ? '<br>Due Date: <strong>'+fmtDate(invoice.due_date)+'</strong>' : ''}</p></div>
     </div>
     <table>
@@ -506,7 +506,7 @@ function InvoiceDetailModal({ invoice, company, onClose, onEdit, onDelete, onSta
         <div style={s.modalHead}>
           <div>
             <div style={s.modalTitle}>{invoice.invoice_number}</div>
-            <div style={{ fontSize:'12px', color:'var(--text-muted)', marginTop:'3px' }}>{invoice.client_name}</div>
+            <div style={{ fontSize:'12px', color:'var(--text-muted)', marginTop:'3px' }}>{invoice.client?.name}</div>
             {company?.name && <div style={{ fontSize:'11px', color:'var(--text-muted)', marginTop:'2px', fontFamily:'var(--font-condensed)', letterSpacing:'0.5px' }}>FROM: {company.name.toUpperCase()}</div>}
           </div>
           <div style={{ display:'flex', gap:'6px', alignItems:'center' }}>
