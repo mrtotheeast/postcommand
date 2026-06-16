@@ -216,9 +216,7 @@ export default function Invoices() {
                       </button>
                     )}
                     {inv.client_email && inv.status !== 'paid' && inv.status !== 'void' && (
-                      <button style={{ ...s.addBtn, height:'32px', padding:'0 10px', fontSize:'11px' }} onClick={() => sendInvoice(inv)}>
-                        SEND
-                      </button>
+                      <SplitSendButton inv={inv} onSendNow={sendInvoice} size="sm" company={company} />
                     )}
                   </div>
                 </td>
@@ -419,19 +417,202 @@ function InvoiceFormModal({ invoices, mode, invoice, companyId, onClose, onSaved
   )
 }
 
+// ── Split Send Button ─────────────────────────────────────────────────────────
+
+function DropItem({ icon, label, sub, onClick, divider, accent, chevron }) {
+  return (
+    <button
+      style={{ display:'flex', alignItems:'center', gap:'10px', width:'100%', padding:'10px 14px', background:'transparent', border:'none', borderTop: divider ? '1px solid var(--border)' : 'none', color:'var(--text-primary)', fontSize:'12px', fontFamily:'var(--font-condensed)', letterSpacing:'0.5px', cursor:'pointer', textAlign:'left' }}
+      onMouseEnter={e => e.currentTarget.style.background='var(--bg-card-hover)'}
+      onMouseLeave={e => e.currentTarget.style.background='transparent'}
+      onClick={onClick}
+    >
+      <Icon name={icon} size={13} color={accent ? 'var(--accent)' : 'var(--text-secondary)'} />
+      <div style={{ flex:1 }}>
+        <div style={{ fontWeight:700 }}>{label}</div>
+        <div style={{ fontSize:'10px', color:'var(--text-muted)', marginTop:'1px' }}>{sub}</div>
+      </div>
+      {chevron && <Icon name={chevron} size={11} color="var(--text-muted)" />}
+    </button>
+  )
+}
+
+function SplitSendButton({ inv, onSendNow, size = 'md', company }) {
+  const toast = useToast()
+  const [open, setOpen] = useState(false)
+  const [showPreview, setShowPreview] = useState(false)
+  const [showSchedule, setShowSchedule] = useState(false)
+  const [scheduleAt, setScheduleAt] = useState('')
+  const [sending, setSending] = useState(false)
+  const [scheduling, setScheduling] = useState(false)
+  const [dropPos, setDropPos] = useState({ top:0, left:0 })
+  const wrapRef = useRef(null)
+
+  useEffect(() => {
+    if (!open) return
+    function handler(e) { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  function toggleOpen() {
+    if (!open && wrapRef.current) {
+      const rect = wrapRef.current.getBoundingClientRect()
+      setDropPos({ top: rect.bottom + 4, left: rect.left })
+    }
+    setOpen(v => !v)
+    setShowSchedule(false)
+  }
+
+  async function handleSendNow() {
+    setOpen(false)
+    setSending(true)
+    try { await onSendNow(inv) } catch(e) {}
+    finally { setSending(false) }
+  }
+
+  async function handleSchedule() {
+    if (!scheduleAt) return
+    setScheduling(true)
+    try {
+      await supabase.from('invoice').update({ send_scheduled_at: new Date(scheduleAt).toISOString() }).eq('id', inv.id)
+      const fmt = new Date(scheduleAt).toLocaleString('en-US', { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' })
+      toast(`Invoice scheduled for ${fmt}`)
+      setOpen(false); setShowSchedule(false); setScheduleAt('')
+    } catch(e) {
+      toast('Failed to schedule invoice', 'error')
+    }
+    setScheduling(false)
+  }
+
+  const h = size === 'sm' ? '32px' : '44px'
+  const fs = size === 'sm' ? '11px' : '13px'
+  const px = size === 'sm' ? '10px' : '14px'
+  const base = { display:'inline-flex', alignItems:'center', background:'var(--accent)', color:'var(--text-inverse)', border:'none', fontFamily:'var(--font-condensed)', fontWeight:700, letterSpacing:'1px', cursor:'pointer', height:h, fontSize:fs }
+
+  return (
+    <>
+      <div ref={wrapRef} style={{ position:'relative', display:'inline-flex', flexShrink:0 }}>
+        <button
+          style={{ ...base, borderRadius:'var(--radius-sm) 0 0 var(--radius-sm)', padding:`0 ${px}`, gap:'5px', borderRight:'1px solid rgba(0,0,0,0.18)', opacity:sending?0.6:1 }}
+          onClick={handleSendNow}
+          disabled={sending}
+        >
+          <Icon name="send" size={size==='sm'?12:13}/>
+          {sending ? 'SENDING...' : 'SEND'}
+        </button>
+        <button
+          style={{ ...base, borderRadius:'0 var(--radius-sm) var(--radius-sm) 0', padding:'0 7px' }}
+          onClick={toggleOpen}
+        >
+          <Icon name={open ? 'chevron-up' : 'chevron-down'} size={11}/>
+        </button>
+
+        {open && (
+          <div style={{ position:'fixed', top:dropPos.top, left:dropPos.left, minWidth:'210px', background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-md)', boxShadow:'var(--shadow-modal)', zIndex:600, overflow:'hidden' }}>
+            <DropItem icon="send" label="SEND NOW" sub="Send email immediately" onClick={handleSendNow} accent />
+            <DropItem icon="eye" label="PREVIEW & SEND" sub="Review before sending" divider onClick={() => { setShowPreview(true); setOpen(false) }} />
+            <div style={{ borderTop:'1px solid var(--border)' }}>
+              <DropItem icon="clock" label="SCHEDULE" sub="Set a send date & time" onClick={() => setShowSchedule(v => !v)} chevron={showSchedule ? 'chevron-up' : 'chevron-right'} />
+              {showSchedule && (
+                <div style={{ padding:'10px 14px 12px', borderTop:'1px solid var(--border)', background:'var(--bg-surface)' }}>
+                  <input
+                    type="datetime-local"
+                    value={scheduleAt}
+                    onChange={e => setScheduleAt(e.target.value)}
+                    min={new Date().toISOString().slice(0,16)}
+                    style={{ width:'100%', background:'var(--bg-input)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', padding:'7px 9px', fontSize:'12px', color:'var(--text-primary)', outline:'none', fontFamily:'var(--font-body)', marginBottom:'8px', boxSizing:'border-box' }}
+                  />
+                  <button
+                    onClick={handleSchedule}
+                    disabled={!scheduleAt || scheduling}
+                    style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:'6px', width:'100%', background:'var(--accent)', color:'var(--text-inverse)', border:'none', borderRadius:'var(--radius-sm)', padding:'8px', fontSize:'11px', fontFamily:'var(--font-condensed)', fontWeight:700, letterSpacing:'1px', cursor:'pointer', opacity:(!scheduleAt||scheduling)?0.5:1 }}
+                  >
+                    <Icon name="clock" size={11}/>
+                    {scheduling ? 'SCHEDULING...' : 'CONFIRM SCHEDULE'}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {showPreview && (
+        <InvoicePreviewModal
+          invoice={inv}
+          onClose={() => setShowPreview(false)}
+          onSend={async () => { setShowPreview(false); await onSendNow(inv) }}
+        />
+      )}
+    </>
+  )
+}
+
+function InvoicePreviewModal({ invoice, onClose, onSend }) {
+  const [sending, setSending] = useState(false)
+
+  async function handleSend() {
+    setSending(true)
+    try { await onSend() } catch(e) {}
+    finally { setSending(false) }
+  }
+
+  const rows = [
+    { label:'TO',        value: invoice.client_email },
+    { label:'INVOICE',   value: invoice.invoice_number },
+    { label:'TOTAL DUE', value: <span style={{ fontFamily:'var(--font-display)', fontSize:'18px', color:'var(--accent)', letterSpacing:'1px' }}>{fmtMoney(invoice.total)}</span> },
+    ...(invoice.due_date ? [{ label:'DUE DATE', value: fmtDate(invoice.due_date) }] : []),
+  ]
+
+  return (
+    <div style={{ ...s.overlay, zIndex:500 }} onClick={e => { if (e.target===e.currentTarget) onClose() }}>
+      <div style={{ ...s.modal, maxWidth:'460px' }}>
+        <div style={s.modalHead}>
+          <div>
+            <div style={s.modalTitle}>PREVIEW & SEND</div>
+            <div style={{ fontSize:'12px', color:'var(--text-muted)', marginTop:'3px' }}>
+              Invoice {invoice.invoice_number}{invoice.client?.name ? ` · ${invoice.client.name}` : ''}
+            </div>
+          </div>
+          <button style={s.closeBtn} onClick={onClose}><Icon name="x" size={18}/></button>
+        </div>
+
+        <div style={{ background:'var(--bg-surface)', border:'1px solid var(--border)', borderRadius:'var(--radius-md)', padding:'18px', marginBottom:'20px' }}>
+          <div style={{ fontSize:'10px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1.5px', fontFamily:'var(--font-condensed)', marginBottom:'14px' }}>Email Preview</div>
+          {rows.map((row, i) => (
+            <div key={row.label}>
+              {i > 0 && <div style={{ height:'1px', background:'var(--border)', margin:'10px 0' }}/>}
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                <span style={{ fontSize:'11px', color:'var(--text-muted)', fontFamily:'var(--font-condensed)', letterSpacing:'0.5px' }}>{row.label}</span>
+                <span style={{ fontSize:'13px', color:'var(--text-primary)', fontWeight:500 }}>{row.value}</span>
+              </div>
+            </div>
+          ))}
+          {invoice.pdf_url && (
+            <div style={{ marginTop:'12px', padding:'9px 12px', background:'rgba(200,168,75,0.08)', border:'1px solid rgba(200,168,75,0.2)', borderRadius:'var(--radius-sm)', fontSize:'11px', color:'var(--text-muted)', display:'flex', alignItems:'center', gap:'6px' }}>
+              <Icon name="file-text" size={12} color="var(--accent)"/>PDF attachment included
+            </div>
+          )}
+        </div>
+
+        <div style={{ display:'flex', gap:'10px' }}>
+          <button style={{ ...s.saveBtn, opacity:sending?0.6:1 }} onClick={handleSend} disabled={sending}>
+            <Icon name="send" size={13}/>{sending ? 'SENDING...' : 'SEND INVOICE'}
+          </button>
+          <button style={s.ghostBtn} onClick={onClose}>CANCEL</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Invoice Detail / Print ────────────────────────────────────────────────────
 
 function InvoiceDetailModal({ invoice, company, onClose, onEdit, onDelete, onStatusChange, onSend, viewLogs = [] }) {
   const items = invoice.invoice_item || []
   const [nudging, setNudging] = useState(false)
   const [nudgeMsg, setNudgeMsg] = useState(null)
-  const [sending, setSending] = useState(false)
-
-  async function handleSendInvoice() {
-    setSending(true)
-    try { await onSend(invoice) } catch(e) {}
-    finally { setSending(false) }
-  }
 
   async function sendNudge() {
     if (!invoice.client_email) return
@@ -583,7 +764,7 @@ function InvoiceDetailModal({ invoice, company, onClose, onEdit, onDelete, onSta
 
         <div style={{ display:'flex', gap:'8px', flexWrap:'wrap', borderTop:'1px solid var(--border)', paddingTop:'16px' }}>
           {invoice.client_email && onSend && invoice.status !== 'paid' && invoice.status !== 'void' && (
-            <button style={{...s.saveBtn, opacity:sending?0.6:1}} onClick={handleSendInvoice} disabled={sending}><Icon name="mail" size={13}/>{sending?'SENDING...':'SEND INVOICE'}</button>
+            <SplitSendButton inv={invoice} onSendNow={onSend} size="md" company={company} />
           )}
           {invoice.status === 'draft'  && <button style={s.saveBtn}   onClick={() => onStatusChange(invoice.id,'sent')}><Icon name="send" size={13} />MARK SENT</button>}
           {invoice.status === 'sent'   && <button style={s.saveBtn}   onClick={() => onStatusChange(invoice.id,'paid')}><Icon name="check" size={13} />MARK PAID</button>}
