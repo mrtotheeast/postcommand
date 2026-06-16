@@ -50,28 +50,24 @@ export function AuthProvider({ children }) {
     try {
       const user = sessionUser
 
-      // Query user_profile with a 5-second defensive timeout.
-      // The query can hang indefinitely under bad network conditions; this ensures
-      // the finally block (and setLoading(false)) always runs within a bounded time.
+      // Query user_profile with a 4-second timeout. On RLS circular-dependency or
+      // network hang the Promise.race rejects; .catch resolves to { data: null }
+      // so execution falls through to the fallback branch and the guard corrects
+      // the role rather than returning early with no profile set.
       console.log('[Auth] querying user_profile — id:', userId)
-      let profileResult
-      try {
-        profileResult = await Promise.race([
-          supabase
-            .from('user_profile')
-            .select('*, company(role_style, custom_titles, custom_ranks, name)')
-            .eq('id', userId)
-            .single(),
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('user_profile query timed out')), 5000)
-          ),
-        ])
-      } catch (err) {
-        console.log('[Auth] user_profile query timed out')
-        return
-      }
-
-      const { data: profileData, error: profileError } = profileResult
+      const { data: profileData, error: profileError } = await Promise.race([
+        supabase
+          .from('user_profile')
+          .select('*, company(role_style, custom_titles, custom_ranks, name)')
+          .eq('id', userId)
+          .maybeSingle(),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('user_profile query timed out')), 4000)
+        ),
+      ]).catch(err => {
+        console.log('[Auth] user_profile query failed or timed out:', err?.message)
+        return { data: null, error: { message: err?.message || 'timeout' } }
+      })
       console.log('[Auth] user_profile result — data:', JSON.stringify(profileData), 'error:', profileError?.message ?? null)
 
       let profile = profileData
@@ -174,7 +170,11 @@ export function AuthProvider({ children }) {
               company_id: meta?.company_id || null,
               role:       meta?.role       || 'officer',
             }
-            await supabase.from('user_profile').insert(fresh)
+            try {
+              await supabase.from('user_profile').insert(fresh)
+            } catch (e) {
+              console.warn('[Auth] fallback profile insert failed (RLS may have blocked it):', e?.message)
+            }
             profile = fresh
           }
         }
@@ -186,9 +186,14 @@ export function AuthProvider({ children }) {
       if (profile && user?.email === 'justin.ashe@nationwidepolice.com' && profile.role !== 'super_admin') {
         console.log('[Auth] GUARD: correcting role to super_admin for platform owner')
         profile = { ...profile, role: 'super_admin', company_id: profile.company_id || NPS_COMPANY_ID }
-        supabase.from('user_profile')
-          .upsert({ id: userId, role: 'super_admin', company_id: NPS_COMPANY_ID }, { onConflict: 'id' })
-          .catch(() => {})
+        ;(async () => {
+          try {
+            await supabase.from('user_profile')
+              .upsert({ id: userId, role: 'super_admin', company_id: NPS_COMPANY_ID }, { onConflict: 'id' })
+          } catch (e) {
+            console.warn('[Auth] profile upsert failed:', e?.message)
+          }
+        })()
       }
 
       console.log('[Auth] setProfile — id:', profile?.id, 'company_id:', profile?.company_id, 'role:', profile?.role)
