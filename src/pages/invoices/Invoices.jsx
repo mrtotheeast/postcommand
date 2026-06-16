@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
 import Icon from '../../components/ui/Icon'
 import { exportInvoicePDF } from '../../lib/pdfExport'
+import { useToast } from '../../components/ui/Toast'
 
 const STATUS = {
   draft:    { label:'Draft',    bg:'var(--border)',              color:'var(--text-muted)' },
@@ -215,12 +216,30 @@ function InvoiceFormModal({ invoices, mode, invoice, companyId, onClose, onSaved
     issue_date: new Date().toISOString().slice(0,10),
     due_date: '', tax_rate: 0, notes: '',
   })
+  const toast = useToast()
   const [items, setItems] = useState(invoice?.invoice_item?.length ? invoice.invoice_item : [{ ...EMPTY_ITEM }])
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState(null)
+  const [clients, setClients] = useState([])
+  const [selectedClientId, setSelectedClientId] = useState('')
+
+  useEffect(() => {
+    supabase.from('client').select('id,name,billing_address').eq('company_id', companyId).order('name')
+      .then(({ data }) => setClients(data || []))
+  }, [companyId])
 
   function setF(k,v) { setForm(prev => ({...prev,[k]:v})) }
   const inputF = e => { e.target.style.borderColor='var(--border-focus)' }
   const inputB = e => { e.target.style.borderColor='var(--border)' }
+
+  async function onClientSelect(clientId) {
+    setSelectedClientId(clientId)
+    if (!clientId) { setF('client_name',''); setF('client_email',''); setF('client_address',''); return }
+    const client = clients.find(c => c.id === clientId)
+    if (client) { setF('client_name', client.name||''); setF('client_address', client.billing_address||'') }
+    const { data: contact } = await supabase.from('client_contact').select('email').eq('client_id',clientId).eq('is_main_contact',true).maybeSingle()
+    if (contact?.email) setF('client_email', contact.email)
+  }
 
   function updateItem(idx, k, v) {
     setItems(prev => {
@@ -241,20 +260,31 @@ function InvoiceFormModal({ invoices, mode, invoice, companyId, onClose, onSaved
 
   async function save() {
     if (!form.client_name.trim()) return
-    setSaving(true)
-    const payload = { company_id:companyId, invoice_number:form.invoice_number, client_name:form.client_name.trim(), client_email:form.client_email.trim()||null, client_address:form.client_address.trim()||null, issue_date:form.issue_date, due_date:form.due_date||null, tax_rate:parseFloat(form.tax_rate)||0, tax_amount:taxAmount, subtotal, total, notes:form.notes.trim()||null, status: invoice?.status || 'draft' }
-    let invId = invoice?.id
-    if (invoice?.id) {
-      await supabase.from('invoice').update(payload).eq('id', invoice.id)
-      await supabase.from('invoice_item').delete().eq('invoice_id', invoice.id)
-    } else {
-      const { data } = await supabase.from('invoice').insert(payload).select().single()
-      invId = data.id
+    setSaving(true); setError(null)
+    let ok = false
+    try {
+      const payload = { company_id:companyId, invoice_number:form.invoice_number, client_name:form.client_name.trim(), client_email:form.client_email.trim()||null, client_address:form.client_address.trim()||null, issue_date:form.issue_date, due_date:form.due_date||null, tax_rate:parseFloat(form.tax_rate)||0, tax_amount:taxAmount, subtotal, total, notes:form.notes.trim()||null, status: invoice?.status || 'draft' }
+      let invId = invoice?.id
+      if (invoice?.id) {
+        const { error: updErr } = await supabase.from('invoice').update(payload).eq('id', invoice.id)
+        if (updErr) throw updErr
+        await supabase.from('invoice_item').delete().eq('invoice_id', invoice.id)
+      } else {
+        const { data, error: insErr } = await supabase.from('invoice').insert(payload).select().single()
+        if (insErr) throw insErr
+        invId = data.id
+      }
+      if (invId) {
+        await supabase.from('invoice_item').insert(items.filter(it => it.description.trim()).map(it => ({ invoice_id:invId, description:it.description.trim(), quantity:parseFloat(it.quantity)||1, unit_price:parseFloat(it.unit_price)||0, amount:parseFloat(it.amount)||0 })))
+      }
+      toast('Invoice saved')
+      ok = true
+    } catch(e) {
+      setError(e.message || 'Failed to save invoice')
+    } finally {
+      setSaving(false)
+      if (ok) onSaved()
     }
-    if (invId) {
-      await supabase.from('invoice_item').insert(items.filter(it => it.description.trim()).map(it => ({ invoice_id:invId, description:it.description.trim(), quantity:parseFloat(it.quantity)||1, unit_price:parseFloat(it.unit_price)||0, amount:parseFloat(it.amount)||0 })))
-    }
-    setSaving(false); onSaved()
   }
 
   return (
@@ -271,10 +301,20 @@ function InvoiceFormModal({ invoices, mode, invoice, companyId, onClose, onSaved
             <div style={s.lbl}>Invoice #</div>
             <input style={s.inp} value={form.invoice_number} onChange={e => setF('invoice_number',e.target.value)} onFocus={inputF} onBlur={inputB} />
           </div>
-          <div style={s.field}>
-            <div style={s.lbl}>Client Name *</div>
-            <input style={s.inp} value={form.client_name} onChange={e => setF('client_name',e.target.value)} onFocus={inputF} onBlur={inputB} placeholder="Company or individual name" />
-          </div>
+          {mode === 'new' ? (
+            <div style={s.field}>
+              <div style={s.lbl}>Client *</div>
+              <select style={{...s.inp, cursor:'pointer'}} value={selectedClientId} onChange={e => onClientSelect(e.target.value)} onFocus={inputF} onBlur={inputB}>
+                <option value="">Select a client...</option>
+                {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+          ) : (
+            <div style={s.field}>
+              <div style={s.lbl}>Client Name *</div>
+              <input style={s.inp} value={form.client_name} onChange={e => setF('client_name',e.target.value)} onFocus={inputF} onBlur={inputB} placeholder="Company or individual name" />
+            </div>
+          )}
           <div style={s.field}>
             <div style={s.lbl}>Client Email</div>
             <input style={s.inp} type="email" value={form.client_email} onChange={e => setF('client_email',e.target.value)} onFocus={inputF} onBlur={inputB} />
@@ -325,6 +365,7 @@ function InvoiceFormModal({ invoices, mode, invoice, companyId, onClose, onSaved
           <input style={s.inp} value={form.notes} onChange={e => setF('notes',e.target.value)} onFocus={inputF} onBlur={inputB} placeholder="Payment terms, bank details, thank you note..." />
         </div>
 
+        {error && <div style={{marginBottom:'12px',padding:'8px 12px',borderRadius:'var(--radius-sm)',background:'var(--color-danger-bg)',color:'var(--color-danger)',border:'1px solid rgba(192,57,43,0.3)',fontSize:'12px'}}>{error}</div>}
         <div style={{ display:'flex', gap:'10px' }}>
           <button style={{ ...s.saveBtn, opacity:(!form.client_name.trim()||saving)?0.6:1 }} onClick={save} disabled={!form.client_name.trim()||saving}>
             <Icon name="save" size={14} />{saving ? 'SAVING...' : 'SAVE INVOICE'}

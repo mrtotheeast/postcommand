@@ -121,7 +121,7 @@ export default function ClientManagement() {
               ))}
             </div>
             <div style={s.panelBody}>
-              {panelTab==='overview' && <ClientOverview client={selected} sites={clientSites(selected.id)} />}
+              {panelTab==='overview' && <ClientOverview client={selected} sites={clientSites(selected.id)} companyId={profile.company_id} />}
               {panelTab==='onboarding' && <ClientOnboarding client={selected} companyId={profile.company_id} />}
               {panelTab==='contracts' && <ClientContracts client={selected} companyId={profile.company_id} />}
             </div>
@@ -134,7 +134,25 @@ export default function ClientManagement() {
   )
 }
 
-function ClientOverview({ client, sites }) {
+function ClientOverview({ client, sites, companyId }) {
+  const toast = useToast()
+  const [resending, setResending] = useState(false)
+
+  async function resendInvite() {
+    setResending(true)
+    try {
+      const firstName = client.contact_name?.split(' ')[0] || ''
+      await supabase.functions.invoke('send-email', {
+        body: { type:'welcome', to:client.contact_email, firstName, company_id:companyId }
+      })
+      toast('Invite sent to ' + client.contact_email)
+    } catch(e) {
+      toast('Failed to send invite', 'error')
+    } finally {
+      setResending(false)
+    }
+  }
+
   const fields = [
     {l:'Company',    v:client.name},
     {l:'Address',    v:client.billing_address},
@@ -155,6 +173,13 @@ function ClientOverview({ client, sites }) {
           <div style={{fontSize:'10px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1.5px',fontFamily:'var(--font-condensed)',margin:'16px 0 10px'}}>Assigned Sites</div>
           {sites.map(s=><div key={s.id} style={{fontSize:'13px',color:'var(--text-secondary)',padding:'7px 0',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:'8px'}}><Icon name="map-pin" size={13} color="var(--accent)"/>{s.name}</div>)}
         </>
+      )}
+      {client.contact_email && (
+        <button
+          style={{...s.btn,height:'36px',fontSize:'12px',padding:'0 14px',marginTop:'16px',opacity:resending?0.6:1}}
+          onClick={resendInvite}
+          disabled={resending}
+        ><Icon name="send" size={13}/>{resending?'SENDING...':'RESEND INVITE'}</button>
       )}
     </div>
   )
