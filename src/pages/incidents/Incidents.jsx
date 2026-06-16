@@ -245,6 +245,7 @@ function IncidentForm({profile,onClose,onSaved}) {
     if(!form.occurred_at){setError('Date and time required.');return}
     if(!form.narrative.trim()){setError('Narrative required.');return}
     setSaving(true);setError(null)
+    let ok = false
     try {
       const now=new Date()
       const yy=String(now.getFullYear()).slice(2)
@@ -274,11 +275,14 @@ function IncidentForm({profile,onClose,onSaved}) {
         status:asDraft?'draft':'submitted',submitted_at:asDraft?null:now.toISOString(),
         submitted_by:asDraft?null:(empData?.id||null),retain_until:retainUntil.toISOString().split('T')[0]
       })
-      if(insErr){setError(insErr.message);setSaving(false);return}
+      if(insErr){setError(insErr.message);return}
       toast('Incident report saved')
-      onSaved()
+      ok = true
     } catch(e){setError(e.message)}
-    setSaving(false)
+    finally {
+      setSaving(false)
+      if (ok) onSaved()
+    }
   }
 
   const STEPS=[{title:'Basic Info',sub:'Incident type and time'},{title:'Guided Questions',sub:'Answer questions for AI'},{title:'Additional Details',sub:'Injuries, damage, weapons, police'},{title:'Narrative',sub:'AI writes your report — review and edit'}]
