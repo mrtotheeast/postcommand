@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { ROLE_LABELS, atLeast } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
 import SignaturePad from '../../components/ui/SignaturePad'
+import { useToast } from '../../components/ui/Toast'
 
 const DOC_TYPES = [
   { value: 'guard_license',    label: 'Guard License / SORA' },
@@ -1138,6 +1139,7 @@ const PTO_BANK_DEFS = [
 ]
 
 function PTOSettingsTab({ companyId }) {
+  const toast = useToast()
   const [configs, setConfigs]           = useState({})
   const [balances, setBalances]         = useState([])
   const [employees, setEmployees]       = useState([])
@@ -1158,7 +1160,7 @@ function PTOSettingsTab({ companyId }) {
     const cfgMap = {}
     for (const c of (cfgData || [])) cfgMap[c.bank_type] = c
     for (const b of PTO_BANK_DEFS) {
-      if (!cfgMap[b.type]) cfgMap[b.type] = { bank_type: b.type, enabled: false, accrual_rate_hours: 0.0385, accrual_per_hours_worked: 1, max_balance_hours: 80, max_carryover_hours: 40 }
+      if (!cfgMap[b.type]) cfgMap[b.type] = { bank_type: b.type, enabled: false, accrual_rate_hours: 0.0385, accrual_per_hours_worked: 1, max_balance: 80, max_carryover: 40 }
     }
     setConfigs(cfgMap)
     setBalances(balData || [])
@@ -1173,17 +1175,24 @@ function PTOSettingsTab({ companyId }) {
   async function saveBank(bankType) {
     setSaving(bankType)
     const cfg = configs[bankType]
-    await supabase.from('pto_bank_config').upsert({
-      company_id: companyId,
-      bank_type: bankType,
-      enabled: cfg.enabled,
-      accrual_rate_hours: parseFloat(cfg.accrual_rate_hours) || 0,
-      accrual_per_hours_worked: parseFloat(cfg.accrual_per_hours_worked) || 1,
-      max_balance_hours: parseFloat(cfg.max_balance_hours) || 0,
-      max_carryover_hours: parseFloat(cfg.max_carryover_hours) || 0,
-    }, { onConflict: 'company_id,bank_type' })
-    setSaving(null)
-    load()
+    try {
+      const { error } = await supabase.from('pto_bank_config').upsert({
+        company_id: companyId,
+        bank_type: bankType,
+        enabled: cfg.enabled,
+        accrual_rate_hours: parseFloat(cfg.accrual_rate_hours) || 0,
+        accrual_per_hours_worked: parseFloat(cfg.accrual_per_hours_worked) || 1,
+        max_balance: parseFloat(cfg.max_balance) || 0,
+        max_carryover: parseFloat(cfg.max_carryover) || 0,
+      }, { onConflict: 'company_id,bank_type' })
+      if (error) throw error
+      toast('Bank settings saved')
+      load()
+    } catch (e) {
+      toast(e?.message || 'Save failed', 'error')
+    } finally {
+      setSaving(null)
+    }
   }
 
   function getBalanceVal(empId, bankType) {
@@ -1244,11 +1253,11 @@ function PTOSettingsTab({ companyId }) {
                   </div>
                   <div>
                     <div style={lbl2}>Max Balance (hrs)</div>
-                    <input style={{...inp, width:'100%', boxSizing:'border-box'}} type="number" min="0" value={cfg.max_balance_hours ?? ''} onChange={e => setField(type, 'max_balance_hours', e.target.value)} placeholder="80" />
+                    <input style={{...inp, width:'100%', boxSizing:'border-box'}} type="number" min="0" value={cfg.max_balance ?? ''} onChange={e => setField(type, 'max_balance', e.target.value)} placeholder="80" />
                   </div>
                   <div>
                     <div style={lbl2}>Max Carryover (hrs)</div>
-                    <input style={{...inp, width:'100%', boxSizing:'border-box'}} type="number" min="0" value={cfg.max_carryover_hours ?? ''} onChange={e => setField(type, 'max_carryover_hours', e.target.value)} placeholder="40" />
+                    <input style={{...inp, width:'100%', boxSizing:'border-box'}} type="number" min="0" value={cfg.max_carryover ?? ''} onChange={e => setField(type, 'max_carryover', e.target.value)} placeholder="40" />
                   </div>
                 </div>
                 <button style={{...saveBtn2, opacity: saving===type ? 0.6 : 1}} onClick={() => saveBank(type)} disabled={saving===type}>
