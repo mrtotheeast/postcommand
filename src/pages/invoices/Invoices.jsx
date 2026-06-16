@@ -672,7 +672,7 @@ function InvoiceDetailModal({ invoice, company, onClose, onEdit, onDelete, onSta
     </table>
     <div class="totals">
       <div class="totals-row"><span>Subtotal</span><span>${fmtMoney(invoice.subtotal)}</span></div>
-      ${invoice.tax_amount > 0 ? `<div class="totals-row"><span>Tax (${invoice.tax_rate}%)</span><span>${fmtMoney(invoice.tax_amount)}</span></div>` : ''}
+      ${invoice.tax > 0 ? `<div class="totals-row"><span>Tax</span><span>${fmtMoney(invoice.tax)}</span></div>` : ''}
       <div class="totals-row total"><span>Total</span><span>${fmtMoney(invoice.total)}</span></div>
     </div>
     ${invoice.notes ? `<div class="notes">${invoice.notes}</div>` : ''}
@@ -740,7 +740,7 @@ function InvoiceDetailModal({ invoice, company, onClose, onEdit, onDelete, onSta
         )}
 
         <div style={{ display:'flex', justifyContent:'flex-end', gap:'16px', marginBottom:'16px', fontSize:'13px' }}>
-          {invoice.tax_amount > 0 && <span style={{ color:'var(--text-muted)' }}>Tax {invoice.tax_rate}%: {fmtMoney(invoice.tax_amount)}</span>}
+          {invoice.tax > 0 && <span style={{ color:'var(--text-muted)' }}>Tax: {fmtMoney(invoice.tax)}</span>}
           <span style={{ fontFamily:'var(--font-condensed)', fontSize:'16px', fontWeight:700, color:'var(--accent)' }}>TOTAL: {fmtMoney(invoice.total)}</span>
         </div>
 

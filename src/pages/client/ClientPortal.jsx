@@ -381,7 +381,7 @@ function IncidentsTab({ incidents, siteMap }) {
     return (
       <div style={s.page}>
         <h2 style={s.heading}>INCIDENT REPORTS</h2>
-        <p style={s.sub}>Approved reports from the last 7 days.</p>
+        <p style={s.sub}>Reviewed or approved reports from the last 7 days.</p>
         <div style={{ ...s.card, textAlign:'center', padding:'48px' }}>
           <Icon name="shield-check" size={28} color="var(--color-success)" />
           <div style={{ marginTop:'12px', fontSize:'14px', color:'var(--color-success)', fontFamily:'var(--font-condensed)', letterSpacing:'1px' }}>NO INCIDENTS IN THE LAST 7 DAYS</div>
@@ -653,19 +653,21 @@ function InvoicesTab({ companyId, profile }) {
   const [invoices, setInvoices] = useState([])
   const [loading, setLoading]   = useState(true)
   const [hasClient, setHasClient] = useState(false)
+  const [contactId, setContactId] = useState(null)
 
   useEffect(() => {
     if (!companyId || !profile?.email) { setLoading(false); return }
     async function load() {
       const { data: contactData } = await supabase
         .from('client_contact')
-        .select('client_id')
+        .select('id,client_id')
         .eq('email', profile.email)
         .eq('company_id', companyId)
         .maybeSingle()
 
       if (!contactData?.client_id) { setLoading(false); return }
       setHasClient(true)
+      setContactId(contactData.id || null)
 
       const { data } = await supabase
         .from('invoice')
@@ -739,7 +741,7 @@ function InvoicesTab({ companyId, profile }) {
                 </span>
                 {inv.pdf_url ? (
                   <a href={inv.pdf_url} target="_blank" rel="noopener noreferrer"
-                    onClick={() => { supabase.from('invoice_view_log').insert({ invoice_id:inv.id, company_id:profile.company_id, viewed_by_email:profile.email, client_contact_id:profile.id, viewed_at:new Date().toISOString() }).catch(()=>{}) }}
+                    onClick={() => { supabase.from('invoice_view_log').insert({ invoice_id:inv.id, company_id:profile.company_id, viewed_by_email:profile.email, client_contact_id:contactId, viewed_at:new Date().toISOString() }).catch(()=>{}) }}
                     style={{ display:'inline-flex', alignItems:'center', gap:'6px', padding:'6px 14px', background:'var(--accent)', color:'var(--text-inverse)', borderRadius:'var(--radius-sm)', fontSize:'11px', fontFamily:'var(--font-condensed)', fontWeight:700, letterSpacing:'1px', textDecoration:'none', flexShrink:0 }}>
                     <Icon name="external-link" size={12}/>VIEW PDF
                   </a>

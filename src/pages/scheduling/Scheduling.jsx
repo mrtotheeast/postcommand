@@ -339,6 +339,7 @@ export default function Scheduling() {
       {selected && (
         <ShiftDetail
           shift={selected}
+          companyId={profile.company_id}
           empName={empName}
           siteName={siteName}
           canApprove={canApprove}
@@ -346,7 +347,7 @@ export default function Scheduling() {
           canCreate={canCreate}
           onClose={() => setSelected(null)}
           onStatusChange={async (id, status) => {
-            await supabase.from('shift').update({status,...(status==='published'?{published_at:new Date().toISOString()}:{})}).eq('id',id)
+            await supabase.from('shift').update({status,...(status==='published'?{published_at:new Date().toISOString()}:{})}).eq('id',id).eq('company_id',profile.company_id)
             if (status === 'published') {
               toast('Schedule published')
               const shift = shifts.find(s => s.id === id)
@@ -686,7 +687,7 @@ function ShiftBlock({ shift, siteName, onClick, onCopy }) {
 
 // ── Shift Detail ──────────────────────────────────────────────────────────────
 
-function ShiftDetail({shift,empName,siteName,canApprove,canPublish,canCreate,onClose,onStatusChange,onDeleted}){
+function ShiftDetail({shift,companyId,empName,siteName,canApprove,canPublish,canCreate,onClose,onStatusChange,onDeleted}){
   const ss=STATUS_STYLES[shift.status]||STATUS_STYLES.draft
   const [conf,setConf]=useState(false)
   const [deleting,setDeleting]=useState(false)
@@ -696,7 +697,7 @@ function ShiftDetail({shift,empName,siteName,canApprove,canPublish,canCreate,onC
     console.log('[ShiftDetail] handleDelete shift.id:', shift.id)
     setDeleting(true)
     try {
-      const { error } = await supabase.from('shift').delete().eq('id', shift.id)
+      const { error } = await supabase.from('shift').delete().eq('id', shift.id).eq('company_id', companyId)
       console.log('[ShiftDetail] delete result error:', error)
       if (error) { toast('Failed to delete shift','error'); setDeleting(false); return }
       toast('Shift deleted')
@@ -1034,7 +1035,7 @@ function SwapsPanel({ companyId, profile, employees, shifts, canApprove }) {
     setEmployee(myEmp); setSwaps(swapData||[]); setLoading(false)
   }
   async function updateStatus(id, status) {
-    await supabase.from('shift_swap_request').update({ status, reviewed_at:new Date().toISOString() }).eq('id', id); load()
+    await supabase.from('shift_swap_request').update({ status, reviewed_at:new Date().toISOString() }).eq('id', id).eq('company_id', companyId); load()
   }
 
   const empMap   = Object.fromEntries(employees.map(e=>[e.id,`${e.first_name} ${e.last_name}`]))
@@ -1382,8 +1383,8 @@ function ShiftBidsPanel({ companyId, profile, employees, sites, canPost, otSetti
     setOtBidPending(null); load()
   }
   async function awardBid(bidId, empId) {
-    await supabase.from('shift_bid').update({ status:'awarded' }).eq('id',bidId)
-    await supabase.from('shift_bid_application').update({ status:'awarded' }).eq('shift_bid_id',bidId).eq('employee_id',empId); load()
+    await supabase.from('shift_bid').update({ status:'awarded' }).eq('id',bidId).eq('company_id',companyId)
+    await supabase.from('shift_bid_application').update({ status:'awarded' }).eq('shift_bid_id',bidId).eq('employee_id',empId).eq('company_id',companyId); load()
   }
   const hrs=['00','01','02','03','04','05','06','07','08','09','10','11','12','13','14','15','16','17','18','19','20','21','22','23']
   const mins=['00','15','30','45']
