@@ -40,9 +40,11 @@ import AuditLog from './pages/audit/AuditLog'
 import Payroll from './pages/payroll/Payroll'
 import PerformanceReviews from './pages/reviews/PerformanceReviews'
 import ClientManagement from './pages/clients/ClientManagement'
-import Features from './pages/features/Features'
-import PrivacyPolicy from './pages/legal/PrivacyPolicy'
-import TermsOfService from './pages/legal/TermsOfService'
+import MarketingHome from './pages/marketing/Home'
+import MarketingFeatures from './pages/marketing/Features'
+import MarketingPricing from './pages/marketing/Pricing'
+import MarketingPrivacy from './pages/marketing/Privacy'
+import MarketingTerms from './pages/marketing/Terms'
 import Support from './pages/legal/Support'
 
 function ComingSoon({ name }) {
@@ -131,10 +133,12 @@ export default function App() {
     <OAuthCallbackHandler />
     <PrivacyBanner />
     <Routes>
+      <Route path="/"            element={<MarketingHome />} />
+      <Route path="/features"    element={<MarketingFeatures />} />
+      <Route path="/pricing"     element={<MarketingPricing />} />
+      <Route path="/privacy"     element={<MarketingPrivacy />} />
+      <Route path="/terms"       element={<MarketingTerms />} />
       <Route path="/reciprocity" element={<CCWMap />} />
-      <Route path="/features"    element={<Features />} />
-      <Route path="/privacy"     element={<PrivacyPolicy />} />
-      <Route path="/terms"       element={<TermsOfService />} />
       <Route path="/support"     element={<Support />} />
       <Route path="/auth/callback" element={<AuthCallback />} />
       <Route path="/login"    element={isAuthenticated ? <Navigate to={role === 'client' ? '/portal' : '/dashboard'} replace /> : <Login />} />
