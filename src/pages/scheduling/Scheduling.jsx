@@ -124,7 +124,7 @@ export default function Scheduling() {
   const [selected, setSelected]         = useState(null)
   const [mainTab, setMainTab]           = useState('schedule')
   const [creatorEmpId, setCreatorEmpId] = useState(null)
-  const [isMobile, setIsMobile]         = useState(window.innerWidth < 768)
+  const [isMobile, setIsMobile]         = useState(window.innerWidth < 640)
   const [sidebarOpen, setSidebarOpen]   = useState(true)
   const [selPositions, setSelPositions] = useState(new Set())
   const [selSites, setSelSites]         = useState(new Set())
@@ -137,7 +137,7 @@ export default function Scheduling() {
   const isOfficer  = ['officer','corporal'].includes(profile?.role)
 
   useEffect(() => {
-    const h = () => setIsMobile(window.innerWidth < 768)
+    const h = () => setIsMobile(window.innerWidth < 640)
     window.addEventListener('resize', h)
     return () => window.removeEventListener('resize', h)
   }, [])
@@ -1138,6 +1138,7 @@ function SwapRequestModal({ companyId, employee, shifts, employees, allShifts, o
 // ── Availability Panel ────────────────────────────────────────────────────────
 
 function AvailabilityPanel({ companyId, profile, employees, canEdit }) {
+  const isMobile = window.innerWidth < 640
   const [avail, setAvail]       = useState([])
   const [employee, setEmployee] = useState(null)
   const [viewEmpId, setViewEmpId] = useState(null)
@@ -1190,7 +1191,8 @@ function AvailabilityPanel({ companyId, profile, employees, canEdit }) {
           </select>
         </div>
       )}
-      <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',overflow:'hidden',marginBottom:'14px'}}>
+      <div style={{overflowX:isMobile?'auto':'visible'}}>
+      <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',overflow:'hidden',marginBottom:'14px',minWidth:isMobile?'420px':'auto'}}>
         {DAYS.map((day,i)=>{
           const a = localAvail[i] || { is_available:true, start_time:'06:00', end_time:'22:00' }
           return (
@@ -1212,6 +1214,7 @@ function AvailabilityPanel({ companyId, profile, employees, canEdit }) {
             </div>
           )
         })}
+      </div>
       </div>
       {canEditThis && (
         <button style={{display:'inline-flex',alignItems:'center',gap:'8px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-sm)',padding:'0 22px',height:'44px',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',opacity:saving?0.6:1}} onClick={saveAvail} disabled={saving}>

@@ -109,6 +109,7 @@ function qrUrl(siteId) {
 
 export default function SiteManagement() {
   const { profile } = useAuth()
+  const isMobile = window.innerWidth < 640
   const toast = useToast()
   const canEdit = atLeast(profile?.role, 'lieutenant')
   const [sites, setSites]           = useState([])
@@ -167,7 +168,7 @@ export default function SiteManagement() {
   if (loading) return <div style={{ padding:'24px' }}>{[...Array(6)].map((_,i) => <div key={i} className="skeleton" style={{ height:'130px', borderRadius:'10px', marginBottom:'12px' }} />)}</div>
 
   return (
-    <div style={s.page}>
+    <div style={{...s.page, padding:isMobile?'12px':'24px'}}>
       <style>{`
         @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
         @keyframes slideIn{from{transform:translateX(40px);opacity:0}to{transform:translateX(0);opacity:1}}
@@ -567,7 +568,7 @@ function DetailPanel({ site, onDuty, tab, setTab, onClose, onEdit, canEdit }) {
           </div>
         </div>
 
-        <div style={s.detailTabs}>
+        <div style={{...s.detailTabs, overflowX:'auto'}}>
           {TABS.map(t => (
             <button key={t.id} style={{ ...s.detailTab, ...(tab === t.id ? s.detailTabAct : {}) }} onClick={() => setTab(t.id)}>{t.label}</button>
           ))}

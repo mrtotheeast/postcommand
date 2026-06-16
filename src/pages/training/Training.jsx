@@ -64,6 +64,7 @@ function assignStatusMeta(status) {
 
 export default function Training() {
   const { profile }          = useAuth()
+  const isMobile = window.innerWidth < 640
   const { incrementBadge, clearBadge } = useNotifications()
   const isAdmin = atLeast(profile?.role, 'sergeant')
   const [tab, setTab]               = useState(isAdmin ? 'library' : 'my')
@@ -191,7 +192,7 @@ export default function Training() {
   ]
 
   return (
-    <div style={s.page}>
+    <div style={{...s.page, padding:isMobile?'12px':'24px'}}>
       <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}} .course-card:hover{border-color:var(--accent-border)!important;background:var(--bg-card-hover)!important;}`}</style>
       <h2 style={s.heading}>TRAINING</h2>
       <p style={s.sub}>Build courses, assign training, and track completion.</p>
@@ -212,7 +213,7 @@ export default function Training() {
         </div>
       )}
 
-      <div style={s.tabs}>
+      <div style={{...s.tabs, overflowX:'auto'}}>
         {TABS.map(t => <button key={t.id} style={{ ...s.tab, ...(tab===t.id?s.tabAct:{}) }} onClick={() => setTab(t.id)}>{t.label}</button>)}
       </div>
 
@@ -804,6 +805,7 @@ function AssignModal({ course, employees, assignments, companyId, onClose, onSav
 // ── Leaderboard ───────────────────────────────────────────────────────────────
 
 function Leaderboard({ assignments, empMap, courses }) {
+  const isMobile = window.innerWidth < 640
   const empStats = {}
   for (const a of assignments) {
     if (!empStats[a.employee_id]) empStats[a.employee_id] = { total:0, completed:0, overdue:0, inProgress:0 }
@@ -819,7 +821,8 @@ function Leaderboard({ assignments, empMap, courses }) {
   const medal = (i) => i===0?'🥇':i===1?'🥈':i===2?'🥉':`#${i+1}`
 
   return (
-    <div style={{ background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-md)', overflow:'hidden' }}>
+    <div style={{ overflowX:isMobile?'auto':'visible' }}>
+    <div style={{ background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-md)', overflow:'hidden', minWidth:isMobile?'420px':'auto' }}>
       {ranked.length===0 ? (
         <div style={{ padding:'40px', textAlign:'center', color:'var(--text-muted)', fontSize:'14px' }}>No training data yet. Assign courses to get started.</div>
       ) : (
@@ -850,6 +853,7 @@ function Leaderboard({ assignments, empMap, courses }) {
           ))}
         </>
       )}
+    </div>
     </div>
   )
 }

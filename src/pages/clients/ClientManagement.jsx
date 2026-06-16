@@ -33,6 +33,7 @@ const s = {
 
 export default function ClientManagement() {
   const { profile } = useAuth()
+  const isMobile = window.innerWidth < 640
   const [clients,    setClients]    = useState([])
   const [sites,      setSites]      = useState([])
   const [loading,    setLoading]    = useState(true)
@@ -60,16 +61,16 @@ export default function ClientManagement() {
   if (loading) return <div style={{padding:'24px'}}>{[...Array(5)].map((_,i)=><div key={i} className="skeleton" style={{height:'52px',borderRadius:'8px',marginBottom:'10px'}}/>)}</div>
 
   return (
-    <div style={s.page}>
+    <div style={{...s.page, padding:isMobile?'12px':'24px'}}>
       <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}} @keyframes slideIn{from{transform:translateX(30px);opacity:0}to{transform:translateX(0);opacity:1}}`}</style>
       <h2 style={s.heading}>CLIENT MANAGEMENT</h2>
       <p style={s.sub}>Manage client accounts, contracts, and onboarding.</p>
-      <div style={{display:'flex',gap:'10px',marginBottom:'16px'}}>
+      <div style={{display:'flex',gap:'10px',marginBottom:'16px',flexWrap:'wrap'}}>
         <input style={s.inp} placeholder="Search clients..." value={search} onChange={e=>setSearch(e.target.value)} onFocus={e=>e.target.style.borderColor='var(--border-focus)'} onBlur={e=>e.target.style.borderColor='var(--border)'}/>
         <button style={s.btn} onClick={()=>{setEditClient(null);setShowModal(true)}}><Icon name="plus" size={15}/>ADD CLIENT</button>
       </div>
-      <div style={s.card}>
-        <table style={{width:'100%',borderCollapse:'collapse'}}>
+      <div style={{...s.card, overflowX:isMobile?'auto':'visible'}}>
+        <table style={{width:'100%',borderCollapse:'collapse',minWidth:isMobile?'600px':'auto'}}>
           <thead><tr>{['Company','Contact','Phone','Email','Sites','Status',''].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead>
           <tbody>
             {filtered.map(c => {
