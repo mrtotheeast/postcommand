@@ -47,11 +47,20 @@ export default function ClientManagement() {
 
   async function load() {
     setLoading(true)
-    const [{ data:cl }, { data:si }] = await Promise.all([
+    const [{ data:cl }, { data:si }, { data:ct }] = await Promise.all([
       supabase.from('client').select('*').eq('company_id',profile.company_id).order('name'),
       supabase.from('site').select('id,name,client_id').eq('company_id',profile.company_id),
+      supabase.from('client_contact').select('client_id,full_name,phone,email').eq('company_id',profile.company_id).eq('is_main_contact',true),
     ])
-    setClients(cl||[]); setSites(si||[]); setLoading(false)
+    const contactMap = {}
+    for (const c of (ct||[])) contactMap[c.client_id] = c
+    const merged = (cl||[]).map(c => ({
+      ...c,
+      contact_name:  contactMap[c.id]?.full_name || null,
+      contact_phone: contactMap[c.id]?.phone     || null,
+      contact_email: contactMap[c.id]?.email     || null,
+    }))
+    setClients(merged); setSites(si||[]); setLoading(false)
   }
 
   const filtered = useMemo(() => clients.filter(c => !search || c.name?.toLowerCase().includes(search.toLowerCase())), [clients,search])
@@ -80,8 +89,8 @@ export default function ClientManagement() {
                 <tr key={c.id} style={s.tr} onClick={()=>{setSelected(c);setPanelTab('overview')}} onMouseEnter={e=>e.currentTarget.style.background='var(--bg-card-hover)'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
                   <td style={s.tdName}>{c.name||'—'}</td>
                   <td style={s.td}>{c.contact_name||'—'}</td>
-                  <td style={s.td}>{c.phone||'—'}</td>
-                  <td style={s.td}>{c.email||'—'}</td>
+                  <td style={s.td}>{c.contact_phone||'—'}</td>
+                  <td style={s.td}>{c.contact_email||'—'}</td>
                   <td style={s.td}>{cnt} site{cnt!==1?'s':''}</td>
                   <td style={s.td}><span style={{...s.pill,background:st.bg,color:st.color}}>{st.label}</span></td>
                   <td style={s.td} onClick={e=>e.stopPropagation()}>
@@ -271,7 +280,6 @@ function ClientFormModal({ client, companyId, onClose, onSaved }) {
     : { company_name:'', contact_name:'', phone:'', email:'', address:'', contract_status:'active', notes:'' })
   const [site, setSite] = useState({ name:'', address:'', city:'', state:'', latitude:'', longitude:'', geofence_feet:'500' })
   const [saving, setSaving] = useState(false)
-  const [inviteSending, setInviteSending] = useState(false)
 
   function setF(k, v) { setForm(p => ({ ...p, [k]: v })) }
   function setS(k, v) { setSite(p => ({ ...p, [k]: v })) }
@@ -282,21 +290,29 @@ function ClientFormModal({ client, companyId, onClose, onSaved }) {
   async function saveEdit() {
     if (!form.company_name.trim()) return
     setSaving(true)
-    await supabase.from('client').update({
-      name: form.company_name.trim(),
-      billing_address: form.address.trim() || null,
-      status: form.contract_status || 'active',
-      notes: form.notes.trim() || null,
-    }).eq('id', client.id)
-    toast('Client saved')
-    setSaving(false)
-    onSaved()
+    let ok = false
+    try {
+      await supabase.from('client').update({
+        name: form.company_name.trim(),
+        billing_address: form.address.trim() || null,
+        status: form.contract_status || 'active',
+        notes: form.notes.trim() || null,
+      }).eq('id', client.id)
+      toast('Client saved')
+      ok = true
+    } catch (err) {
+      toast('Failed to save: ' + (err.message || 'Unknown error'), 'error')
+    } finally {
+      setSaving(false)
+      if (ok) onSaved()
+    }
   }
 
   // Create mode — step 2: save client row, contact row, then site row
   async function saveFull() {
     if (!site.name.trim()) return
     setSaving(true)
+    let ok = false
     try {
       const { data: newClient, error: clientErr } = await supabase
         .from('client')
@@ -338,34 +354,13 @@ function ClientFormModal({ client, companyId, onClose, onSaved }) {
       })
       if (siteErr) throw siteErr
 
-      setStep('done')
+      toast('Client created')
+      ok = true
     } catch (err) {
       toast('Failed to save: ' + (err.message || 'Unknown error'), 'error')
     } finally {
       setSaving(false)
-    }
-  }
-
-  async function sendInvite() {
-    if (!form.email) return
-    setInviteSending(true)
-    try {
-      await supabase.functions.invoke('send-email', {
-        body: {
-          type: 'welcome',
-          to: form.email,
-          data: {
-            firstName: form.contact_name?.split(' ')[0] || 'there',
-            loginUrl: 'https://postcommand.app',
-            company_id: companyId,
-          },
-        },
-      })
-      toast('Invite sent to ' + form.email)
-    } catch {
-      toast('Failed to send invite', 'error')
-    } finally {
-      setInviteSending(false)
+      if (ok) onSaved()
     }
   }
 
@@ -450,30 +445,4 @@ function ClientFormModal({ client, companyId, onClose, onSaved }) {
     )
   }
 
-  // ── Create mode — step done: success + invite ──────────────────────────────
-  return (
-    <div style={s.overlay}>
-      <div style={s.modal}>
-        <div style={{ textAlign:'center', padding:'8px 0 20px' }}>
-          <div style={{ width:'56px', height:'56px', borderRadius:'50%', background:'var(--color-success-bg)', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 16px' }}>
-            <Icon name="check-circle" size={28} color="var(--color-success)"/>
-          </div>
-          <div style={{ fontFamily:'var(--font-display)', fontSize:'20px', letterSpacing:'1.5px', color:'var(--text-primary)', marginBottom:'6px' }}>CLIENT CREATED</div>
-          <div style={{ fontSize:'13px', color:'var(--text-muted)' }}>{form.company_name} and their first site have been saved.</div>
-        </div>
-        {form.email && (
-          <div style={{ background:'var(--bg-surface)', border:'1px solid var(--border)', borderRadius:'var(--radius-md)', padding:'16px', marginBottom:'16px' }}>
-            <div style={{ fontSize:'13px', fontWeight:600, color:'var(--text-primary)', marginBottom:'4px' }}>Send Welcome Email?</div>
-            <div style={{ fontSize:'12px', color:'var(--text-muted)', marginBottom:'12px' }}>
-              Send a welcome email to <strong>{form.email}</strong> introducing {form.contact_name || 'the contact'} to PostCommand.
-            </div>
-            <button style={{ ...s.btn, height:'36px', fontSize:'12px', padding:'0 16px', opacity:inviteSending?0.6:1 }} onClick={sendInvite} disabled={inviteSending}>
-              <Icon name="mail" size={13}/>{inviteSending?'SENDING...':'SEND INVITE EMAIL'}
-            </button>
-          </div>
-        )}
-        <button style={s.btn} onClick={onSaved}>DONE</button>
-      </div>
-    </div>
-  )
 }
