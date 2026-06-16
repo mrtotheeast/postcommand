@@ -70,6 +70,8 @@ export default function Invoices() {
   const [viewing, setViewing]     = useState(null)
   const [tileFilter, setTileFilter] = useState(null)
   const [company, setCompany]     = useState(null)
+  const [viewMap, setViewMap]     = useState({})
+  const [allViewLogs, setAllViewLogs] = useState([])
 
   useEffect(() => {
     if (profile?.company_id) {
@@ -82,6 +84,17 @@ export default function Invoices() {
     setLoading(true)
     const { data } = await supabase.from('invoice').select('*, invoice_item(*)').eq('company_id', profile.company_id).order('created_at', { ascending:false })
     setInvoices(data || [])
+    const ids = (data || []).map(i => i.id)
+    if (ids.length > 0) {
+      const { data: logs } = await supabase.from('invoice_view_log').select('invoice_id,viewed_at,viewed_by_email').in('invoice_id', ids).order('viewed_at', { ascending:false })
+      const logList = logs || []
+      setAllViewLogs(logList)
+      const map = {}
+      for (const log of logList) { if (!map[log.invoice_id]) map[log.invoice_id] = log }
+      setViewMap(map)
+    } else {
+      setAllViewLogs([]); setViewMap({})
+    }
     setLoading(false)
   }
 
@@ -178,9 +191,17 @@ export default function Invoices() {
                 <td style={{ ...s.td, color: inv.status === 'overdue' ? 'var(--color-danger)' : 'var(--text-secondary)' }}>{fmtDate(inv.due_date)}</td>
                 <td style={{ ...s.td, fontFamily:'var(--font-condensed)', color:'var(--text-primary)', fontWeight:600 }}>{fmtMoney(inv.total)}</td>
                 <td style={s.td}>
-                  <span style={{ ...s.pill, background:STATUS[inv.status]?.bg, color:STATUS[inv.status]?.color }}>
-                    {STATUS[inv.status]?.label ?? inv.status}
-                  </span>
+                  <div style={{ display:'flex', flexDirection:'column', gap:'4px', alignItems:'flex-start' }}>
+                    <span style={{ ...s.pill, background:STATUS[inv.status]?.bg, color:STATUS[inv.status]?.color }}>
+                      {STATUS[inv.status]?.label ?? inv.status}
+                    </span>
+                    {viewMap[inv.id] && (
+                      <span style={{ display:'inline-flex', alignItems:'center', gap:'4px', fontSize:'10px', color:'var(--color-success)', fontFamily:'var(--font-condensed)', letterSpacing:'0.5px' }}>
+                        <span style={{ width:'6px', height:'6px', borderRadius:'50%', background:'var(--color-success)', flexShrink:0 }}/>
+                        Viewed {fmtDate(viewMap[inv.id].viewed_at)}
+                      </span>
+                    )}
+                  </div>
                 </td>
                 <td style={s.td} onClick={e => e.stopPropagation()}>
                   <div style={{ display:'flex', gap:'6px' }}>
@@ -211,7 +232,7 @@ export default function Invoices() {
       </div>
 
       {editing && <InvoiceFormModal invoices={invoices} mode={editing === 'new' ? 'new' : 'edit'} invoice={editing === 'new' ? null : editing} companyId={profile.company_id} company={company} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load() }} />}
-      {viewing && <InvoiceDetailModal invoice={viewing} company={company} onClose={() => setViewing(null)} onEdit={() => { setEditing(viewing); setViewing(null) }} onDelete={deleteInvoice} onStatusChange={(id,st) => { updateStatus(id,st); setViewing(null) }} onSend={sendInvoice} />}
+      {viewing && <InvoiceDetailModal invoice={viewing} company={company} onClose={() => setViewing(null)} onEdit={() => { setEditing(viewing); setViewing(null) }} onDelete={deleteInvoice} onStatusChange={(id,st) => { updateStatus(id,st); setViewing(null) }} onSend={sendInvoice} viewLogs={allViewLogs.filter(l => l.invoice_id === viewing.id)} />}
     </div>
   )
 }
@@ -400,7 +421,7 @@ function InvoiceFormModal({ invoices, mode, invoice, companyId, onClose, onSaved
 
 // ── Invoice Detail / Print ────────────────────────────────────────────────────
 
-function InvoiceDetailModal({ invoice, company, onClose, onEdit, onDelete, onStatusChange, onSend }) {
+function InvoiceDetailModal({ invoice, company, onClose, onEdit, onDelete, onStatusChange, onSend, viewLogs = [] }) {
   const items = invoice.invoice_item || []
   const [nudging, setNudging] = useState(false)
   const [nudgeMsg, setNudgeMsg] = useState(null)
@@ -543,6 +564,22 @@ function InvoiceDetailModal({ invoice, company, onClose, onEdit, onDelete, onSta
         </div>
 
         {invoice.notes && <div style={{ fontSize:'13px', color:'var(--text-muted)', marginBottom:'16px', padding:'12px', background:'var(--bg-surface)', borderRadius:'var(--radius-sm)' }}>{invoice.notes}</div>}
+
+        {viewLogs.length > 0 && (
+          <>
+            <div style={s.sectionLbl}>CLIENT ACTIVITY</div>
+            <div style={{ display:'flex', flexDirection:'column', gap:'6px', marginBottom:'16px' }}>
+              {viewLogs.map((log, i) => (
+                <div key={i} style={{ display:'flex', alignItems:'center', gap:'8px', fontSize:'12px' }}>
+                  <span style={{ width:'6px', height:'6px', borderRadius:'50%', background:'var(--color-success)', flexShrink:0 }}/>
+                  <span style={{ color:'var(--text-secondary)', fontWeight:500 }}>{log.viewed_by_email}</span>
+                  <span style={{ color:'var(--text-muted)' }}>opened</span>
+                  <span style={{ color:'var(--text-muted)' }}>{new Date(log.viewed_at).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'})}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
 
         <div style={{ display:'flex', gap:'8px', flexWrap:'wrap', borderTop:'1px solid var(--border)', paddingTop:'16px' }}>
           {invoice.client_email && onSend && invoice.status !== 'paid' && invoice.status !== 'void' && (

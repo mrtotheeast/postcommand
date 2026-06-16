@@ -136,7 +136,7 @@ export default function ClientPortal() {
             <div style={{ padding:'40px', fontFamily:'var(--font-display)', fontSize:'18px', letterSpacing:'2px', color:'var(--accent)' }}>LOADING...</div>
           ) : (
             <>
-              {tab === 'overview'  && <OverviewTab sites={sites} onDutyMap={onDutyMap} totalOnDuty={totalOnDuty} staffedSites={staffedSites} incidents={incidents} shifts={shifts} siteMap={siteMap} empMap={empMap} />}
+              {tab === 'overview'  && <OverviewTab sites={sites} onDutyMap={onDutyMap} totalOnDuty={totalOnDuty} staffedSites={staffedSites} incidents={incidents} shifts={shifts} siteMap={siteMap} empMap={empMap} profile={profile} companyId={profile?.company_id} onViewInvoices={() => setTab('invoices')} />}
               {tab === 'coverage'  && <CoverageTab sites={sites} onDutyMap={onDutyMap} empMap={empMap} />}
               {tab === 'schedule'  && <ScheduleTab shifts={shifts} sites={sites} siteMap={siteMap} empMap={empMap} />}
               {tab === 'incidents' && <IncidentsTab incidents={incidents} siteMap={siteMap} />}
@@ -153,15 +153,47 @@ export default function ClientPortal() {
 
 // ── Overview ─────────────────────────────────────────────────────────────────
 
-function OverviewTab({ sites, onDutyMap, totalOnDuty, staffedSites, incidents, shifts, siteMap, empMap }) {
+function OverviewTab({ sites, onDutyMap, totalOnDuty, staffedSites, incidents, shifts, siteMap, empMap, profile, companyId, onViewInvoices }) {
   const today = new Date().toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' })
   const upcomingShifts = shifts.filter(sh => new Date(sh.start_time) > new Date()).slice(0, 5)
   const recentIncidents = incidents.slice(0, 4)
+  const [invoiceSummary, setInvoiceSummary] = useState(null)
+
+  useEffect(() => {
+    if (!companyId || !profile?.email) return
+    async function loadBalance() {
+      const { data: contact } = await supabase.from('client_contact').select('client_id').eq('email', profile.email).eq('company_id', companyId).maybeSingle()
+      if (!contact?.client_id) return
+      const { data: client } = await supabase.from('client').select('name').eq('id', contact.client_id).single()
+      if (!client?.name) return
+      const { data: invs } = await supabase.from('invoice').select('total').eq('company_id', companyId).eq('client_name', client.name).neq('status','paid').neq('status','void').neq('status','cancelled')
+      if (invs && invs.length > 0) {
+        setInvoiceSummary({ count: invs.length, amount: invs.reduce((a,b) => a+(b.total||0), 0) })
+      }
+    }
+    loadBalance()
+  }, [companyId, profile?.email])
+
+  const fmtMoney = n => new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(n||0)
 
   return (
     <div style={s.page}>
       <h2 style={s.heading}>SECURITY OVERVIEW</h2>
       <p style={s.sub}>{today}</p>
+
+      {invoiceSummary && (
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:'12px', padding:'14px 18px', marginBottom:'20px', background:'rgba(200,168,75,0.1)', border:'1px solid rgba(200,168,75,0.35)', borderRadius:'var(--radius-md)', flexWrap:'wrap' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
+            <Icon name="alert-circle" size={16} color="#c8a84b" />
+            <span style={{ fontSize:'13px', color:'var(--text-primary)' }}>
+              You have <strong>{invoiceSummary.count}</strong> outstanding invoice{invoiceSummary.count !== 1 ? 's' : ''} totaling <strong style={{ color:'#c8a84b' }}>{fmtMoney(invoiceSummary.amount)}</strong>.
+            </span>
+          </div>
+          <button onClick={onViewInvoices} style={{ background:'transparent', border:'1px solid rgba(200,168,75,0.5)', color:'#c8a84b', borderRadius:'var(--radius-sm)', padding:'6px 14px', fontSize:'12px', fontFamily:'var(--font-condensed)', fontWeight:700, letterSpacing:'1px', cursor:'pointer', whiteSpace:'nowrap', flexShrink:0 }}>
+            VIEW INVOICES →
+          </button>
+        </div>
+      )}
 
       <div style={s.statsRow}>
         {[
@@ -718,6 +750,7 @@ function InvoicesTab({ companyId, profile }) {
                 </span>
                 {inv.pdf_url ? (
                   <a href={inv.pdf_url} target="_blank" rel="noopener noreferrer"
+                    onClick={() => { supabase.from('invoice_view_log').insert({ invoice_id:inv.id, company_id:profile.company_id, viewed_by_email:profile.email, client_contact_id:profile.id, viewed_at:new Date().toISOString() }).catch(()=>{}) }}
                     style={{ display:'inline-flex', alignItems:'center', gap:'6px', padding:'6px 14px', background:'var(--accent)', color:'var(--text-inverse)', borderRadius:'var(--radius-sm)', fontSize:'11px', fontFamily:'var(--font-condensed)', fontWeight:700, letterSpacing:'1px', textDecoration:'none', flexShrink:0 }}>
                     <Icon name="external-link" size={12}/>VIEW PDF
                   </a>
