@@ -138,17 +138,45 @@ export function AuthProvider({ children }) {
             .update({ has_app_access: true, invitation_status: 'accepted', user_id: userId })
             .eq('id', emp.id)
         } else {
-          // No employee record — fall back to auth metadata
-          const meta = user?.user_metadata
-          const fresh = {
-            id:         userId,
-            first_name: meta?.first_name || '',
-            last_name:  meta?.last_name  || '',
-            company_id: meta?.company_id || null,
-            role:       meta?.role       || 'officer',
+          // No employee record — check if this is a client contact
+          const { data: contact } = await supabase
+            .from('client_contact')
+            .select('id, client_id, company_id, full_name')
+            .eq('email', user?.email || '')
+            .maybeSingle()
+
+          if (contact) {
+            const nameParts = (contact.full_name || '').trim().split(' ')
+            const firstName = nameParts[0] || ''
+            const lastName  = nameParts.slice(1).join(' ')
+            const { data: created } = await supabase
+              .from('user_profile')
+              .insert({
+                id:         userId,
+                company_id: contact.company_id,
+                role:       'client',
+                first_name: firstName,
+                last_name:  lastName,
+              })
+              .select('*, company(role_style, custom_titles, custom_ranks, name)')
+              .single()
+            profile = created
+            await supabase.from('client_contact')
+              .update({ portal_user_id: userId, invite_status: 'accepted' })
+              .eq('id', contact.id)
+          } else {
+            // No employee AND no client contact — fall back to auth metadata
+            const meta = user?.user_metadata
+            const fresh = {
+              id:         userId,
+              first_name: meta?.first_name || '',
+              last_name:  meta?.last_name  || '',
+              company_id: meta?.company_id || null,
+              role:       meta?.role       || 'officer',
+            }
+            await supabase.from('user_profile').insert(fresh)
+            profile = fresh
           }
-          await supabase.from('user_profile').insert(fresh)
-          profile = fresh
         }
       }
 
