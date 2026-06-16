@@ -255,6 +255,71 @@ serve(async (req) => {
       break
     }
 
+    case 'invoice': {
+      const { invoiceNumber, amount, dueDate, pdf_url } = data
+      emailPayload = branded(
+        `Invoice ${invoiceNumber} from ${companyName}`,
+        `
+        <h2 style="margin:0 0 8px;font-size:22px;color:#0f172a;">Invoice ${invoiceNumber}</h2>
+        <p style="margin:0 0 24px;font-size:15px;color:#475569;line-height:1.6;">
+          Please find your invoice from <strong>${companyName}</strong> attached below.
+        </p>
+        <table style="width:100%;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;border-collapse:collapse;margin-bottom:28px;">
+          <tr>
+            <td style="padding:16px 20px;font-size:12px;font-weight:700;color:#64748b;letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid #e2e8f0;width:45%;">Amount Due</td>
+            <td style="padding:16px 20px;font-size:22px;font-weight:800;color:#0f172a;border-bottom:1px solid #e2e8f0;">${amount}</td>
+          </tr>
+          <tr>
+            <td style="padding:16px 20px;font-size:12px;font-weight:700;color:#64748b;letter-spacing:1px;text-transform:uppercase;">Due Date</td>
+            <td style="padding:16px 20px;font-size:15px;color:#0f172a;">${dueDate || '—'}</td>
+          </tr>
+        </table>
+        ${pdf_url ? `
+        <div style="text-align:center;margin:32px 0;">
+          <a href="${pdf_url}"
+             style="display:inline-block;background:#c8a84b;color:#0d0f14;font-weight:700;
+                    font-size:14px;letter-spacing:1.5px;text-transform:uppercase;text-decoration:none;
+                    padding:16px 44px;border-radius:8px;">
+            View Invoice
+          </a>
+        </div>` : ''}
+        <p style="margin:24px 0 0;font-size:13px;color:#94a3b8;text-align:center;line-height:1.6;">
+          Questions about this invoice? Reply to this email or contact us at
+          <a href="mailto:${companyEmail}" style="color:#94a3b8;">${companyEmail}</a>
+        </p>
+        `
+      )
+      break
+    }
+
+    case 'invoice_reminder': {
+      const { invoiceNumber, total, dueDate } = data
+      emailPayload = branded(
+        `Payment Reminder — Invoice ${invoiceNumber}`,
+        `
+        <h2 style="margin:0 0 8px;font-size:22px;color:#0f172a;">Friendly Payment Reminder</h2>
+        <p style="margin:0 0 24px;font-size:15px;color:#475569;line-height:1.6;">
+          This is a reminder that invoice <strong>${invoiceNumber}</strong> from <strong>${companyName}</strong> is outstanding.
+        </p>
+        <table style="width:100%;background:#fff8e6;border-radius:8px;border:1px solid #e9d99b;border-collapse:collapse;margin-bottom:28px;">
+          <tr>
+            <td style="padding:16px 20px;font-size:12px;font-weight:700;color:#92740a;letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid #e9d99b;width:45%;">Amount Due</td>
+            <td style="padding:16px 20px;font-size:22px;font-weight:800;color:#0f172a;border-bottom:1px solid #e9d99b;">${total}</td>
+          </tr>
+          <tr>
+            <td style="padding:16px 20px;font-size:12px;font-weight:700;color:#92740a;letter-spacing:1px;text-transform:uppercase;">Due Date</td>
+            <td style="padding:16px 20px;font-size:15px;color:#0f172a;">${dueDate || '—'}</td>
+          </tr>
+        </table>
+        <p style="margin:24px 0 0;font-size:13px;color:#94a3b8;text-align:center;">
+          If you have already made payment, please disregard this notice.
+          Questions? Contact us at <a href="mailto:${companyEmail}" style="color:#94a3b8;">${companyEmail}</a>
+        </p>
+        `
+      )
+      break
+    }
+
     default:
       return new Response(JSON.stringify({ error: `Unknown email type: ${type}` }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }

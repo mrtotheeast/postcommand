@@ -61,6 +61,7 @@ function nextInvoiceNumber(invoices) {
 
 export default function Invoices() {
   const { profile } = useAuth()
+  const toast = useToast()
   const [invoices, setInvoices]   = useState([])
   const [loading, setLoading]     = useState(true)
   const [search, setSearch]       = useState('')
@@ -104,6 +105,20 @@ export default function Invoices() {
   async function deleteInvoice(id) {
     await supabase.from('invoice').delete().eq('id', id)
     setViewing(null); load()
+  }
+
+  async function sendInvoice(inv) {
+    if (!inv.client_email) return
+    try {
+      await supabase.functions.invoke('send-email', {
+        body: { type:'invoice', to:inv.client_email, data:{ invoiceNumber:inv.invoice_number, amount:fmtMoney(inv.total), dueDate:fmtDate(inv.due_date), pdf_url:inv.pdf_url||null, companyName:company?.name||'PostCommand', company_id:profile.company_id } }
+      })
+      await supabase.from('invoice').update({ sent_at:new Date().toISOString(), status:inv.status==='draft'?'sent':inv.status }).eq('id',inv.id)
+      toast('Invoice sent to ' + inv.client_email)
+      load()
+    } catch(e) {
+      toast('Failed to send invoice', 'error')
+    }
   }
 
   const totalOutstanding = invoices.filter(i => i.status === 'sent' || i.status === 'overdue').reduce((a,b) => a + (b.total||0), 0)
@@ -179,6 +194,11 @@ export default function Invoices() {
                         MARK PAID
                       </button>
                     )}
+                    {inv.client_email && inv.status !== 'paid' && inv.status !== 'void' && (
+                      <button style={{ ...s.addBtn, height:'32px', padding:'0 10px', fontSize:'11px' }} onClick={() => sendInvoice(inv)}>
+                        SEND
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>
@@ -191,7 +211,7 @@ export default function Invoices() {
       </div>
 
       {editing && <InvoiceFormModal invoices={invoices} mode={editing === 'new' ? 'new' : 'edit'} invoice={editing === 'new' ? null : editing} companyId={profile.company_id} company={company} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load() }} />}
-      {viewing && <InvoiceDetailModal invoice={viewing} company={company} onClose={() => setViewing(null)} onEdit={() => { setEditing(viewing); setViewing(null) }} onDelete={deleteInvoice} onStatusChange={(id,st) => { updateStatus(id,st); setViewing(null) }} />}
+      {viewing && <InvoiceDetailModal invoice={viewing} company={company} onClose={() => setViewing(null)} onEdit={() => { setEditing(viewing); setViewing(null) }} onDelete={deleteInvoice} onStatusChange={(id,st) => { updateStatus(id,st); setViewing(null) }} onSend={sendInvoice} />}
     </div>
   )
 }
@@ -276,6 +296,7 @@ function InvoiceFormModal({ invoices, mode, invoice, companyId, onClose, onSaved
       }
       if (invId) {
         await supabase.from('invoice_item').insert(items.filter(it => it.description.trim()).map(it => ({ invoice_id:invId, description:it.description.trim(), quantity:parseFloat(it.quantity)||1, unit_price:parseFloat(it.unit_price)||0, amount:parseFloat(it.amount)||0 })))
+        supabase.functions.invoke('generate-invoice-pdf', { body: { invoice_id:invId, company_id:companyId } }).catch(() => {})
       }
       toast('Invoice saved')
       ok = true
@@ -379,10 +400,17 @@ function InvoiceFormModal({ invoices, mode, invoice, companyId, onClose, onSaved
 
 // ── Invoice Detail / Print ────────────────────────────────────────────────────
 
-function InvoiceDetailModal({ invoice, company, onClose, onEdit, onDelete, onStatusChange }) {
+function InvoiceDetailModal({ invoice, company, onClose, onEdit, onDelete, onStatusChange, onSend }) {
   const items = invoice.invoice_item || []
   const [nudging, setNudging] = useState(false)
   const [nudgeMsg, setNudgeMsg] = useState(null)
+  const [sending, setSending] = useState(false)
+
+  async function handleSendInvoice() {
+    setSending(true)
+    try { await onSend(invoice) } catch(e) {}
+    finally { setSending(false) }
+  }
 
   async function sendNudge() {
     if (!invoice.client_email) return
@@ -517,6 +545,9 @@ function InvoiceDetailModal({ invoice, company, onClose, onEdit, onDelete, onSta
         {invoice.notes && <div style={{ fontSize:'13px', color:'var(--text-muted)', marginBottom:'16px', padding:'12px', background:'var(--bg-surface)', borderRadius:'var(--radius-sm)' }}>{invoice.notes}</div>}
 
         <div style={{ display:'flex', gap:'8px', flexWrap:'wrap', borderTop:'1px solid var(--border)', paddingTop:'16px' }}>
+          {invoice.client_email && onSend && invoice.status !== 'paid' && invoice.status !== 'void' && (
+            <button style={{...s.saveBtn, opacity:sending?0.6:1}} onClick={handleSendInvoice} disabled={sending}><Icon name="mail" size={13}/>{sending?'SENDING...':'SEND INVOICE'}</button>
+          )}
           {invoice.status === 'draft'  && <button style={s.saveBtn}   onClick={() => onStatusChange(invoice.id,'sent')}><Icon name="send" size={13} />MARK SENT</button>}
           {invoice.status === 'sent'   && <button style={s.saveBtn}   onClick={() => onStatusChange(invoice.id,'paid')}><Icon name="check" size={13} />MARK PAID</button>}
           {invoice.status === 'sent'   && <button style={s.dangerBtn} onClick={() => onStatusChange(invoice.id,'overdue')}><Icon name="alert-circle" size={13} />MARK OVERDUE</button>}
