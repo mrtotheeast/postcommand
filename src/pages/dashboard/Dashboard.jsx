@@ -201,6 +201,7 @@ function MainDashboard({ profile, effectiveRole, badges, navigate }) {
       <StatCards role={effectiveRole} badges={badges} />
 
       {atLeast(effectiveRole, 'sergeant') && <DarDueWidget profile={profile} navigate={navigate} />}
+      {atLeast(effectiveRole, 'sergeant') && <InvoiceStatsWidget companyId={profile?.company_id} navigate={navigate} />}
 
       <div style={{fontSize:'10px',color:'var(--text-muted)',letterSpacing:'1.5px',textTransform:'uppercase',fontFamily:'var(--font-condensed)',marginBottom:'10px'}}>Quick Access</div>
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:'12px'}}>
@@ -223,6 +224,53 @@ function MainDashboard({ profile, effectiveRole, badges, navigate }) {
             </button>
           )
         })}
+      </div>
+    </div>
+  )
+}
+
+function InvoiceStatsWidget({ companyId, navigate }) {
+  const [stats, setStats] = useState(null)
+
+  useEffect(() => {
+    if (!companyId) return
+    const today = new Date().toISOString().slice(0, 10)
+    supabase.from('invoice').select('id,total,status,due_date').eq('company_id', companyId)
+      .then(({ data }) => {
+        if (!data) return
+        const outstanding = data
+          .filter(i => !['paid','void','cancelled'].includes(i.status))
+          .reduce((a, b) => a + (b.total || 0), 0)
+        const overdue = data
+          .filter(i => !['paid','void'].includes(i.status) && i.due_date && i.due_date < today)
+          .length
+        setStats({ outstanding, overdue, total: data.length })
+      })
+  }, [companyId])
+
+  if (!stats) return null
+
+  const fmtMoney = n => new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}).format(n||0)
+
+  return (
+    <div style={{marginBottom:'28px'}}>
+      <div style={{fontSize:'10px',color:'var(--text-muted)',letterSpacing:'1.5px',textTransform:'uppercase',fontFamily:'var(--font-condensed)',marginBottom:'10px'}}>Invoices</div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))',gap:'12px'}}>
+        {[
+          {label:'Outstanding', value:fmtMoney(stats.outstanding), color:stats.outstanding>0?'var(--accent)':'var(--text-secondary)', sub:'Unpaid invoices', large:fmtMoney(stats.outstanding).length>8},
+          {label:'Overdue',     value:stats.overdue,               color:stats.overdue>0?'var(--color-danger)':'var(--text-secondary)', sub:'Past due date', large:false},
+          {label:'Total Invoices',value:stats.total,               color:'var(--text-primary)', sub:'All time', large:false},
+        ].map((c,i) => (
+          <button key={i} onClick={() => navigate('/invoices')}
+            style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'16px',boxShadow:'var(--shadow-card)',textAlign:'left',cursor:'pointer',outline:'none',transition:'border-color 150ms ease'}}
+            onMouseEnter={e => e.currentTarget.style.borderColor='var(--accent-border)'}
+            onMouseLeave={e => e.currentTarget.style.borderColor='var(--border-subtle)'}
+          >
+            <div style={{fontSize:'10px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',marginBottom:'6px'}}>{c.label}</div>
+            <div style={{fontFamily:'var(--font-display)',fontSize:c.large?'18px':'28px',letterSpacing:'1px',lineHeight:1,color:c.color}}>{c.value}</div>
+            <div style={{fontSize:'11px',color:'var(--text-muted)',marginTop:'4px'}}>{c.sub}</div>
+          </button>
+        ))}
       </div>
     </div>
   )

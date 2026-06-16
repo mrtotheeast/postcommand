@@ -21,6 +21,7 @@ const TABS = [
   { id:'requests',  label:'Requests',  icon:'send' },
   { id:'incidents', label:'Incidents', icon:'file-check' },
   { id:'messages',  label:'Messages',  icon:'message-circle' },
+  { id:'invoices',  label:'Invoices',  icon:'file-text' },
 ]
 
 const s = {
@@ -141,6 +142,7 @@ export default function ClientPortal() {
               {tab === 'incidents' && <IncidentsTab incidents={incidents} siteMap={siteMap} />}
               {tab === 'requests'  && <ServiceRequestsTab companyId={profile?.company_id} profile={profile} sites={sites} />}
               {tab === 'messages'  && <MessagesTab companyId={profile?.company_id} profile={profile} />}
+              {tab === 'invoices'  && <InvoicesTab companyId={profile?.company_id} profile={profile} />}
             </>
           )}
         </div>
@@ -611,6 +613,122 @@ function MessagesTab({ companyId, profile }) {
           <div style={{ padding:'40px', color:'var(--text-muted)', fontSize:'14px' }}>Select a channel to view messages.</div>
         )}
       </div>
+    </div>
+  )
+}
+
+// ── Invoices ──────────────────────────────────────────────────────────────────
+
+function InvoicesTab({ companyId, profile }) {
+  const [invoices, setInvoices] = useState([])
+  const [loading, setLoading]   = useState(true)
+  const [clientName, setClientName] = useState(null)
+
+  useEffect(() => {
+    if (!companyId || !profile?.email) { setLoading(false); return }
+    async function load() {
+      const { data: contactData } = await supabase
+        .from('client_contact')
+        .select('client_id')
+        .eq('email', profile.email)
+        .eq('company_id', companyId)
+        .maybeSingle()
+
+      if (!contactData?.client_id) { setLoading(false); return }
+
+      const { data: clientData } = await supabase
+        .from('client')
+        .select('name')
+        .eq('id', contactData.client_id)
+        .single()
+
+      const cName = clientData?.name || null
+      setClientName(cName)
+      if (!cName) { setLoading(false); return }
+
+      const { data } = await supabase
+        .from('invoice')
+        .select('id,invoice_number,issue_date,due_date,total,status,pdf_url')
+        .eq('company_id', companyId)
+        .eq('client_name', cName)
+        .order('created_at', { ascending: false })
+
+      setInvoices(data || [])
+      setLoading(false)
+    }
+    load()
+  }, [companyId, profile?.email])
+
+  const fmtMoney = n => new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(n||0)
+  const fmtDate  = d => d ? new Date(d+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—'
+
+  const outstanding = invoices.filter(i => !['paid','void'].includes(i.status)).reduce((a,b) => a+(b.total||0), 0)
+
+  const STATUS_COLOR = {
+    draft:    { bg:'var(--border)',              color:'var(--text-muted)' },
+    sent:     { bg:'rgba(59,130,246,0.12)',      color:'#3b82f6' },
+    paid:     { bg:'rgba(34,197,94,0.12)',       color:'#16a34a' },
+    overdue:  { bg:'rgba(239,68,68,0.12)',       color:'#dc2626' },
+    void:     { bg:'rgba(130,130,130,0.12)',     color:'#8899aa' },
+    cancelled:{ bg:'rgba(130,130,130,0.12)',     color:'#8899aa' },
+  }
+
+  return (
+    <div style={s.page}>
+      <h2 style={s.heading}>INVOICES</h2>
+      <p style={s.sub}>Your account balance and billing history.</p>
+
+      {/* Outstanding balance */}
+      <div style={{ ...s.statCard, textAlign:'center', marginBottom:'24px', padding:'28px' }}>
+        <div style={s.statLbl}>Outstanding Balance</div>
+        <div style={{ fontFamily:'var(--font-display)', fontSize:'48px', letterSpacing:'2px', lineHeight:1, color: outstanding > 0 ? 'var(--accent)' : 'var(--color-success, #16a34a)' }}>
+          {fmtMoney(outstanding)}
+        </div>
+        {outstanding === 0 && invoices.length > 0 && (
+          <div style={{ fontSize:'12px', color:'var(--color-success, #16a34a)', marginTop:'10px', display:'flex', alignItems:'center', justifyContent:'center', gap:'6px' }}>
+            <Icon name="check-circle" size={13}/>All invoices paid
+          </div>
+        )}
+      </div>
+
+      {loading ? (
+        <div style={{ color:'var(--text-muted)', fontSize:'12px', fontFamily:'var(--font-condensed)', letterSpacing:'1px' }}>LOADING...</div>
+      ) : invoices.length === 0 ? (
+        <div style={{ ...s.card, textAlign:'center', padding:'48px', color:'var(--text-muted)' }}>
+          {clientName ? 'No invoices on file.' : 'No billing account linked to this email address.'}
+        </div>
+      ) : (
+        <div style={{ background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-md)', overflow:'hidden' }}>
+          {invoices.map((inv, i) => {
+            const st = STATUS_COLOR[inv.status] || STATUS_COLOR.draft
+            return (
+              <div key={inv.id} style={{ display:'flex', alignItems:'center', gap:'12px', padding:'14px 18px', borderBottom: i < invoices.length-1 ? '1px solid var(--border)' : 'none', flexWrap:'wrap' }}>
+                <div style={{ flex:1, minWidth:'180px' }}>
+                  <div style={{ fontSize:'13px', fontWeight:600, color:'var(--text-primary)', marginBottom:'3px' }}>{inv.invoice_number}</div>
+                  <div style={{ fontSize:'11px', color:'var(--text-muted)', display:'flex', gap:'12px', flexWrap:'wrap' }}>
+                    <span>Issued: {fmtDate(inv.issue_date)}</span>
+                    {inv.due_date && <span>Due: {fmtDate(inv.due_date)}</span>}
+                  </div>
+                </div>
+                <div style={{ fontFamily:'var(--font-display)', fontSize:'18px', color:'var(--text-primary)', letterSpacing:'1px', flexShrink:0 }}>
+                  {fmtMoney(inv.total)}
+                </div>
+                <span style={{ ...s.badge, background:st.bg, color:st.color, flexShrink:0 }}>
+                  {inv.status?.toUpperCase()}
+                </span>
+                {inv.pdf_url ? (
+                  <a href={inv.pdf_url} target="_blank" rel="noopener noreferrer"
+                    style={{ display:'inline-flex', alignItems:'center', gap:'6px', padding:'6px 14px', background:'var(--accent)', color:'var(--text-inverse)', borderRadius:'var(--radius-sm)', fontSize:'11px', fontFamily:'var(--font-condensed)', fontWeight:700, letterSpacing:'1px', textDecoration:'none', flexShrink:0 }}>
+                    <Icon name="external-link" size={12}/>VIEW PDF
+                  </a>
+                ) : (
+                  <div style={{ width:'85px' }}/>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
