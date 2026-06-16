@@ -33,7 +33,7 @@ export function NotificationProvider({ children }) {
       .from('incident_report')
       .select('id', { count: 'exact', head: true })
       .eq('company_id', profile.company_id)
-      .in('status', ['submitted', 'open', 'under_review', 'pending'])
+      .in('status', ['submitted', 'reviewed'])
     setBadges(prev => ({ ...prev, open_incidents: count || 0 }))
   }
 

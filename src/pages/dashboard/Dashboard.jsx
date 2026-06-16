@@ -284,7 +284,7 @@ function StatCards({ role, badges }) {
 
   if (isAdmin) {
     cards.push(
-      {label:'Open Incidents',value:badges.open_incidents||0,color:badges.open_incidents>0?'#e05555':'var(--text-secondary)',sub:'Awaiting review'},
+      {label:'Open Incidents',value:badges.open_incidents||0,color:badges.open_incidents>0?'#e05555':'var(--text-secondary)',sub:'Submitted or under review'},
       {label:'Pending Timesheets',value:badges.pending_timesheets||0,color:badges.pending_timesheets>0?'#e8943a':'var(--text-secondary)',sub:'Awaiting approval'},
       {label:'Unread Messages',value:badges.unread_messages||0,color:badges.unread_messages>0?'#5b9fe0':'var(--text-secondary)',sub:'Internal + client'},
     )

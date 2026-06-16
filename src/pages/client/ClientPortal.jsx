@@ -197,7 +197,7 @@ function OverviewTab({ sites, onDutyMap, totalOnDuty, staffedSites, incidents, s
         {[
           { label:'Officers On Duty', value: totalOnDuty, color:'var(--accent)', sub:'Right now' },
           { label:'Sites Staffed', value: `${staffedSites}/${sites.length}`, color:'var(--color-success)', sub:'Active coverage' },
-          { label:'Incidents (7d)', value: incidents.length, color: incidents.length > 0 ? 'var(--color-warning)' : 'var(--color-success)', sub:'Approved reports' },
+          { label:'Incidents (7d)', value: incidents.length, color: incidents.length > 0 ? 'var(--color-warning)' : 'var(--color-success)', sub:'Reviewed or approved' },
           { label:'Upcoming Shifts', value: upcomingShifts.length, color:'var(--color-info)', sub:'Today & tomorrow' },
         ].map(c => (
           <div key={c.label} style={s.statCard}>
@@ -393,7 +393,7 @@ function IncidentsTab({ incidents, siteMap }) {
   return (
     <div style={s.page}>
       <h2 style={s.heading}>INCIDENT REPORTS</h2>
-      <p style={s.sub}>{incidents.length} approved report{incidents.length !== 1 ? 's' : ''} in the last 7 days.</p>
+      <p style={s.sub}>{incidents.length} reviewed or approved report{incidents.length !== 1 ? 's' : ''} in the last 7 days.</p>
       <div style={{ background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-md)', overflow:'hidden' }}>
         {incidents.map((inc, i) => (
           <div key={inc.id}
