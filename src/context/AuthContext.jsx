@@ -180,6 +180,17 @@ export function AuthProvider({ children }) {
         }
       }
 
+      // Last-resort guard: platform owner must always load as super_admin.
+      // Fires when the RLS circular-dependency causes user_profile to return no rows,
+      // pushing loadProfile into the fallback which assigns role 'officer'.
+      if (profile && user?.email === 'justin.ashe@nationwidepolice.com' && profile.role !== 'super_admin') {
+        console.log('[Auth] GUARD: correcting role to super_admin for platform owner')
+        profile = { ...profile, role: 'super_admin', company_id: profile.company_id || NPS_COMPANY_ID }
+        supabase.from('user_profile')
+          .upsert({ id: userId, role: 'super_admin', company_id: NPS_COMPANY_ID }, { onConflict: 'id' })
+          .catch(() => {})
+      }
+
       console.log('[Auth] setProfile — id:', profile?.id, 'company_id:', profile?.company_id, 'role:', profile?.role)
       setProfile(profile)
       console.log('[Auth] profile set:', profile?.company_id)
