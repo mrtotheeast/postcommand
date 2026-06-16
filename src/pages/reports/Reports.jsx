@@ -73,6 +73,7 @@ function MiniDonut({ pct, color, size = 60 }) {
 
 export default function Reports() {
   const { profile } = useAuth()
+  const isMobile = window.innerWidth < 640
   const [period, setPeriod]       = useState('30d')
   const [data, setData]           = useState(null)
   const [loading, setLoading]     = useState(true)
@@ -216,7 +217,7 @@ export default function Reports() {
   const periodLabel = PERIODS.find(p=>p.id===period)?.label
 
   return (
-    <div style={s.page}>
+    <div style={{...s.page, padding:isMobile?'12px':'24px'}}>
       <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}`}</style>
       <h2 style={s.heading}>REPORTS & ANALYTICS</h2>
       <p style={s.sub}>Operational summary for your organization.</p>
@@ -269,7 +270,7 @@ export default function Reports() {
       </div>
 
       {/* Charts row 1 */}
-      <div style={s.row2}>
+      <div style={{...s.row2, gridTemplateColumns:isMobile?'1fr':'1fr 1fr'}}>
         <div style={s.chartCard}>
           <div style={s.chartTitle}>Incidents by Type</div>
           <BarChart data={incTypeChart} color="var(--color-danger)" />
@@ -281,7 +282,7 @@ export default function Reports() {
       </div>
 
       {/* Charts row 2 */}
-      <div style={s.row2}>
+      <div style={{...s.row2, gridTemplateColumns:isMobile?'1fr':'1fr 1fr'}}>
         <div style={s.chartCard}>
           <div style={s.chartTitle}>Top Officers by Hours</div>
           <BarChart data={topHours} color="var(--accent)" />
@@ -316,9 +317,9 @@ export default function Reports() {
       )}
 
       {/* Timesheet approval table */}
-      <div style={s.tableCard}>
+      <div style={{...s.tableCard, overflowX:isMobile?'auto':'visible'}}>
         <div style={s.chartTitle}>Timesheet Summary</div>
-        <table style={s.table}>
+        <table style={{...s.table, minWidth:isMobile?'380px':'auto'}}>
           <thead>
             <tr>{['Period','Total Shifts','Hours','Approved','Pending'].map(h => <th key={h} style={s.th}>{h}</th>)}</tr>
           </thead>

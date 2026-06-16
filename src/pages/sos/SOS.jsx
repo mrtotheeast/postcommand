@@ -55,6 +55,7 @@ function ElapsedCell({ start }) {
 
 export default function SOS() {
   const { profile } = useAuth()
+  const isMobile = window.innerWidth < 640
   const { incrementBadge, clearBadge } = useNotifications()
   const isAdmin = atLeast(profile?.role, 'sergeant')
   const [alerts, setAlerts]     = useState([])
@@ -197,7 +198,7 @@ export default function SOS() {
   if (loading) return <div style={{ padding: '40px', color: 'var(--text-muted)', fontFamily: 'var(--font-condensed)', letterSpacing: '2px' }}>LOADING...</div>
 
   return (
-    <div style={s.page}>
+    <div style={{...s.page, padding:isMobile?'12px':'24px'}}>
       <style>{`
         @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}

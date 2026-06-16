@@ -70,6 +70,7 @@ function makeOfficerIcon(initials, recencyColor) {
 
 export default function LiveMap() {
   const { profile } = useAuth()
+  const isMobile = window.innerWidth < 640
   const [sites, setSites]               = useState([])
   const [active, setActive]             = useState([])
   const [employees, setEmployees]       = useState([])
@@ -121,9 +122,9 @@ export default function LiveMap() {
   }
 
   return (
-    <div style={s.shell}>
+    <div style={{...s.shell, flexDirection:isMobile?'column':'row'}}>
       {/* Sidebar */}
-      <div style={s.sidebar}>
+      <div style={{...s.sidebar, width:isMobile?'100%':'300px', minWidth:isMobile?0:'300px', maxHeight:isMobile?'220px':'none', borderRight:isMobile?'none':'1px solid var(--border)', borderBottom:isMobile?'1px solid var(--border)':'none'}}>
         <div style={s.sideHead}>
           <div style={s.sideTitle}>LIVE MAP</div>
           <div style={s.sideSub}>{totalOnDuty} officer{totalOnDuty !== 1 ? 's' : ''} on duty · {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</div>

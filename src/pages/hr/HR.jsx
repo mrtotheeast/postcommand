@@ -73,6 +73,7 @@ function complianceScore(docs) {
 
 export default function HR() {
   const { profile } = useAuth()
+  const isMobile = window.innerWidth < 640
   const [tab, setTab]             = useState('documents')
   const [employees, setEmployees]   = useState([])
   const [docs, setDocs]             = useState([])
@@ -128,7 +129,7 @@ export default function HR() {
   if (loading) return <div style={{ padding: '24px' }}>{[...Array(5)].map((_,i) => <div key={i} className="skeleton" style={{ height: '50px', borderRadius: '8px', marginBottom: '10px' }} />)}</div>
 
   return (
-    <div style={s.page}>
+    <div style={{...s.page, padding:isMobile?'12px':'24px'}}>
       <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}`}</style>
       <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:'4px', flexWrap:'wrap', gap:'12px' }}>
         <div>
@@ -169,7 +170,7 @@ export default function HR() {
         ))}
       </div>
 
-      <div style={s.tabs}>
+      <div style={{...s.tabs, overflowX:'auto'}}>
         {[
           { id: 'documents',    label: 'Documents' },
           { id: 'writeups',     label: `Write-Ups (${writeups.length})` },
@@ -196,8 +197,8 @@ export default function HR() {
             </select>
           </div>
 
-          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
-            <table style={s.table}>
+          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', overflowX: isMobile?'auto':'hidden', overflowY:'hidden' }}>
+            <table style={{ ...s.table, minWidth: isMobile?'500px':'auto' }}>
               <thead>
                 <tr>
                   {['Employee', 'Role', 'Documents', 'Compliance', 'Status'].map(h => (
@@ -726,6 +727,7 @@ function ESignatureTab({ employees, companyId }) {
 // ── Geofence Violations Tab ───────────────────────────────────────────────────
 
 function ViolationsTab({ companyId }) {
+  const isMobile = window.innerWidth < 640
   const [violations, setViolations] = useState([])
   const [employees, setEmployees]   = useState([])
   const [sites, setSites]           = useState([])
@@ -779,8 +781,8 @@ function ViolationsTab({ companyId }) {
           <div style={{ marginTop:'12px', fontSize:'14px', color:'var(--color-success)', fontFamily:'var(--font-condensed)', letterSpacing:'1px' }}>NO VIOLATIONS FOUND</div>
         </div>
       ) : (
-        <div style={{ background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-md)', overflow:'hidden' }}>
-          <table style={s.table}>
+        <div style={{ background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-md)', overflowX:isMobile?'auto':'hidden', overflowY:'hidden' }}>
+          <table style={{ ...s.table, minWidth:isMobile?'580px':'auto' }}>
             <thead><tr>{['Date & Time','Officer','Site','Distance','Override','Reason'].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead>
             <tbody>
               {visible.slice(0,100).map((v)=>(
