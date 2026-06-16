@@ -45,7 +45,7 @@ import MarketingFeatures from './pages/marketing/Features'
 import MarketingPricing from './pages/marketing/Pricing'
 import MarketingPrivacy from './pages/marketing/Privacy'
 import MarketingTerms from './pages/marketing/Terms'
-import Support from './pages/legal/Support'
+import Support from './pages/marketing/Support'
 
 function ComingSoon({ name }) {
   return <div style={{padding:'40px 24px',fontFamily:'var(--font-display)',fontSize:'24px',letterSpacing:'2px',color:'var(--accent)'}}>{name.toUpperCase()} — COMING SOON</div>
