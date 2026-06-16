@@ -312,6 +312,24 @@ function TimesheetDetail({ts,empName,siteName,canReview,onClose,onUpdated,profil
     setSaving(true)
     const {data:empData}=await supabase.from('employee').select('id').eq('user_id',profile.id).eq('company_id',profile.company_id).maybeSingle()
     await supabase.from('timesheet').update({status:'approved',reviewed_by:empData?.id,reviewed_at:new Date().toISOString()}).eq('id',ts.id)
+    // Fire-and-forget PTO accrual
+    ;(async () => {
+      try {
+        const hours = Number(ts.total_hours) || 0
+        if (!hours) return
+        const { data: banks } = await supabase.from('pto_bank_config').select('bank_type,accrual_rate_hours,accrual_per_hours_worked').eq('company_id', profile.company_id).eq('enabled', true)
+        for (const bank of (banks || [])) {
+          if (!bank.accrual_rate_hours || !bank.accrual_per_hours_worked) continue
+          const earned = hours * (bank.accrual_rate_hours / bank.accrual_per_hours_worked)
+          const { data: existing } = await supabase.from('pto_balance').select('balance_hours').eq('company_id', profile.company_id).eq('employee_id', ts.employee_id).eq('bank_type', bank.bank_type).maybeSingle()
+          if (existing) {
+            await supabase.from('pto_balance').update({ balance_hours: (existing.balance_hours || 0) + earned, last_accrual_at: new Date().toISOString() }).eq('company_id', profile.company_id).eq('employee_id', ts.employee_id).eq('bank_type', bank.bank_type)
+          } else {
+            await supabase.from('pto_balance').insert({ company_id: profile.company_id, employee_id: ts.employee_id, bank_type: bank.bank_type, balance_hours: earned, used_hours: 0, pending_hours: 0, last_accrual_at: new Date().toISOString() })
+          }
+        }
+      } catch {}
+    })()
     // Email the officer
     const {data:officer}=await supabase.from('employee').select('first_name,email').eq('id',ts.employee_id).single()
     if(officer?.email) emailTimesheetApproved({ to:officer.email, firstName:officer.first_name, date:ts.date, hours:fmtHours(ts.total_hours), siteName:siteName(ts.site_id) })

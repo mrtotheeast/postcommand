@@ -46,6 +46,8 @@ import MarketingPricing from './pages/marketing/Pricing'
 import MarketingPrivacy from './pages/marketing/Privacy'
 import MarketingTerms from './pages/marketing/Terms'
 import Support from './pages/marketing/Support'
+import TimeOff from './pages/timeoff/TimeOff'
+import Availability from './pages/availability/Availability'
 
 function ComingSoon({ name }) {
   return <div style={{padding:'40px 24px',fontFamily:'var(--font-display)',fontSize:'24px',letterSpacing:'2px',color:'var(--accent)'}}>{name.toUpperCase()} — COMING SOON</div>
@@ -174,6 +176,8 @@ export default function App() {
       <Route path="/help"       element={<ProtectedRoute><Help /></ProtectedRoute>} />
       <Route path="/audit"      element={<ProtectedRoute><AuditLog /></ProtectedRoute>} />
       <Route path="/payroll"    element={<ProtectedRoute><Payroll /></ProtectedRoute>} />
+      <Route path="/time-off"   element={<ProtectedRoute><TimeOff /></ProtectedRoute>} />
+      <Route path="/availability" element={<ProtectedRoute><Availability /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
     </>

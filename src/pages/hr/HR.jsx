@@ -180,6 +180,7 @@ export default function HR() {
           { id: 'esignature',   label: 'E-Signature' },
           { id: 'policies',     label: 'Policy Management' },
           { id: 'company_docs', label: 'Company Docs' },
+          ...(atLeast(profile?.role, 'lieutenant') ? [{ id: 'pto_settings', label: 'PTO Settings' }] : []),
         ].map(t => (
           <button key={t.id} style={{ ...s.tab, ...(tab === t.id ? s.tabActive : {}) }} onClick={() => setTab(t.id)}>{t.label}</button>
         ))}
@@ -276,6 +277,10 @@ export default function HR() {
 
       {tab === 'company_docs' && (
         <CompanyDocsTab profile={profile} companyId={profile.company_id} canEdit={atLeast(profile?.role, 'lieutenant')} />
+      )}
+
+      {tab === 'pto_settings' && atLeast(profile?.role, 'lieutenant') && (
+        <PTOSettingsTab companyId={profile.company_id} />
       )}
 
       {wuModal && (
@@ -1118,6 +1123,202 @@ function PolicyManagementTab({ companyId }) {
             ))}
           </div>
         ))
+      )}
+    </div>
+  )
+}
+
+// ── PTO Settings Tab ──────────────────────────────────────────────────────────
+
+const PTO_BANK_DEFS = [
+  { type: 'paid',     label: 'Paid Time Off (Vacation)' },
+  { type: 'sick',     label: 'Sick Leave' },
+  { type: 'personal', label: 'Personal Days' },
+  { type: 'unpaid',   label: 'Unpaid Leave' },
+]
+
+function PTOSettingsTab({ companyId }) {
+  const [configs, setConfigs]           = useState({})
+  const [balances, setBalances]         = useState([])
+  const [employees, setEmployees]       = useState([])
+  const [loading, setLoading]           = useState(true)
+  const [saving, setSaving]             = useState(null)
+  const [balanceSaving, setBalanceSaving] = useState(null)
+  const [editedBalances, setEditedBalances] = useState({})
+
+  useEffect(() => { load() }, [companyId])
+
+  async function load() {
+    setLoading(true)
+    const [{ data: cfgData }, { data: balData }, { data: empData }] = await Promise.all([
+      supabase.from('pto_bank_config').select('*').eq('company_id', companyId),
+      supabase.from('pto_balance').select('*').eq('company_id', companyId),
+      supabase.from('employee').select('id,first_name,last_name').eq('company_id', companyId).eq('status', 'active').order('last_name'),
+    ])
+    const cfgMap = {}
+    for (const c of (cfgData || [])) cfgMap[c.bank_type] = c
+    for (const b of PTO_BANK_DEFS) {
+      if (!cfgMap[b.type]) cfgMap[b.type] = { bank_type: b.type, enabled: false, accrual_rate_hours: 0.0385, accrual_per_hours_worked: 1, max_balance_hours: 80, max_carryover_hours: 40 }
+    }
+    setConfigs(cfgMap)
+    setBalances(balData || [])
+    setEmployees(empData || [])
+    setLoading(false)
+  }
+
+  function setField(bankType, field, value) {
+    setConfigs(prev => ({ ...prev, [bankType]: { ...prev[bankType], [field]: value } }))
+  }
+
+  async function saveBank(bankType) {
+    setSaving(bankType)
+    const cfg = configs[bankType]
+    await supabase.from('pto_bank_config').upsert({
+      company_id: companyId,
+      bank_type: bankType,
+      enabled: cfg.enabled,
+      accrual_rate_hours: parseFloat(cfg.accrual_rate_hours) || 0,
+      accrual_per_hours_worked: parseFloat(cfg.accrual_per_hours_worked) || 1,
+      max_balance_hours: parseFloat(cfg.max_balance_hours) || 0,
+      max_carryover_hours: parseFloat(cfg.max_carryover_hours) || 0,
+    }, { onConflict: 'company_id,bank_type' })
+    setSaving(null)
+    load()
+  }
+
+  function getBalanceVal(empId, bankType) {
+    const key = `${empId}:${bankType}`
+    if (key in editedBalances) return editedBalances[key]
+    const b = balances.find(b => b.employee_id === empId && b.bank_type === bankType)
+    return b?.balance_hours ?? 0
+  }
+  function getUsedVal(empId, bankType) { const b = balances.find(b => b.employee_id === empId && b.bank_type === bankType); return b?.used_hours ?? 0 }
+  function getPendingVal(empId, bankType) { const b = balances.find(b => b.employee_id === empId && b.bank_type === bankType); return b?.pending_hours ?? 0 }
+
+  async function saveBalance(empId, bankType) {
+    const key = `${empId}:${bankType}`
+    setBalanceSaving(key)
+    const newBal = parseFloat(editedBalances[key]) || 0
+    const existing = balances.find(b => b.employee_id === empId && b.bank_type === bankType)
+    if (existing) {
+      await supabase.from('pto_balance').update({ balance_hours: newBal }).eq('company_id', companyId).eq('employee_id', empId).eq('bank_type', bankType)
+    } else {
+      await supabase.from('pto_balance').insert({ company_id: companyId, employee_id: empId, bank_type: bankType, balance_hours: newBal, used_hours: 0, pending_hours: 0 })
+    }
+    setEditedBalances(prev => { const n = {...prev}; delete n[key]; return n })
+    setBalanceSaving(null)
+    load()
+  }
+
+  const enabledBanks = PTO_BANK_DEFS.filter(b => configs[b.type]?.enabled)
+  const inp = { background:'var(--bg-input)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', padding:'7px 10px', fontSize:'13px', color:'var(--text-primary)', outline:'none', fontFamily:'var(--font-body)' }
+  const lbl2 = { fontSize:'11px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', marginBottom:'4px' }
+  const saveBtn2 = { display:'inline-flex', alignItems:'center', gap:'6px', background:'var(--accent)', color:'var(--text-inverse)', border:'none', borderRadius:'var(--radius-sm)', padding:'0 14px', height:'34px', fontFamily:'var(--font-condensed)', fontSize:'12px', fontWeight:700, letterSpacing:'1px', cursor:'pointer' }
+
+  if (loading) return <div style={{color:'var(--text-muted)',fontSize:'12px',padding:'20px 0',fontFamily:'var(--font-condensed)',letterSpacing:'1px'}}>LOADING...</div>
+
+  return (
+    <div>
+      <div style={{ marginBottom:'28px' }}>
+        <div style={{ fontSize:'10px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1.5px', fontFamily:'var(--font-condensed)', marginBottom:'14px', paddingBottom:'8px', borderBottom:'1px solid var(--border)' }}>Bank Configuration</div>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(280px,1fr))', gap:'14px' }}>
+          {PTO_BANK_DEFS.map(({ type, label }) => {
+            const cfg = configs[type] || {}
+            return (
+              <div key={type} style={{ background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-md)', padding:'18px 20px' }}>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'14px' }}>
+                  <div style={{ fontSize:'13px', fontWeight:600, color:'var(--text-primary)' }}>{label}</div>
+                  <label style={{ display:'flex', alignItems:'center', gap:'8px', cursor:'pointer' }}>
+                    <input type="checkbox" checked={cfg.enabled || false} onChange={e => setField(type, 'enabled', e.target.checked)} style={{ accentColor:'var(--accent)', width:'15px', height:'15px' }} />
+                    <span style={{ fontSize:'11px', color: cfg.enabled ? 'var(--color-success)' : 'var(--text-muted)', fontFamily:'var(--font-condensed)', fontWeight:700 }}>{cfg.enabled ? 'ENABLED' : 'DISABLED'}</span>
+                  </label>
+                </div>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', marginBottom:'14px' }}>
+                  <div>
+                    <div style={lbl2}>Accrual Rate (hrs earned)</div>
+                    <input style={{...inp, width:'100%', boxSizing:'border-box'}} type="number" step="0.0001" min="0" value={cfg.accrual_rate_hours ?? ''} onChange={e => setField(type, 'accrual_rate_hours', e.target.value)} placeholder="0.0385" />
+                  </div>
+                  <div>
+                    <div style={lbl2}>Per Hours Worked</div>
+                    <input style={{...inp, width:'100%', boxSizing:'border-box'}} type="number" step="0.5" min="0" value={cfg.accrual_per_hours_worked ?? ''} onChange={e => setField(type, 'accrual_per_hours_worked', e.target.value)} placeholder="1" />
+                  </div>
+                  <div>
+                    <div style={lbl2}>Max Balance (hrs)</div>
+                    <input style={{...inp, width:'100%', boxSizing:'border-box'}} type="number" min="0" value={cfg.max_balance_hours ?? ''} onChange={e => setField(type, 'max_balance_hours', e.target.value)} placeholder="80" />
+                  </div>
+                  <div>
+                    <div style={lbl2}>Max Carryover (hrs)</div>
+                    <input style={{...inp, width:'100%', boxSizing:'border-box'}} type="number" min="0" value={cfg.max_carryover_hours ?? ''} onChange={e => setField(type, 'max_carryover_hours', e.target.value)} placeholder="40" />
+                  </div>
+                </div>
+                <button style={{...saveBtn2, opacity: saving===type ? 0.6 : 1}} onClick={() => saveBank(type)} disabled={saving===type}>
+                  {saving===type ? 'SAVING...' : 'SAVE'}
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {enabledBanks.length > 0 ? (
+        <div>
+          <div style={{ fontSize:'10px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1.5px', fontFamily:'var(--font-condensed)', marginBottom:'14px', paddingBottom:'8px', borderBottom:'1px solid var(--border)' }}>Employee Balances</div>
+          {employees.length === 0 ? (
+            <div style={{ padding:'24px', textAlign:'center', color:'var(--text-muted)', fontSize:'13px' }}>No active employees.</div>
+          ) : (
+            <div style={{ background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-md)', overflowX:'auto' }}>
+              <table style={{ width:'100%', borderCollapse:'collapse', minWidth:`${240 + enabledBanks.length * 220}px` }}>
+                <thead>
+                  <tr>
+                    <th rowSpan={2} style={{ textAlign:'left', fontSize:'10px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', padding:'10px 14px', borderBottom:'1px solid var(--border)', whiteSpace:'nowrap' }}>Employee</th>
+                    {enabledBanks.map(b => (
+                      <th key={b.type} colSpan={4} style={{ textAlign:'center', fontSize:'10px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', padding:'10px 8px', borderBottom:'1px solid var(--border)', borderLeft:'1px solid var(--border)', whiteSpace:'nowrap' }}>{b.label}</th>
+                    ))}
+                  </tr>
+                  <tr>
+                    {enabledBanks.map(b => (
+                      ['Balance', 'Used', 'Pending', ''].map((h, i) => (
+                        <th key={`${b.type}-${h}-${i}`} style={{ textAlign:'left', fontSize:'9px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', padding:'5px 8px', borderBottom:'1px solid var(--border)', borderLeft: i===0 ? '1px solid var(--border)' : 'none', whiteSpace:'nowrap' }}>{h}</th>
+                      ))
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {employees.map((emp, ei) => (
+                    <tr key={emp.id} style={{ borderBottom: ei < employees.length-1 ? '1px solid var(--border)' : 'none' }}>
+                      <td style={{ padding:'10px 14px', fontSize:'13px', fontWeight:600, color:'var(--text-primary)', whiteSpace:'nowrap' }}>{emp.first_name} {emp.last_name}</td>
+                      {enabledBanks.map(b => {
+                        const key = `${emp.id}:${b.type}`
+                        const editing = key in editedBalances
+                        return [
+                          <td key={`${key}-b`} style={{ padding:'8px 8px', borderLeft:'1px solid var(--border)' }}>
+                            <input type="number" step="0.25" min="0"
+                              value={editing ? editedBalances[key] : (getBalanceVal(emp.id, b.type) || 0)}
+                              onChange={e => setEditedBalances(prev => ({...prev, [key]: e.target.value}))}
+                              style={{...inp, width:'68px', padding:'5px 8px', fontSize:'12px'}} />
+                          </td>,
+                          <td key={`${key}-u`} style={{ padding:'8px 8px', fontSize:'12px', color:'var(--text-muted)' }}>{(getUsedVal(emp.id, b.type)).toFixed(1)}</td>,
+                          <td key={`${key}-p`} style={{ padding:'8px 8px', fontSize:'12px', color:'var(--text-muted)' }}>{(getPendingVal(emp.id, b.type)).toFixed(1)}</td>,
+                          <td key={`${key}-s`} style={{ padding:'8px 8px' }}>
+                            {editing && (
+                              <button onClick={() => saveBalance(emp.id, b.type)} disabled={balanceSaving===key} style={{...saveBtn2, height:'28px', padding:'0 10px', fontSize:'11px', opacity:balanceSaving===key?0.6:1}}>
+                                {balanceSaving===key ? '...' : 'SAVE'}
+                              </button>
+                            )}
+                          </td>,
+                        ]
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div style={{ background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-md)', padding:'32px', textAlign:'center', color:'var(--text-muted)', fontSize:'13px' }}>
+          Enable at least one bank type above to manage employee balances.
+        </div>
       )}
     </div>
   )

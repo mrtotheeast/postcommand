@@ -117,6 +117,8 @@ export const NAV_ITEMS = [
     { id:'scheduling', label:'Scheduling', path:'/scheduling', icon:'calendar', roles:['super_admin','chief','lieutenant','sergeant','corporal','officer','office_staff'] },
     { id:'open-shifts', label:'Open Shifts', path:'/open-shifts', icon:'calendar', roles:['super_admin','chief','lieutenant','sergeant','corporal','officer'] },
     { id:'timesheets', label:'Timesheets', path:'/timesheets', icon:'clock', badge:true, roles:['super_admin','chief','lieutenant','sergeant','corporal','officer','hr','accounting'] },
+    { id:'time-off', label:'Time Off', path:'/time-off', icon:'clock', roles:['super_admin','chief','lieutenant','sergeant','corporal','officer','hr','accounting','office_staff'] },
+    { id:'availability', label:'Availability', path:'/availability', icon:'calendar', roles:['super_admin','chief','lieutenant','sergeant','corporal','officer','hr','accounting','office_staff'] },
     { id:'incidents', label:'Incident Reports', path:'/incidents', icon:'file-check', badge:true, roles:['super_admin','chief','lieutenant','sergeant','corporal','officer','hr'] },
     { id:'dar',       label:'Activity Reports', path:'/dar',       icon:'file-text', roles:['super_admin','chief','lieutenant','sergeant','corporal','officer','hr','client'] },
     { id:'inbox',     label:'Inbox',            path:'/inbox',     icon:'mail',      roles:['client'] },
