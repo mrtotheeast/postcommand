@@ -36,6 +36,7 @@ function friendlyError(err) {
 
 export default function Personnel() {
   const { profile } = useAuth()
+  const isMobile = window.innerWidth < 640
   const [employees, setEmployees] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -138,7 +139,7 @@ export default function Personnel() {
   if (error) return <div style={{padding:'40px',textAlign:'center',color:'var(--color-danger)'}}>{error} <button onClick={loadEmployees}>Retry</button></div>
 
   return (
-    <div style={{padding:'24px',animation:'fadeIn 200ms ease'}}>
+    <div style={{padding:isMobile?'12px':'24px',animation:'fadeIn 200ms ease'}}>
       <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}`}</style>
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'24px',flexWrap:'wrap',gap:'12px'}}>
         <div>
@@ -180,7 +181,7 @@ export default function Personnel() {
       </div>
 
       {/* Status filter tabs */}
-      <div style={{display:'flex',gap:'2px',marginBottom:'16px',borderBottom:'1px solid var(--border)',paddingBottom:0}}>
+      <div style={{display:'flex',gap:'2px',marginBottom:'16px',borderBottom:'1px solid var(--border)',paddingBottom:0,overflowX:'auto'}}>
         {[['active','Active'],['suspended','Suspended'],['on_leave','On Leave'],['terminated','Terminated'],['archived','Archived']].map(([v,l])=>(
           <button key={v} onClick={()=>setStatusTab(v)} style={{padding:'8px 16px',fontSize:'12px',background:'transparent',border:'none',cursor:'pointer',fontFamily:'var(--font-condensed)',letterSpacing:'0.5px',borderBottom:`2px solid ${statusTab===v?'var(--accent)':'transparent'}`,color:statusTab===v?'var(--accent)':'var(--text-muted)',transition:'all 150ms ease',fontWeight:statusTab===v?700:400,marginBottom:'-1px'}}>
             {l}
@@ -191,7 +192,7 @@ export default function Personnel() {
         ))}
       </div>
 
-      <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:'10px',marginBottom:'20px'}}>
+      <div style={{display:'grid',gridTemplateColumns:isMobile?'repeat(2,1fr)':'repeat(5,1fr)',gap:'10px',marginBottom:'20px'}}>
         {[
           {key:'total',label:'Total Employees',value:stats.total},
           {key:'unarmed',label:'Unarmed',value:stats.unarmed},
@@ -264,11 +265,13 @@ export default function Personnel() {
       )}
 
       {view==='list' && filtered.length>0 && (
-        <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',overflow:'hidden'}}>
+        <div style={{overflowX:isMobile?'auto':'visible'}}>
+        <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',overflow:'hidden',minWidth:isMobile?'580px':'auto'}}>
           <div style={{display:'grid',gridTemplateColumns:'2fr 1.5fr 1fr 1fr 80px',padding:'10px 16px',borderBottom:'1px solid var(--border)',fontSize:'10px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)'}}>
             <span>Name</span><span>Position</span><span>Role</span><span>Status</span><span></span>
           </div>
           {filtered.map((emp,i)=><EmpRow key={emp.id} emp={emp} ini={initials(emp)} isLast={i===filtered.length-1} onClick={()=>setSelected(emp)}/>)}
+        </div>
         </div>
       )}
 

@@ -168,6 +168,7 @@ function OnboardingChecklist({ companyId }) {
 }
 
 function MainDashboard({ profile, effectiveRole, badges, navigate }) {
+  const isMobile = window.innerWidth < 640
   const tiles = DASHBOARD_TILES.filter(t => t.roles.includes(effectiveRole))
   const now = new Date()
   const hour = now.getHours()
@@ -185,10 +186,10 @@ function MainDashboard({ profile, effectiveRole, badges, navigate }) {
   }
 
   return (
-    <div style={{padding:'24px',maxWidth:'1100px',animation:'fadeIn 200ms ease'}}>
+    <div style={{padding:isMobile?'12px':'24px',maxWidth:'1100px',animation:'fadeIn 200ms ease'}}>
       <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}`}</style>
       {['super_admin','chief','lieutenant'].includes(effectiveRole) && <OnboardingChecklist companyId={profile?.company_id}/>}
-      <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:'28px',gap:'16px'}}>
+      <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:'28px',gap:'16px',flexDirection:isMobile?'column':'row'}}>
         <div>
           <div style={{fontSize:'12px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)'}}>{greeting},</div>
           <div style={{fontFamily:'var(--font-display)',fontSize:'32px',letterSpacing:'2px',color:'var(--text-primary)',lineHeight:1.1,margin:'2px 0 4px'}}>{profile?.first_name || ROLE_LABELS[effectiveRole] || 'Welcome'}</div>
@@ -270,6 +271,7 @@ function StatCards({ role, badges }) {
 // ── Officer Dashboard ─────────────────────────────────────────────────────────
 
 function OfficerDashboard({ profile, badges, navigate }) {
+  const isMobile = window.innerWidth < 640
   const now = new Date()
   const hour = now.getHours()
   const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening'
@@ -308,7 +310,7 @@ function OfficerDashboard({ profile, badges, navigate }) {
   }
 
   return (
-    <div style={{padding:'24px',maxWidth:'800px',animation:'fadeIn 200ms ease'}}>
+    <div style={{padding:isMobile?'12px':'24px',maxWidth:'800px',animation:'fadeIn 200ms ease'}}>
       <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}`}</style>
       <div style={{marginBottom:'24px'}}>
         <div style={{fontSize:'12px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)'}}>{greeting},</div>
@@ -385,6 +387,7 @@ function OfficerDashboard({ profile, badges, navigate }) {
 // ── Corporal Dashboard ────────────────────────────────────────────────────────
 
 function CorporalDashboard({ profile, badges, navigate }) {
+  const isMobile = window.innerWidth < 640
   const [teamStatus, setTeamStatus] = useState([])
   const [pendingTS, setPendingTS] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -409,7 +412,7 @@ function CorporalDashboard({ profile, badges, navigate }) {
   const clockedOut = (teamStatus || []).filter(t => t.clock_in && t.clock_out).length
 
   return (
-    <div style={{padding:'24px',maxWidth:'900px',animation:'fadeIn 200ms ease'}}>
+    <div style={{padding:isMobile?'12px':'24px',maxWidth:'900px',animation:'fadeIn 200ms ease'}}>
       <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}`}</style>
       <div style={{marginBottom:'24px'}}>
         <div style={{fontSize:'12px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)'}}>{greeting},</div>
@@ -466,6 +469,7 @@ function CorporalDashboard({ profile, badges, navigate }) {
 // ── Client Dashboard ──────────────────────────────────────────────────────────
 
 function ClientDashboard({ profile }) {
+  const isMobile = window.innerWidth < 640
   const navigate = useNavigate()
   const [data, setData] = useState({ sites:[], incidents:[], patrols:[] })
   const [loading, setLoading] = useState(true)
@@ -486,14 +490,14 @@ function ClientDashboard({ profile }) {
   const fmtDate = d => d ? new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '—'
 
   return (
-    <div style={{padding:'24px',maxWidth:'1000px',animation:'fadeIn 200ms ease'}}>
+    <div style={{padding:isMobile?'12px':'24px',maxWidth:'1000px',animation:'fadeIn 200ms ease'}}>
       <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}`}</style>
       <div style={{marginBottom:'24px'}}>
         <div style={{fontFamily:'var(--font-display)',fontSize:'28px',letterSpacing:'2px',color:'var(--text-primary)',lineHeight:1}}>CLIENT PORTAL</div>
         <div style={{fontSize:'12px',color:'var(--text-muted)',marginTop:'4px'}}>Security activity for your account · Last 30 days</div>
       </div>
 
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px',marginBottom:'20px'}}>
+      <div style={{display:'grid',gridTemplateColumns:isMobile?'1fr':'1fr 1fr',gap:'16px',marginBottom:'20px'}}>
         <div>
           <div style={{fontSize:'10px',color:'var(--text-muted)',letterSpacing:'1.5px',textTransform:'uppercase',fontFamily:'var(--font-condensed)',marginBottom:'10px'}}>Your Sites</div>
           <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>

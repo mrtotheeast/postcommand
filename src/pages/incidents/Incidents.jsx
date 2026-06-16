@@ -35,6 +35,7 @@ const ta  = { ...inp, height:'auto', resize:'vertical', lineHeight:1.5, padding:
 
 export default function Incidents() {
   const { profile } = useAuth()
+  const isMobile = window.innerWidth < 640
   const [reports, setReports]   = useState([])
   const [loading, setLoading]   = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -78,7 +79,7 @@ export default function Incidents() {
   }), [reports])
 
   return (
-    <div style={{padding:'24px',animation:'fadeIn 200ms ease'}}>
+    <div style={{padding:isMobile?'12px':'24px',animation:'fadeIn 200ms ease'}}>
       <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}`}</style>
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'24px',flexWrap:'wrap',gap:'12px'}}>
         <div>
@@ -126,8 +127,10 @@ export default function Incidents() {
       ) : filtered.length===0 ? (
         <div style={{textAlign:'center',padding:'60px 24px',color:'var(--text-muted)'}}><Icon name="file-check" size={40} color="var(--border-subtle)"/><div style={{marginTop:'16px',fontSize:'15px'}}>No reports found</div></div>
       ) : (
-        <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',overflow:'hidden'}}>
+        <div style={{overflowX:isMobile?'auto':'visible'}}>
+        <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',overflow:'hidden',minWidth:isMobile?'560px':'auto'}}>
           {filtered.map((report,i)=><ReportRow key={report.id} report={report} isLast={i===filtered.length-1} onClick={()=>setSelected(report)}/>)}
+        </div>
         </div>
       )}
 
