@@ -138,9 +138,15 @@ export default function Timesheets() {
     setClosingPeriod(true); setPeriodMsg(null)
     const ids = periodSheets.filter(t=>t.status==='approved').map(t=>t.id)
     if (ids.length === 0) { setClosingPeriod(false); setPeriodMsg({ ok:false, text:'No approved timesheets to close.' }); return }
-    await Promise.all(ids.map(id => supabase.from('timesheet').update({ status:'closed' }).eq('id',id)))
-    setClosingPeriod(false); setPeriodMsg({ ok:true, text:`${ids.length} timesheets closed.` }); loadAll()
-    setTimeout(()=>setPeriodMsg(null), 3000)
+    try {
+      await Promise.all(ids.map(id => supabase.from('timesheet').update({ status:'closed' }).eq('id',id).eq('company_id',profile.company_id)))
+      setPeriodMsg({ ok:true, text:`${ids.length} timesheets closed.` }); loadAll()
+      setTimeout(()=>setPeriodMsg(null), 3000)
+    } catch(e) {
+      setPeriodMsg({ ok:false, text:'Failed to close period.' })
+    } finally {
+      setClosingPeriod(false)
+    }
   }
 
   async function noShowAll() {
@@ -149,12 +155,18 @@ export default function Timesheets() {
     const absent = employees.filter(e => !presentEmpIds.has(e.id))
     if (absent.length === 0) { setNoShowing(false); setPeriodMsg({ ok:false, text:'All employees have timesheets this period.' }); return }
     const periodStart = payPeriod.start.toISOString().split('T')[0]
-    await Promise.all(absent.map(e => supabase.from('timesheet').insert({
-      company_id: profile.company_id, employee_id: e.id,
-      date: periodStart, status: 'no_show', notes: 'Auto-marked no show for pay period close'
-    })))
-    setNoShowing(false); setPeriodMsg({ ok:true, text:`${absent.length} employees marked no show.` }); loadAll()
-    setTimeout(()=>setPeriodMsg(null), 3000)
+    try {
+      await Promise.all(absent.map(e => supabase.from('timesheet').insert({
+        company_id: profile.company_id, employee_id: e.id,
+        date: periodStart, status: 'no_show', notes: 'Auto-marked no show for pay period close'
+      })))
+      setPeriodMsg({ ok:true, text:`${absent.length} employees marked no show.` }); loadAll()
+      setTimeout(()=>setPeriodMsg(null), 3000)
+    } catch(e) {
+      setPeriodMsg({ ok:false, text:'Failed to mark no shows.' })
+    } finally {
+      setNoShowing(false)
+    }
   }
 
   // selStyle moved to module scope below
@@ -310,43 +322,57 @@ function TimesheetDetail({ts,empName,siteName,canReview,onClose,onUpdated,profil
 
   async function approve() {
     setSaving(true)
-    const {data:empData}=await supabase.from('employee').select('id').eq('user_id',profile.id).eq('company_id',profile.company_id).maybeSingle()
-    await supabase.from('timesheet').update({status:'approved',reviewed_by:empData?.id,reviewed_at:new Date().toISOString()}).eq('id',ts.id)
-    // Fire-and-forget PTO accrual
-    ;(async () => {
-      try {
-        const hours = Number(ts.total_hours) || 0
-        if (!hours) return
-        const { data: banks } = await supabase.from('pto_bank_config').select('bank_type,accrual_rate_hours,accrual_per_hours_worked').eq('company_id', profile.company_id).eq('enabled', true)
-        for (const bank of (banks || [])) {
-          if (!bank.accrual_rate_hours || !bank.accrual_per_hours_worked) continue
-          const earned = hours * (bank.accrual_rate_hours / bank.accrual_per_hours_worked)
-          const { data: existing } = await supabase.from('pto_balance').select('balance_hours').eq('company_id', profile.company_id).eq('employee_id', ts.employee_id).eq('bank_type', bank.bank_type).maybeSingle()
-          if (existing) {
-            await supabase.from('pto_balance').update({ balance_hours: (existing.balance_hours || 0) + earned, last_accrual_at: new Date().toISOString() }).eq('company_id', profile.company_id).eq('employee_id', ts.employee_id).eq('bank_type', bank.bank_type)
-          } else {
-            await supabase.from('pto_balance').insert({ company_id: profile.company_id, employee_id: ts.employee_id, bank_type: bank.bank_type, balance_hours: earned, used_hours: 0, pending_hours: 0, last_accrual_at: new Date().toISOString() })
+    try {
+      const {data:empData}=await supabase.from('employee').select('id').eq('user_id',profile.id).eq('company_id',profile.company_id).maybeSingle()
+      const {error}=await supabase.from('timesheet').update({status:'approved',reviewed_by:empData?.id,reviewed_at:new Date().toISOString()}).eq('id',ts.id).eq('company_id',profile.company_id)
+      if(error) throw error
+      // Fire-and-forget PTO accrual
+      ;(async () => {
+        try {
+          const hours = Number(ts.total_hours) || 0
+          if (!hours) return
+          const { data: banks } = await supabase.from('pto_bank_config').select('bank_type,accrual_rate_hours,accrual_per_hours_worked').eq('company_id', profile.company_id).eq('enabled', true)
+          for (const bank of (banks || [])) {
+            if (!bank.accrual_rate_hours || !bank.accrual_per_hours_worked) continue
+            const earned = hours * (bank.accrual_rate_hours / bank.accrual_per_hours_worked)
+            const { data: existing } = await supabase.from('pto_balance').select('balance_hours').eq('company_id', profile.company_id).eq('employee_id', ts.employee_id).eq('bank_type', bank.bank_type).maybeSingle()
+            if (existing) {
+              await supabase.from('pto_balance').update({ balance_hours: (existing.balance_hours || 0) + earned, last_accrual_at: new Date().toISOString() }).eq('company_id', profile.company_id).eq('employee_id', ts.employee_id).eq('bank_type', bank.bank_type)
+            } else {
+              await supabase.from('pto_balance').insert({ company_id: profile.company_id, employee_id: ts.employee_id, bank_type: bank.bank_type, balance_hours: earned, used_hours: 0, pending_hours: 0, last_accrual_at: new Date().toISOString() })
+            }
           }
-        }
-      } catch {}
-    })()
-    // Email the officer
-    const {data:officer}=await supabase.from('employee').select('first_name,email').eq('id',ts.employee_id).single()
-    if(officer?.email) emailTimesheetApproved({ to:officer.email, firstName:officer.first_name, date:ts.date, hours:fmtHours(ts.total_hours), siteName:siteName(ts.site_id) })
-    toast('Timesheet approved')
-    setSaving(false);onUpdated()
+        } catch {}
+      })()
+      // Email the officer
+      const {data:officer}=await supabase.from('employee').select('first_name,email').eq('id',ts.employee_id).single()
+      if(officer?.email) emailTimesheetApproved({ to:officer.email, firstName:officer.first_name, date:ts.date, hours:fmtHours(ts.total_hours), siteName:siteName(ts.site_id) })
+      toast('Timesheet approved')
+      onUpdated()
+    } catch(e) {
+      toast(e.message||'Something went wrong', 'error')
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function reject() {
     if(!rejReason.trim()) return
     setSaving(true)
-    const {data:empData}=await supabase.from('employee').select('id').eq('user_id',profile.id).eq('company_id',profile.company_id).maybeSingle()
-    await supabase.from('timesheet').update({status:'rejected',rejection_reason:rejReason,reviewed_by:empData?.id,reviewed_at:new Date().toISOString()}).eq('id',ts.id)
-    // Email the officer
-    const {data:officer}=await supabase.from('employee').select('first_name,email').eq('id',ts.employee_id).single()
-    if(officer?.email) emailTimesheetRejected({ to:officer.email, firstName:officer.first_name, date:ts.date, reason:rejReason })
-    toast('Timesheet rejected', 'info')
-    setSaving(false);onUpdated()
+    try {
+      const {data:empData}=await supabase.from('employee').select('id').eq('user_id',profile.id).eq('company_id',profile.company_id).maybeSingle()
+      const {error}=await supabase.from('timesheet').update({status:'rejected',rejection_reason:rejReason,reviewed_by:empData?.id,reviewed_at:new Date().toISOString()}).eq('id',ts.id).eq('company_id',profile.company_id)
+      if(error) throw error
+      // Email the officer
+      const {data:officer}=await supabase.from('employee').select('first_name,email').eq('id',ts.employee_id).single()
+      if(officer?.email) emailTimesheetRejected({ to:officer.email, firstName:officer.first_name, date:ts.date, reason:rejReason })
+      toast('Timesheet rejected', 'info')
+      onUpdated()
+    } catch(e) {
+      toast(e.message||'Something went wrong', 'error')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const dur=ts.clock_in&&ts.clock_out?(()=>{const ms=new Date(ts.clock_out)-new Date(ts.clock_in);const h=Math.floor(ms/3600000);const m=Math.floor((ms%3600000)/60000);return `${h}h ${m}m`})():'—'
@@ -424,6 +450,7 @@ const PTO_TYPES    = ['Vacation','Sick','Personal','Unpaid','Bereavement','Holid
 const PTO_STATUSES = { pending:{bg:'var(--color-warning-bg)',color:'var(--color-warning)',label:'Pending'}, approved:{bg:'var(--color-success-bg)',color:'var(--color-success)',label:'Approved'}, denied:{bg:'var(--color-danger-bg)',color:'var(--color-danger)',label:'Denied'} }
 
 function PTOPanel({ companyId, profile, employees, canReview }) {
+  const toast = useToast()
   const [requests, setRequests] = useState([])
   const [loading, setLoading]   = useState(true)
   const [showNew, setShowNew]   = useState(false)
@@ -445,19 +472,24 @@ function PTOPanel({ companyId, profile, employees, canReview }) {
   }
 
   async function updateStatus(id, status) {
-    const { data: myEmp } = await supabase.from('employee').select('id').eq('user_id', profile.id).single()
-    await supabase.from('pto_request').update({ status, reviewed_by:myEmp?.id, reviewed_at:new Date().toISOString() }).eq('id', id)
-    // Email the requesting employee
-    const req = requests.find(r=>r.id===id)
-    if (req) {
-      const { data: reqEmp } = await supabase.from('employee').select('first_name,email').eq('id', req.employee_id).single()
-      const days = calcDays(req.start_date, req.end_date)
-      if (reqEmp?.email) {
-        if (status === 'approved') emailPTOApproved({ to:reqEmp.email, firstName:reqEmp.first_name, ptoType:req.pto_type, startDate:req.start_date, endDate:req.end_date, days })
-        if (status === 'denied')   emailPTODenied({ to:reqEmp.email, firstName:reqEmp.first_name, ptoType:req.pto_type, startDate:req.start_date, endDate:req.end_date })
+    try {
+      const { data: myEmp } = await supabase.from('employee').select('id').eq('user_id', profile.id).single()
+      const { error } = await supabase.from('pto_request').update({ status, reviewed_by:myEmp?.id, reviewed_at:new Date().toISOString() }).eq('id', id).eq('company_id', companyId)
+      if (error) throw error
+      // Email the requesting employee
+      const req = requests.find(r=>r.id===id)
+      if (req) {
+        const { data: reqEmp } = await supabase.from('employee').select('first_name,email').eq('id', req.employee_id).single()
+        const days = calcDays(req.start_date, req.end_date)
+        if (reqEmp?.email) {
+          if (status === 'approved') emailPTOApproved({ to:reqEmp.email, firstName:reqEmp.first_name, ptoType:req.pto_type, startDate:req.start_date, endDate:req.end_date, days })
+          if (status === 'denied')   emailPTODenied({ to:reqEmp.email, firstName:reqEmp.first_name, ptoType:req.pto_type, startDate:req.start_date, endDate:req.end_date })
+        }
       }
+      load()
+    } catch(e) {
+      toast(e.message||'Something went wrong', 'error')
     }
-    load()
   }
 
   const empMap   = Object.fromEntries(employees.map(e => [e.id, `${e.first_name} ${e.last_name}`]))
@@ -535,6 +567,7 @@ function PTOPanel({ companyId, profile, employees, canReview }) {
 }
 
 function PTORequestModal({ companyId, employeeId, onClose, onSaved }) {
+  const toast = useToast()
   const [form, setForm] = useState({ pto_type:'Vacation', start_date:'', end_date:'', notes:'' })
   const [saving, setSaving] = useState(false)
   const inpStyle = { background:'var(--bg-input)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', padding:'10px 12px', fontSize:'13px', color:'var(--text-primary)', outline:'none', width:'100%', fontFamily:'var(--font-body)', transition:'border-color 150ms ease' }
@@ -544,8 +577,15 @@ function PTORequestModal({ companyId, employeeId, onClose, onSaved }) {
   async function save() {
     if (!form.start_date || !form.end_date || !employeeId) return
     setSaving(true)
-    await supabase.from('pto_request').insert({ company_id:companyId, employee_id:employeeId, pto_type:form.pto_type, start_date:form.start_date, end_date:form.end_date, notes:form.notes||null, status:'pending' })
-    setSaving(false); onSaved()
+    try {
+      const { error } = await supabase.from('pto_request').insert({ company_id:companyId, employee_id:employeeId, pto_type:form.pto_type, start_date:form.start_date, end_date:form.end_date, notes:form.notes||null, status:'pending' })
+      if (error) throw error
+      onSaved()
+    } catch(e) {
+      toast(e.message||'Something went wrong', 'error')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const lbl = { fontSize:'11px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', marginBottom:'5px' }

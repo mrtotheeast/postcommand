@@ -502,23 +502,36 @@ function IncidentForm({profile,onClose,onSaved}) {
 
   async function updateStatus(status) {
     setSaving(true)
-    const {data:empData}=await supabase.from('employee').select('id').eq('user_id',profile.id).eq('company_id',profile.company_id).maybeSingle()
-    const now=new Date().toISOString()
-    const update={status}
-    if(status==='reviewed'){update.reviewed_by=empData?.id;update.reviewed_at=now;update.reviewer_notes=notes}
-    if(status==='approved'){update.approved_by=empData?.id;update.approved_at=now}
-    if(status==='void'){update.voided_by=empData?.id;update.voided_at=now;update.void_reason=voidReason}
-    await supabase.from('incident_report').update(update).eq('id',report.id)
-    toast('Report updated', 'info')
-    setSaving(false);onUpdated()
+    try {
+      const {data:empData}=await supabase.from('employee').select('id').eq('user_id',profile.id).eq('company_id',profile.company_id).maybeSingle()
+      const now=new Date().toISOString()
+      const update={status}
+      if(status==='reviewed'){update.reviewed_by=empData?.id;update.reviewed_at=now;update.reviewer_notes=notes}
+      if(status==='approved'){update.approved_by=empData?.id;update.approved_at=now}
+      if(status==='void'){update.voided_by=empData?.id;update.voided_at=now;update.void_reason=voidReason}
+      const {error}=await supabase.from('incident_report').update(update).eq('id',report.id).eq('company_id',profile.company_id)
+      if(error) throw error
+      toast('Report updated', 'info')
+      onUpdated()
+    } catch(e) {
+      toast(e.message||'Something went wrong', 'error')
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function deleteReport() {
     if (!window.confirm('Permanently delete this report? This cannot be undone.')) return
     setSaving(true)
-    await supabase.from('incident_report').delete().eq('id', report.id)
-    setSaving(false)
-    onUpdated()
+    try {
+      const {error}=await supabase.from('incident_report').delete().eq('id', report.id).eq('company_id',profile.company_id)
+      if(error) throw error
+      onUpdated()
+    } catch(e) {
+      toast(e.message||'Something went wrong', 'error')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -540,7 +553,7 @@ function IncidentForm({profile,onClose,onSaved}) {
             {report.police_notified&&<span style={{fontSize:'12px',fontWeight:700,padding:'4px 12px',borderRadius:'10px',background:'var(--color-info-bg)',color:'var(--color-info)'}}>POLICE</span>}
             {report.is_confidential&&<span style={{fontSize:'12px',fontWeight:700,padding:'4px 12px',borderRadius:'10px',background:'rgba(224,85,85,0.15)',color:'#e05555'}}>CONFIDENTIAL / IA</span>}
           </div>
-          {canApprove&&<button onClick={async()=>{await supabase.from('incident_report').update({is_confidential:!report.is_confidential}).eq('id',report.id);toast(report.is_confidential?'Confidential flag removed':'Marked confidential','info');onUpdated()}} style={{display:'flex',alignItems:'center',gap:'6px',marginBottom:'16px',padding:'8px 14px',background:report.is_confidential?'rgba(224,85,85,0.12)':'var(--bg-card)',border:report.is_confidential?'1px solid rgba(224,85,85,0.3)':'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:report.is_confidential?'#e05555':'var(--text-secondary)',fontSize:'12px',fontFamily:'var(--font-condensed)',fontWeight:700,cursor:'pointer',letterSpacing:'0.5px'}}><Icon name="shield" size={13}/>{report.is_confidential?'REMOVE CONFIDENTIAL FLAG':'MARK CONFIDENTIAL / IA'}</button>}
+          {canApprove&&<button onClick={async()=>{await supabase.from('incident_report').update({is_confidential:!report.is_confidential}).eq('id',report.id).eq('company_id',profile.company_id);toast(report.is_confidential?'Confidential flag removed':'Marked confidential','info');onUpdated()}} style={{display:'flex',alignItems:'center',gap:'6px',marginBottom:'16px',padding:'8px 14px',background:report.is_confidential?'rgba(224,85,85,0.12)':'var(--bg-card)',border:report.is_confidential?'1px solid rgba(224,85,85,0.3)':'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:report.is_confidential?'#e05555':'var(--text-secondary)',fontSize:'12px',fontFamily:'var(--font-condensed)',fontWeight:700,cursor:'pointer',letterSpacing:'0.5px'}}><Icon name="shield" size={13}/>{report.is_confidential?'REMOVE CONFIDENTIAL FLAG':'MARK CONFIDENTIAL / IA'}</button>}
           <DSec title="Incident Details">
             <DR l="CAD Number" v={report.cad_number}/>
             <DR l="Type" v={report.incident_type}/>

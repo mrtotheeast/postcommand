@@ -510,7 +510,7 @@ function EmpDetail({emp,canViewSensitive,canEdit,onClose,onRefresh}) {
       }
     })
     if (!error) {
-      await supabase.from('employee').update({ invitation_status: 'sent' }).eq('id', emp.id)
+      await supabase.from('employee').update({ invitation_status: 'sent' }).eq('id', emp.id).eq('company_id', emp.company_id)
       onRefresh?.()
       setInviteMsg({ ok:true, text:`Invite sent to ${emp.email}.` })
       toast('Invite sent to ' + emp.email, 'info')
@@ -623,17 +623,24 @@ function EmpEditModal({ emp, onClose, onSaved }) {
 
   async function save() {
     setSaving(true)
-    await supabase.from('employee').update({
-      first_name:form.first_name.trim(), last_name:form.last_name.trim(),
-      middle_name:form.middle_name.trim()||null, email:form.email.trim()||null,
-      phone_number:form.phone_number.trim()||null, position_title:form.position_title.trim()||null,
-      role:form.role, status:form.status, employment_type:form.employment_type,
-      is_armed:form.is_armed, has_app_access:form.has_app_access,
-      hire_date:form.hire_date||null, profile_photo_url:form.profile_photo_url.trim()||null,
-      notes:form.notes.trim()||null, employee_id_number:form.employee_id_number.trim()||null,
-    }).eq('id', emp.id)
-    toast('Changes saved')
-    setSaving(false); onSaved()
+    try {
+      const {error}=await supabase.from('employee').update({
+        first_name:form.first_name.trim(), last_name:form.last_name.trim(),
+        middle_name:form.middle_name.trim()||null, email:form.email.trim()||null,
+        phone_number:form.phone_number.trim()||null, position_title:form.position_title.trim()||null,
+        role:form.role, status:form.status, employment_type:form.employment_type,
+        is_armed:form.is_armed, has_app_access:form.has_app_access,
+        hire_date:form.hire_date||null, profile_photo_url:form.profile_photo_url.trim()||null,
+        notes:form.notes.trim()||null, employee_id_number:form.employee_id_number.trim()||null,
+      }).eq('id', emp.id).eq('company_id', emp.company_id)
+      if(error) throw error
+      toast('Changes saved')
+      onSaved()
+    } catch(e) {
+      toast(e.message||'Something went wrong', 'error')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -726,32 +733,42 @@ function BulkActionBar({ count, companyId, selectedIds, onDone, onCancel }) {
 
   async function bulkUpdate(field, value) {
     setActing(true)
-    await Promise.all(selectedIds.map(id => supabase.from('employee').update({ [field]: value }).eq('id', id)))
-    setActing(false)
-    toast('Updated ' + count + ' employees')
-    onDone()
+    try {
+      await Promise.all(selectedIds.map(id => supabase.from('employee').update({ [field]: value }).eq('id', id).eq('company_id', companyId)))
+      toast('Updated ' + count + ' employees')
+      onDone()
+    } catch(e) {
+      toast(e.message||'Something went wrong', 'error')
+    } finally {
+      setActing(false)
+    }
   }
 
   async function bulkInvite() {
     setInviting(true)
-    const { data: emps } = await supabase.from('employee').select('id,first_name,last_name,email,role,company_id').in('id', selectedIds)
-    for (const emp of (emps||[])) {
-      if (!emp.email) continue
-      const { error } = await supabase.auth.signInWithOtp({
-        email: emp.email,
-        options: {
-          shouldCreateUser: true,
-          emailRedirectTo: 'https://postcommand.app',
-          data: { first_name: emp.first_name, last_name: emp.last_name, company_id: emp.company_id, employee_id: emp.id }
+    try {
+      const { data: emps } = await supabase.from('employee').select('id,first_name,last_name,email,role,company_id').in('id', selectedIds)
+      for (const emp of (emps||[])) {
+        if (!emp.email) continue
+        const { error } = await supabase.auth.signInWithOtp({
+          email: emp.email,
+          options: {
+            shouldCreateUser: true,
+            emailRedirectTo: 'https://postcommand.app',
+            data: { first_name: emp.first_name, last_name: emp.last_name, company_id: emp.company_id, employee_id: emp.id }
+          }
+        })
+        if (!error) {
+          await supabase.from('employee').update({ invitation_status: 'sent' }).eq('id', emp.id).eq('company_id', emp.company_id)
         }
-      })
-      if (!error) {
-        await supabase.from('employee').update({ invitation_status: 'sent' }).eq('id', emp.id)
       }
+      toast('Invites sent', 'info')
+      onDone()
+    } catch(e) {
+      toast(e.message||'Something went wrong', 'error')
+    } finally {
+      setInviting(false)
     }
-    setInviting(false)
-    toast('Invites sent', 'info')
-    onDone()
   }
 
   return (
@@ -785,12 +802,18 @@ function PhotoApprovalsTab({ companyId }) {
   }
   async function decide(id, approve) {
     setActing(id)
-    if (approve) {
-      await supabase.from('employee').update({ profile_photo_status:'approved' }).eq('id',id)
-    } else {
-      await supabase.from('employee').update({ profile_photo_status:'rejected', profile_photo_url:null }).eq('id',id)
+    try {
+      if (approve) {
+        await supabase.from('employee').update({ profile_photo_status:'approved' }).eq('id',id).eq('company_id',companyId)
+      } else {
+        await supabase.from('employee').update({ profile_photo_status:'rejected', profile_photo_url:null }).eq('id',id).eq('company_id',companyId)
+      }
+      load()
+    } catch(e) {
+      // swallow
+    } finally {
+      setActing(null)
     }
-    setActing(null); load()
   }
 
   if (loading) return <div style={{padding:'20px',color:'var(--text-muted)',fontSize:'12px',fontFamily:'var(--font-condensed)',letterSpacing:'1px'}}>LOADING...</div>
@@ -858,27 +881,31 @@ function AddEmployeeModal({ companyId, onClose, onSaved }) {
     if (!companyId)              { setError('Company ID missing — please refresh and try again.'); return }
 
     setSaving(true); setError(null)
-    const { data, error: err } = await supabase.from('employee').insert({
-      company_id:       companyId,
-      first_name:       form.first_name.trim(),
-      last_name:        form.last_name.trim(),
-      email:            form.email.trim(),
-      phone_number:     form.phone_number.trim() || null,
-      role:             form.role,
-      position_title:   form.position_title.trim() || null,
-      status:           form.status,
-      employment_type:  form.employment_type,
-      is_armed:         form.is_armed,
-      has_app_access:   false,
-      invitation_status:'pending',
-    }).select().single()
-
-    setSaving(false)
-    if (err) { setError(friendlyError(err)); return }
-    setSavedEmp(data)
-    setSuccess(true)
-    toast('Employee added successfully')
-    setTimeout(() => { onSaved() }, 2500)
+    try {
+      const { data, error: err } = await supabase.from('employee').insert({
+        company_id:       companyId,
+        first_name:       form.first_name.trim(),
+        last_name:        form.last_name.trim(),
+        email:            form.email.trim(),
+        phone_number:     form.phone_number.trim() || null,
+        role:             form.role,
+        position_title:   form.position_title.trim() || null,
+        status:           form.status,
+        employment_type:  form.employment_type,
+        is_armed:         form.is_armed,
+        has_app_access:   false,
+        invitation_status:'pending',
+      }).select().single()
+      if (err) throw err
+      setSavedEmp(data)
+      setSuccess(true)
+      toast('Employee added successfully')
+      setTimeout(() => { onSaved() }, 2500)
+    } catch(e) {
+      setError(friendlyError(e))
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function sendInvite() {
@@ -893,7 +920,7 @@ function AddEmployeeModal({ companyId, onClose, onSaved }) {
       }
     })
     if (!error) {
-      await supabase.from('employee').update({ invitation_status: 'sent' }).eq('id', savedEmp.id)
+      await supabase.from('employee').update({ invitation_status: 'sent' }).eq('id', savedEmp.id).eq('company_id', companyId)
     }
     setSendingInvite(false)
   }
@@ -976,17 +1003,17 @@ function EmployeeStatusModal({ emp, profile, onClose, onDone }) {
     setSaving(true); setError(null)
     try {
       if (opt.id === 'deleted') {
-        const { error: delErr } = await supabase.from('employee').delete().eq('id', emp.id)
+        const { error: delErr } = await supabase.from('employee').delete().eq('id', emp.id).eq('company_id', emp.company_id)
         if (delErr) throw new Error(delErr.message)
       } else if (opt.id === 'on_leave') {
         const { error: updErr } = await supabase.from('employee')
           .update({ status: 'on_leave' })
-          .eq('id', emp.id)
+          .eq('id', emp.id).eq('company_id', emp.company_id)
         if (updErr) throw new Error(updErr.message)
       } else {
         const { error: updErr } = await supabase.from('employee')
           .update({ status: opt.id, [`${opt.id}_reason`]: note||null, [`${opt.id}_at`]: new Date().toISOString() })
-          .eq('id', emp.id)
+          .eq('id', emp.id).eq('company_id', emp.company_id)
         if (updErr) throw new Error(updErr.message)
       }
       // Log the change
@@ -1002,6 +1029,7 @@ function EmployeeStatusModal({ emp, profile, onClose, onDone }) {
       onDone()
     } catch(e) {
       setError(friendlyError(e))
+    } finally {
       setSaving(false)
     }
   }
