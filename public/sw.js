@@ -1,5 +1,5 @@
-// PostCommand Service Worker — v4
-const CACHE_VERSION = 'v4'
+// PostCommand Service Worker — v5
+const CACHE_VERSION = 'v5'
 const CACHE_NAME = `postcommand-${CACHE_VERSION}`
 
 self.addEventListener('install', () => self.skipWaiting())
