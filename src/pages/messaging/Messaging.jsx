@@ -18,8 +18,10 @@ function roleLabel(role) {
 
 export default function Messaging() {
   const { profile } = useAuth()
+
+  // ── Personal channels / chat state ─────────────────────────────────────────
   const [activeTab, setActiveTab]             = useState('channels')
-  const [activeChannel, setActiveChannel]     = useState(null)
+  const [activeChannel, setActiveChannel]     = useState(null)  // personal Channels tab ONLY — never touched by Groups tab
   const [activeDM, setActiveDM]               = useState(null)
   const [channels, setChannels]               = useState([])
   const [messages, setMessages]               = useState([])
@@ -34,6 +36,18 @@ export default function Messaging() {
   const [creatingGroup, setCreatingGroup]     = useState(false)
   const [scheduleMode, setScheduleMode]       = useState(false)
   const [scheduleAt, setScheduleAt]           = useState('')
+
+  // ── Groups management tab state — completely isolated from activeChannel ───
+  const [allChannels, setAllChannels]               = useState([])
+  const [groupMemberCounts, setGroupMemberCounts]   = useState({})
+  const [managingChannelId, setManagingChannelId]   = useState(null)
+  const [groupMembers, setGroupMembers]             = useState([])
+  const [groupMembersLoading, setGroupMembersLoading] = useState(false)
+  const [showGroupAddPicker, setShowGroupAddPicker] = useState(false)
+  const [groupAddSearch, setGroupAddSearch]         = useState('')
+  const [renameValue, setRenameValue]               = useState('')
+  const [renaming, setRenaming]                     = useState(false)
+
   const messagesEndRef = useRef(null)
   const inputRef       = useRef(null)
   const subRef         = useRef(null)
@@ -41,12 +55,16 @@ export default function Messaging() {
   const isAdmin      = atLeast(profile?.role, 'lieutenant')
   const canBroadcast = atLeast(profile?.role, 'sergeant')
 
-  useEffect(() => { loadChannels() }, [profile?.employee_id, profile?.company_id])
-  useEffect(() => { loadEmployees() }, [profile])
+  // ── Effects ────────────────────────────────────────────────────────────────
+  useEffect(() => { loadChannels() },          [profile?.employee_id, profile?.company_id])
+  useEffect(() => { loadEmployees() },         [profile])
   useEffect(() => { loadMessages(); subscribeToMessages(); return () => subRef.current?.unsubscribe() }, [profile, activeChannel, activeDM, activeTab])
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior:'smooth' }) }, [messages])
-  useEffect(() => { if (activeTab === 'dms') loadDMThreads() }, [activeTab])
+  useEffect(() => { if (activeTab === 'dms')    loadDMThreads() },   [activeTab])
+  useEffect(() => { if (activeTab === 'groups') loadAllChannels() }, [activeTab, profile?.company_id])
+  useEffect(() => { if (managingChannelId) loadGroupMembers() },     [managingChannelId])
 
+  // ── Personal channels tab ──────────────────────────────────────────────────
   async function loadChannels() {
     if (!profile?.employee_id || !profile?.company_id) return
     const { data } = await supabase
@@ -69,6 +87,107 @@ export default function Messaging() {
     })
   }
 
+  // ── Groups management tab ──────────────────────────────────────────────────
+  async function loadAllChannels() {
+    if (!profile?.company_id) return
+    const { data: chData } = await supabase
+      .from('channel')
+      .select('id, name, is_general, created_by, created_at')
+      .eq('company_id', profile.company_id)
+      .order('is_general', { ascending: false })
+      .order('name')
+    const list = chData || []
+    setAllChannels(list)
+    if (list.length > 0) {
+      const { data: memberRows } = await supabase
+        .from('channel_member')
+        .select('channel_id')
+        .in('channel_id', list.map(c => c.id))
+      const countMap = {}
+      for (const row of (memberRows || [])) {
+        countMap[row.channel_id] = (countMap[row.channel_id] || 0) + 1
+      }
+      setGroupMemberCounts(countMap)
+    }
+  }
+
+  async function loadGroupMembers() {
+    if (!managingChannelId) return
+    setGroupMembersLoading(true)
+    const { data } = await supabase
+      .from('channel_member')
+      .select('id, employee_id, employee:employee_id(id, first_name, last_name, role, position_title)')
+      .eq('channel_id', managingChannelId)
+    setGroupMembers(
+      (data || [])
+        .filter(row => row.employee)
+        .sort((a, b) => a.employee.last_name.localeCompare(b.employee.last_name))
+    )
+    setGroupMembersLoading(false)
+  }
+
+  function selectManageChannel(ch) {
+    setManagingChannelId(ch.id)
+    setRenameValue(ch.name)
+    // activeChannel is intentionally NOT touched here
+  }
+
+  async function renameChannel() {
+    if (!renameValue.trim() || renaming || !managingChannelId) return
+    setRenaming(true)
+    const { error } = await supabase
+      .from('channel')
+      .update({ name: renameValue.trim() })
+      .eq('id', managingChannelId)
+    if (error) {
+      alert(`Rename failed: ${error.message}`)
+    } else {
+      await loadAllChannels()
+    }
+    setRenaming(false)
+  }
+
+  async function removeMember(memberId) {
+    const { error } = await supabase
+      .from('channel_member')
+      .delete()
+      .eq('id', memberId)
+    if (error) {
+      alert(`Remove failed: ${error.message}`)
+    } else {
+      await Promise.all([loadGroupMembers(), loadAllChannels()])
+    }
+  }
+
+  async function addGroupMember(empId) {
+    const { error } = await supabase
+      .from('channel_member')
+      .insert({ channel_id: managingChannelId, employee_id: empId, added_by: profile.employee_id })
+    if (error) {
+      alert(`Add member failed: ${error.message}`)
+    } else {
+      setShowGroupAddPicker(false)
+      setGroupAddSearch('')
+      await Promise.all([loadGroupMembers(), loadAllChannels()])
+    }
+  }
+
+  async function deleteChannel() {
+    const ch = allChannels.find(c => c.id === managingChannelId)
+    if (!ch || ch.is_general) return
+    if (!confirm(`Delete group "${ch.name}"? All members will be removed. This cannot be undone.`)) return
+    const { error } = await supabase.from('channel').delete().eq('id', managingChannelId)
+    if (error) {
+      alert(`Delete failed: ${error.message}`)
+    } else {
+      setManagingChannelId(null)
+      setGroupMembers([])
+      setRenameValue('')
+      await loadAllChannels()
+    }
+  }
+
+  // ── Shared message functions ───────────────────────────────────────────────
   async function loadEmployees() {
     if (!profile?.company_id) return
     const { data } = await supabase.from('employee').select('id,first_name,last_name,role,position_title').eq('company_id', profile.company_id).order('first_name')
@@ -156,6 +275,7 @@ export default function Messaging() {
 
   function handleKeyDown(e) { if (e.key==='Enter'&&!e.shiftKey) { e.preventDefault(); sendMessage() } }
 
+  // ── Derived values ─────────────────────────────────────────────────────────
   const canPost = useMemo(() => {
     if (activeTab === 'dms') return !!activeDM
     return !!activeChannel
@@ -177,23 +297,35 @@ export default function Messaging() {
     return `${e.first_name} ${e.last_name}`.toLowerCase().includes(dmSearch.toLowerCase())
   })
 
+  const managingChannel = allChannels.find(c => c.id === managingChannelId) || null
+  const groupMemberIds  = useMemo(() => new Set(groupMembers.map(m => m.employee_id)), [groupMembers])
+  const groupAddEmps    = employees.filter(e =>
+    !groupMemberIds.has(e.id) &&
+    (!groupAddSearch || `${e.first_name} ${e.last_name}`.toLowerCase().includes(groupAddSearch.toLowerCase()))
+  )
+
   const activeChInfo = channels.find(c => c.id === activeChannel)
   const activeDMEmp  = employees.find(e => e.id === activeDM)
+
+  // ── Styles shared across tabs ──────────────────────────────────────────────
+  const pickerOverlay = { position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:200, backdropFilter:'blur(2px)' }
+  const pickerCard    = { position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', width:'min(400px,95vw)', background:'var(--bg-surface)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-lg)', zIndex:201, display:'flex', flexDirection:'column', maxHeight:'80vh', boxShadow:'var(--shadow-modal)' }
 
   return (
     <div style={{display:'flex',height:'100%',overflow:'hidden'}}>
 
-      {/* Sidebar */}
+      {/* ── Sidebar ── */}
       <div style={{width:'260px',flexShrink:0,borderRight:'1px solid var(--border)',display:'flex',flexDirection:'column',background:'var(--bg-surface)'}}>
         <div style={{padding:'16px',borderBottom:'1px solid var(--border)',flexShrink:0}}>
           <h2 style={{fontFamily:'var(--font-display)',fontSize:'18px',letterSpacing:'2px',color:'var(--text-primary)',lineHeight:1,marginBottom:'12px'}}>MESSAGING</h2>
           <div style={{display:'flex',gap:'2px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-sm)',padding:'3px'}}>
-            {[['channels','Channels'],['dms','Direct'],...(isAdmin?[['dmmonitor','DM Monitor']]:[])]
+            {[['channels','Channels'],['dms','Direct'],...(isAdmin?[['groups','Groups'],['dmmonitor','DM Monitor']]:[])]
               .map(([v,l])=>(
               <button key={v} onClick={()=>setActiveTab(v)} style={{flex:1,height:'30px',border:'none',borderRadius:'4px',background:activeTab===v?'var(--accent-bg)':'transparent',color:activeTab===v?'var(--accent)':'var(--text-muted)',cursor:'pointer',fontSize:'10px',fontFamily:'var(--font-condensed)',fontWeight:600}}>{l}</button>
             ))}
           </div>
         </div>
+
         <div style={{flex:1,overflowY:'auto',padding:'8px'}}>
           {activeTab==='channels' ? (
             <>
@@ -212,7 +344,24 @@ export default function Messaging() {
                 </button>
               ))}
             </>
+          ) : activeTab==='groups' ? (
+            // Groups sidebar: ALL company channels, not filtered by membership
+            <>
+              {allChannels.map(ch=>(
+                <button key={ch.id} onClick={()=>selectManageChannel(ch)}
+                  style={{display:'flex',alignItems:'center',gap:'10px',width:'100%',padding:'10px 12px',border:'none',borderRadius:'var(--radius-md)',background:managingChannelId===ch.id?'var(--accent-bg)':'transparent',cursor:'pointer',textAlign:'left',marginBottom:'2px'}}>
+                  <div style={{width:'32px',height:'32px',borderRadius:'8px',background:managingChannelId===ch.id?'var(--accent)':'var(--bg-card)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                    <Icon name={ch.is_general?'lock':'message-square'} size={14} color={managingChannelId===ch.id?'var(--text-inverse)':'var(--text-muted)'}/>
+                  </div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:'13px',fontWeight:600,color:managingChannelId===ch.id?'var(--accent)':'var(--text-primary)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{ch.name}</div>
+                    <div style={{fontSize:'11px',color:'var(--text-muted)'}}>{groupMemberCounts[ch.id]||0} members{ch.is_general?' · Protected':''}</div>
+                  </div>
+                </button>
+              ))}
+            </>
           ) : (
+            // DMs tab (also shown when activeTab is 'dmmonitor')
             <>
               <button onClick={()=>setShowDMPicker(true)} style={{display:'flex',alignItems:'center',gap:'8px',width:'100%',padding:'10px 12px',border:'1px dashed var(--border-subtle)',borderRadius:'var(--radius-md)',background:'transparent',cursor:'pointer',color:'var(--text-muted)',fontSize:'12px',fontFamily:'var(--font-condensed)',fontWeight:600,marginBottom:'8px'}}>
                 <Icon name="plus" size={14}/>NEW MESSAGE
@@ -237,10 +386,11 @@ export default function Messaging() {
             </>
           )}
         </div>
+
         {isAdmin&&<div style={{padding:'12px',borderTop:'1px solid var(--border)',flexShrink:0}}><div style={{fontSize:'10px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',display:'flex',alignItems:'center',gap:'6px'}}><Icon name="eye" size={12} color="var(--text-muted)"/>Audit mode active</div></div>}
       </div>
 
-      {/* DM Monitor */}
+      {/* ── DM Monitor ── */}
       {activeTab==='dmmonitor' && (
         <div style={{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}>
           <div style={{padding:'14px 20px',borderBottom:'1px solid var(--border)',background:'var(--color-warning-bg)',flexShrink:0}}>
@@ -250,8 +400,144 @@ export default function Messaging() {
         </div>
       )}
 
-      {/* Chat area + modals (hidden in monitor mode) */}
-      {activeTab!=='dmmonitor' && <><div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+      {/* ── Groups management panel ── */}
+      {activeTab==='groups' && (
+        <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+          <div style={{padding:'14px 20px',borderBottom:'1px solid var(--border)',background:'var(--bg-surface)',flexShrink:0}}>
+            <div style={{fontSize:'12px',color:'var(--text-muted)',fontFamily:'var(--font-condensed)',letterSpacing:'1px',fontWeight:700,display:'flex',alignItems:'center',gap:'8px'}}>
+              <Icon name="settings" size={13} color="var(--text-muted)"/>GROUP MANAGEMENT — Lieutenant+ only
+            </div>
+          </div>
+
+          {!managingChannelId ? (
+            <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:'12px',color:'var(--text-muted)'}}>
+              <Icon name="message-square" size={40} color="var(--border-subtle)"/>
+              <div style={{fontSize:'14px'}}>Select a group to manage</div>
+            </div>
+          ) : (
+            <div style={{flex:1,overflowY:'auto',padding:'24px',maxWidth:'640px'}}>
+
+              {/* ── Name + rename ── */}
+              <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-lg)',padding:'20px',marginBottom:'16px'}}>
+                <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'14px'}}>
+                  <Icon name={managingChannel?.is_general?'lock':'message-square'} size={16} color="var(--accent)"/>
+                  <span style={{fontFamily:'var(--font-condensed)',fontSize:'15px',fontWeight:700,color:'var(--text-primary)',letterSpacing:'0.5px'}}>{managingChannel?.name}</span>
+                  {managingChannel?.is_general && (
+                    <span style={{fontSize:'10px',fontWeight:700,fontFamily:'var(--font-condensed)',letterSpacing:'1px',color:'var(--text-muted)',background:'var(--bg-surface)',border:'1px solid var(--border-subtle)',padding:'2px 7px',borderRadius:'4px'}}>PROTECTED</span>
+                  )}
+                </div>
+                <div style={{fontSize:'11px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',marginBottom:'6px'}}>Rename</div>
+                <div style={{display:'flex',gap:'8px'}}>
+                  <input
+                    value={renameValue}
+                    onChange={e=>setRenameValue(e.target.value)}
+                    onKeyDown={e=>{ if (e.key==='Enter') renameChannel() }}
+                    placeholder="Channel name"
+                    style={{flex:1,padding:'9px 12px',background:'var(--bg-input)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',fontSize:'13px',color:'var(--text-primary)',outline:'none',fontFamily:'inherit',transition:'border-color 150ms'}}
+                    onFocus={e=>e.target.style.borderColor='var(--border-focus)'}
+                    onBlur={e=>e.target.style.borderColor='var(--border)'}
+                  />
+                  <button
+                    onClick={renameChannel}
+                    disabled={!renameValue.trim()||renaming||renameValue.trim()===managingChannel?.name}
+                    style={{height:'38px',padding:'0 16px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-sm)',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',opacity:renameValue.trim()&&!renaming&&renameValue.trim()!==managingChannel?.name?1:0.4,transition:'opacity 150ms',flexShrink:0}}>
+                    {renaming?'SAVING...':'RENAME'}
+                  </button>
+                </div>
+              </div>
+
+              {/* ── Member list ── */}
+              <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-lg)',padding:'20px',marginBottom:'16px'}}>
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'14px'}}>
+                  <div style={{fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,letterSpacing:'1px',color:'var(--text-muted)',textTransform:'uppercase'}}>
+                    Members ({groupMembers.length})
+                  </div>
+                  <button
+                    onClick={()=>setShowGroupAddPicker(true)}
+                    style={{display:'flex',alignItems:'center',gap:'6px',padding:'6px 12px',background:'var(--accent-bg)',color:'var(--accent)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-sm)',fontFamily:'var(--font-condensed)',fontSize:'11px',fontWeight:700,letterSpacing:'1px',cursor:'pointer'}}>
+                    <Icon name="plus" size={12}/>ADD MEMBER
+                  </button>
+                </div>
+                {groupMembersLoading ? (
+                  <div style={{padding:'16px',textAlign:'center',color:'var(--text-muted)',fontSize:'12px',fontFamily:'var(--font-condensed)',letterSpacing:'1px'}}>LOADING...</div>
+                ) : groupMembers.length === 0 ? (
+                  <div style={{padding:'16px',textAlign:'center',color:'var(--text-muted)',fontSize:'13px'}}>No members yet.</div>
+                ) : groupMembers.map(m=>(
+                  <div key={m.id} style={{display:'flex',alignItems:'center',gap:'10px',padding:'10px 0',borderBottom:'1px solid var(--border-subtle)'}}>
+                    <div style={{width:'32px',height:'32px',borderRadius:'50%',background:'var(--bg-surface)',border:'1px solid var(--border-subtle)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'11px',fontWeight:700,color:'var(--accent)',flexShrink:0}}>
+                      {m.employee.first_name[0]}{m.employee.last_name[0]}
+                    </div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-primary)'}}>{m.employee.first_name} {m.employee.last_name}</div>
+                      <div style={{fontSize:'11px',color:'var(--text-muted)'}}>{m.employee.position_title||roleLabel(m.employee.role)}</div>
+                    </div>
+                    <span style={{fontSize:'10px',fontWeight:700,color:roleColor(m.employee.role),background:'var(--bg-surface)',padding:'2px 6px',borderRadius:'4px',flexShrink:0}}>{roleLabel(m.employee.role)}</span>
+                    <button
+                      onClick={()=>removeMember(m.id)}
+                      disabled={!!managingChannel?.is_general}
+                      title={managingChannel?.is_general?'Cannot remove members from the General channel':'Remove from channel'}
+                      style={{padding:'5px 10px',background:'transparent',color:managingChannel?.is_general?'var(--text-muted)':'#e53e3e',border:`1px solid ${managingChannel?.is_general?'var(--border-subtle)':'#e53e3e'}`,borderRadius:'var(--radius-sm)',fontFamily:'var(--font-condensed)',fontSize:'11px',fontWeight:700,cursor:managingChannel?.is_general?'not-allowed':'pointer',opacity:managingChannel?.is_general?0.35:1,transition:'opacity 150ms',flexShrink:0}}>
+                      REMOVE
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {/* ── Delete group (hidden for General) ── */}
+              {!managingChannel?.is_general && (
+                <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-lg)',padding:'16px 20px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:'16px'}}>
+                  <div>
+                    <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-primary)',marginBottom:'2px'}}>Delete Group</div>
+                    <div style={{fontSize:'11px',color:'var(--text-muted)'}}>Removes all members. Cannot be undone.</div>
+                  </div>
+                  <button
+                    onClick={deleteChannel}
+                    style={{padding:'8px 16px',background:'transparent',color:'#e53e3e',border:'1px solid #e53e3e',borderRadius:'var(--radius-sm)',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',flexShrink:0}}>
+                    DELETE GROUP
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Add member picker — reuses showDMPicker overlay+card pattern exactly */}
+          {showGroupAddPicker&&<>
+            <div onClick={()=>{setShowGroupAddPicker(false);setGroupAddSearch('')}} style={pickerOverlay}/>
+            <div style={pickerCard}>
+              <div style={{padding:'16px 20px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
+                <div style={{fontFamily:'var(--font-display)',fontSize:'16px',letterSpacing:'2px',color:'var(--text-primary)'}}>ADD MEMBER</div>
+                <button onClick={()=>{setShowGroupAddPicker(false);setGroupAddSearch('')}} style={{background:'transparent',border:'none',color:'var(--text-muted)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',minHeight:'44px',minWidth:'44px'}}><Icon name="x" size={18}/></button>
+              </div>
+              <div style={{padding:'12px 16px',borderBottom:'1px solid var(--border)',flexShrink:0}}>
+                <input type="search" value={groupAddSearch} onChange={e=>setGroupAddSearch(e.target.value)} placeholder="Search employees..." autoFocus
+                  style={{width:'100%',padding:'10px 14px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:'var(--text-primary)',fontSize:'13px',outline:'none',boxSizing:'border-box'}}/>
+              </div>
+              <div style={{flex:1,overflowY:'auto',padding:'8px'}}>
+                {groupAddEmps.length===0 ? (
+                  <div style={{padding:'20px',textAlign:'center',color:'var(--text-muted)',fontSize:'12px'}}>
+                    {groupAddSearch?'No employees match your search.':'All employees are already members.'}
+                  </div>
+                ) : groupAddEmps.map(e=>(
+                  <button key={e.id} onClick={()=>addGroupMember(e.id)}
+                    style={{display:'flex',alignItems:'center',gap:'12px',width:'100%',padding:'10px 12px',border:'none',borderRadius:'var(--radius-md)',background:'transparent',cursor:'pointer',textAlign:'left',marginBottom:'2px'}}>
+                    <div style={{width:'36px',height:'36px',borderRadius:'50%',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',fontWeight:700,color:'var(--accent)',flexShrink:0}}>
+                      {e.first_name[0]}{e.last_name[0]}
+                    </div>
+                    <div>
+                      <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-primary)'}}>{e.first_name} {e.last_name}</div>
+                      <div style={{fontSize:'11px',color:'var(--text-muted)'}}>{e.position_title}</div>
+                    </div>
+                    <span style={{marginLeft:'auto',fontSize:'10px',fontWeight:700,color:roleColor(e.role),background:'var(--bg-card)',padding:'2px 6px',borderRadius:'4px'}}>{roleLabel(e.role)}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </>}
+        </div>
+      )}
+
+      {/* ── Chat area + modals (hidden in dmmonitor and groups modes) ── */}
+      {activeTab!=='dmmonitor' && activeTab!=='groups' && <><div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
         <div style={{padding:'14px 20px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:'12px',flexShrink:0,background:'var(--bg-surface)'}}>
           {activeTab==='channels' ? <>
             <div style={{width:'36px',height:'36px',borderRadius:'8px',background:'var(--accent-bg)',display:'flex',alignItems:'center',justifyContent:'center'}}>
@@ -348,8 +634,8 @@ export default function Messaging() {
       </div>
 
       {showDMPicker&&<>
-        <div onClick={()=>{setShowDMPicker(false);setDmSearch('')}} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:200,backdropFilter:'blur(2px)'}}/>
-        <div style={{position:'fixed',top:'50%',left:'50%',transform:'translate(-50%,-50%)',width:'min(400px,95vw)',background:'var(--bg-surface)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-lg)',zIndex:201,display:'flex',flexDirection:'column',maxHeight:'80vh',boxShadow:'var(--shadow-modal)'}}>
+        <div onClick={()=>{setShowDMPicker(false);setDmSearch('')}} style={pickerOverlay}/>
+        <div style={pickerCard}>
           <div style={{padding:'16px 20px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
             <div style={{fontFamily:'var(--font-display)',fontSize:'16px',letterSpacing:'2px',color:'var(--text-primary)'}}>NEW MESSAGE</div>
             <button onClick={()=>{setShowDMPicker(false);setDmSearch('')}} style={{background:'transparent',border:'none',color:'var(--text-muted)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',minHeight:'44px',minWidth:'44px'}}><Icon name="x" size={18}/></button>
@@ -377,8 +663,8 @@ export default function Messaging() {
       </>}
 
       {showCreateGroup&&<>
-        <div onClick={()=>{setShowCreateGroup(false);setGroupName('')}} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:200,backdropFilter:'blur(2px)'}}/>
-        <div style={{position:'fixed',top:'50%',left:'50%',transform:'translate(-50%,-50%)',width:'min(400px,95vw)',background:'var(--bg-surface)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-lg)',zIndex:201,display:'flex',flexDirection:'column',boxShadow:'var(--shadow-modal)'}}>
+        <div onClick={()=>{setShowCreateGroup(false);setGroupName('')}} style={pickerOverlay}/>
+        <div style={{...pickerCard,maxHeight:'unset'}}>
           <div style={{padding:'16px 20px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
             <div style={{fontFamily:'var(--font-display)',fontSize:'16px',letterSpacing:'2px',color:'var(--text-primary)'}}>NEW GROUP</div>
             <button onClick={()=>{setShowCreateGroup(false);setGroupName('')}} style={{background:'transparent',border:'none',color:'var(--text-muted)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',minHeight:'44px',minWidth:'44px'}}><Icon name="x" size={18}/></button>
@@ -415,7 +701,6 @@ function DMMonitorPanel({ companyId, employees }) {
   const [search,  setSearch]  = useState('')
   const [viewing, setViewing] = useState(null)
   const [msgs,    setMsgs]    = useState([])
-  const empMap = Object.fromEntries(employees.map(e=>[e.id,`${e.first_name} ${e.last_name}`]))
   useEffect(() => { load() }, [companyId])
   async function load() {
     setLoading(true)
