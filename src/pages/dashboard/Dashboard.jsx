@@ -333,22 +333,26 @@ function OfficerDashboard({ profile, badges, navigate }) {
     if (!profile?.company_id) { setShiftsLoading(false); return }
     const today = new Date().toISOString().slice(0, 10)
     async function load() {
-      const { data: emp } = await supabase.from('employee')
-        .select('id')
-        .eq('email', profile.email || '')
-        .eq('company_id', profile.company_id)
-        .maybeSingle()
-      if (!emp?.id) { setShiftsLoading(false); return }
-      const { data } = await supabase.from('shift')
-        .select('id,date,start_time,end_time,site:site_id(name)')
-        .eq('employee_id', emp.id)
-        .gte('date', today)
-        .order('date', { ascending: true })
-        .limit(5)
-      setShifts(data || [])
-      setShiftsLoading(false)
+      try {
+        const { data: emp } = await supabase.from('employee')
+          .select('id')
+          .eq('email', profile.email || '')
+          .eq('company_id', profile.company_id)
+          .maybeSingle()
+        if (!emp?.id) return
+        const { data } = await supabase.from('shift')
+          .select('id,date,start_time,end_time,site:site_id(name)')
+          .eq('employee_id', emp.id)
+          .gte('date', today)
+          .order('date', { ascending: true })
+          .limit(5)
+        setShifts(data || [])
+      } catch(e) {
+      } finally {
+        setShiftsLoading(false)
+      }
     }
-    load().catch(() => setShiftsLoading(false))
+    load()
   }, [profile])
 
   function fmtShift(s) {
@@ -446,14 +450,21 @@ function CorporalDashboard({ profile, badges, navigate }) {
   useEffect(() => {
     if (!profile?.company_id) return
     const today = new Date().toISOString().slice(0,10)
-    Promise.all([
-      supabase.from('timesheet').select('id,employee_id,clock_in,clock_out,status').eq('company_id', profile.company_id).eq('date', today),
-      supabase.from('timesheet').select('id').eq('company_id', profile.company_id).eq('status','pending'),
-    ]).then(([{data: ts}, {data: pending}]) => {
-      setTeamStatus(ts||[])
-      setPendingTS(pending?.length||0)
-      setLoading(false)
-    })
+    async function load() {
+      setLoading(true)
+      try {
+        const [{data: ts}, {data: pending}] = await Promise.all([
+          supabase.from('timesheet').select('id,employee_id,clock_in,clock_out,status').eq('company_id', profile.company_id).eq('date', today),
+          supabase.from('timesheet').select('id').eq('company_id', profile.company_id).eq('status','pending'),
+        ])
+        setTeamStatus(ts||[])
+        setPendingTS(pending?.length||0)
+      } catch(e) {
+      } finally {
+        setLoading(false)
+      }
+    }
+    load()
   }, [profile])
 
   const clockedIn = (teamStatus || []).filter(t => t.clock_in && !t.clock_out).length
@@ -525,14 +536,21 @@ function ClientDashboard({ profile }) {
   useEffect(() => {
     if (!profile?.company_id) return
     const since = new Date(Date.now() - 30*86400000).toISOString()
-    Promise.all([
-      supabase.from('site').select('id,name,address,status').eq('company_id', profile.company_id).limit(10),
-      supabase.from('incident_report').select('id,incident_type,status,created_at,site_id').eq('company_id', profile.company_id).gte('created_at', since).order('created_at',{ascending:false}).limit(10),
-      supabase.from('patrol_log').select('id,site_id,started_at,ended_at,status').eq('company_id', profile.company_id).gte('started_at', since).order('started_at',{ascending:false}).limit(8),
-    ]).then(([{data:sites},{data:incidents},{data:patrols}]) => {
-      setData({ sites:sites||[], incidents:incidents||[], patrols:patrols||[] })
-      setLoading(false)
-    })
+    async function load() {
+      setLoading(true)
+      try {
+        const [{data:sites},{data:incidents},{data:patrols}] = await Promise.all([
+          supabase.from('site').select('id,name,address,status').eq('company_id', profile.company_id).limit(10),
+          supabase.from('incident_report').select('id,incident_type,status,created_at,site_id').eq('company_id', profile.company_id).gte('created_at', since).order('created_at',{ascending:false}).limit(10),
+          supabase.from('patrol_log').select('id,site_id,started_at,ended_at,status').eq('company_id', profile.company_id).gte('started_at', since).order('started_at',{ascending:false}).limit(8),
+        ])
+        setData({ sites:sites||[], incidents:incidents||[], patrols:patrols||[] })
+      } catch(e) {
+      } finally {
+        setLoading(false)
+      }
+    }
+    load()
   }, [profile])
 
   const fmtDate = d => d ? new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '—'

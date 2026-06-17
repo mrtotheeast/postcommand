@@ -82,20 +82,24 @@ export default function Invoices() {
 
   async function load() {
     setLoading(true)
-    const { data } = await supabase.from('invoice').select('*, invoice_item(*), client:client_id(name)').eq('company_id', profile.company_id).order('created_at', { ascending:false })
-    setInvoices(data || [])
-    const ids = (data || []).map(i => i.id)
-    if (ids.length > 0) {
-      const { data: logs } = await supabase.from('invoice_view_log').select('invoice_id,viewed_at,viewed_by_email').in('invoice_id', ids).order('viewed_at', { ascending:false })
-      const logList = logs || []
-      setAllViewLogs(logList)
-      const map = {}
-      for (const log of logList) { if (!map[log.invoice_id]) map[log.invoice_id] = log }
-      setViewMap(map)
-    } else {
-      setAllViewLogs([]); setViewMap({})
+    try {
+      const { data } = await supabase.from('invoice').select('*, invoice_item(*), client:client_id(name)').eq('company_id', profile.company_id).order('created_at', { ascending:false })
+      setInvoices(data || [])
+      const ids = (data || []).map(i => i.id)
+      if (ids.length > 0) {
+        const { data: logs } = await supabase.from('invoice_view_log').select('invoice_id,viewed_at,viewed_by_email').in('invoice_id', ids).order('viewed_at', { ascending:false })
+        const logList = logs || []
+        setAllViewLogs(logList)
+        const map = {}
+        for (const log of logList) { if (!map[log.invoice_id]) map[log.invoice_id] = log }
+        setViewMap(map)
+      } else {
+        setAllViewLogs([]); setViewMap({})
+      }
+    } catch(e) {
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   const filtered = useMemo(() => invoices.filter(inv => {
@@ -111,13 +115,23 @@ export default function Invoices() {
   }), [invoices, search, filterStatus, tileFilter])
 
   async function updateStatus(id, status) {
-    await supabase.from('invoice').update({ status }).eq('id', id)
-    load()
+    try {
+      const { error } = await supabase.from('invoice').update({ status }).eq('id', id).eq('company_id', profile.company_id)
+      if (error) throw error
+      load()
+    } catch(e) {
+      toast(e?.message || 'Failed to update invoice', 'error')
+    }
   }
 
   async function deleteInvoice(id) {
-    await supabase.from('invoice').delete().eq('id', id)
-    setViewing(null); load()
+    try {
+      const { error } = await supabase.from('invoice').delete().eq('id', id).eq('company_id', profile.company_id)
+      if (error) throw error
+      setViewing(null); load()
+    } catch(e) {
+      toast(e?.message || 'Failed to delete invoice', 'error')
+    }
   }
 
   async function sendInvoice(inv) {
@@ -126,7 +140,7 @@ export default function Invoices() {
       await supabase.functions.invoke('send-email', {
         body: { type:'invoice', to:inv.client_email, data:{ invoiceNumber:inv.invoice_number, amount:fmtMoney(inv.total), dueDate:fmtDate(inv.due_date), pdf_url:inv.pdf_url||null, companyName:company?.name||'PostCommand', company_id:profile.company_id } }
       })
-      await supabase.from('invoice').update({ sent_at:new Date().toISOString(), status:inv.status==='draft'?'sent':inv.status }).eq('id',inv.id)
+      await supabase.from('invoice').update({ sent_at:new Date().toISOString(), status:inv.status==='draft'?'sent':inv.status }).eq('id',inv.id).eq('company_id',profile.company_id)
       toast('Invoice sent to ' + inv.client_email)
       load()
     } catch(e) {
@@ -305,7 +319,7 @@ function InvoiceFormModal({ invoices, mode, invoice, companyId, onClose, onSaved
       const payload = { company_id:companyId, invoice_number:form.invoice_number, client_id:invoice?.client_id||selectedClientId||null, client_email:form.client_email.trim()||null, client_address:form.client_address.trim()||null, issue_date:form.issue_date, due_date:form.due_date||null, tax:taxAmount, subtotal, total, notes:form.notes.trim()||null, status: invoice?.status || 'draft' }
       let invId = invoice?.id
       if (invoice?.id) {
-        const { error: updErr } = await supabase.from('invoice').update(payload).eq('id', invoice.id)
+        const { error: updErr } = await supabase.from('invoice').update(payload).eq('id', invoice.id).eq('company_id', companyId)
         if (updErr) throw updErr
         await supabase.from('invoice_item').delete().eq('invoice_id', invoice.id)
       } else {
@@ -475,14 +489,16 @@ function SplitSendButton({ inv, onSendNow, size = 'md', company }) {
     if (!scheduleAt) return
     setScheduling(true)
     try {
-      await supabase.from('invoice').update({ send_scheduled_at: new Date(scheduleAt).toISOString() }).eq('id', inv.id)
+      const { error } = await supabase.from('invoice').update({ send_scheduled_at: new Date(scheduleAt).toISOString() }).eq('id', inv.id).eq('company_id', inv.company_id)
+      if (error) throw error
       const fmt = new Date(scheduleAt).toLocaleString('en-US', { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' })
       toast(`Invoice scheduled for ${fmt}`)
       setOpen(false); setShowSchedule(false); setScheduleAt('')
     } catch(e) {
       toast('Failed to schedule invoice', 'error')
+    } finally {
+      setScheduling(false)
     }
-    setScheduling(false)
   }
 
   const h = size === 'sm' ? '32px' : '44px'
@@ -621,12 +637,13 @@ function InvoiceDetailModal({ invoice, company, onClose, onEdit, onDelete, onSta
       await supabase.functions.invoke('send-email', {
         body: { type:'invoice_reminder', to:invoice.client_email, data:{ invoiceNumber:invoice.invoice_number, total:fmtMoney(invoice.total), dueDate:fmtDate(invoice.due_date) } }
       })
-      await supabase.from('invoice').update({ sent_at: new Date().toISOString() }).eq('id', invoice.id)
+      await supabase.from('invoice').update({ sent_at: new Date().toISOString() }).eq('id', invoice.id).eq('company_id', invoice.company_id)
       setNudgeMsg({ ok:true, text:`Reminder sent to ${invoice.client_email}` })
     } catch(e) {
       setNudgeMsg({ ok:false, text: e.message || 'Failed to send' })
+    } finally {
+      setNudging(false)
     }
-    setNudging(false)
   }
 
   function print() {

@@ -28,62 +28,80 @@ export default function Availability() {
 
   async function load() {
     setLoading(true)
-    const [{ data: empMe }, { data: myData }, { data: teamData }, { data: empAll }] = await Promise.all([
-      supabase.from('employee').select('id').eq('user_id', profile.id).eq('company_id', profile.company_id).maybeSingle(),
-      supabase.from('employee_availability').select('*').eq('company_id', profile.company_id).order('date', { ascending: true }),
-      canReview ? supabase.from('employee_availability').select('*').eq('company_id', profile.company_id) : Promise.resolve({ data: [] }),
-      canReview ? supabase.from('employee').select('id,first_name,last_name').eq('company_id', profile.company_id).eq('status', 'active').order('last_name') : Promise.resolve({ data: [] }),
-    ])
-    const me = empMe?.id || null
-    setMyEmpId(me)
-    setMyAvail((myData || []).filter(a => a.employee_id === me))
-    setTeamAvail(teamData || [])
-    setEmployees(empAll || [])
-    setLoading(false)
+    try {
+      const [{ data: empMe }, { data: myData }, { data: teamData }, { data: empAll }] = await Promise.all([
+        supabase.from('employee').select('id').eq('user_id', profile.id).eq('company_id', profile.company_id).maybeSingle(),
+        supabase.from('employee_availability').select('*').eq('company_id', profile.company_id).order('date', { ascending: true }),
+        canReview ? supabase.from('employee_availability').select('*').eq('company_id', profile.company_id) : Promise.resolve({ data: [] }),
+        canReview ? supabase.from('employee').select('id,first_name,last_name').eq('company_id', profile.company_id).eq('status', 'active').order('last_name') : Promise.resolve({ data: [] }),
+      ])
+      const me = empMe?.id || null
+      setMyEmpId(me)
+      setMyAvail((myData || []).filter(a => a.employee_id === me))
+      setTeamAvail(teamData || [])
+      setEmployees(empAll || [])
+    } catch(e) {
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function addBlockedDate() {
     if (!newDate || !myEmpId) return
     setSaving(true)
-    const { error } = await supabase.from('employee_availability').insert({
-      company_id: profile.company_id,
-      employee_id: myEmpId,
-      availability_type: 'block_date',
-      date: newDate,
-      notes: newDateNote || null,
-    })
-    if (error) toast(error.message, 'error')
-    else toast('Blocked date added')
-    setNewDate(''); setNewDateNote('')
-    setSaving(false)
-    load()
+    try {
+      const { error } = await supabase.from('employee_availability').insert({
+        company_id: profile.company_id,
+        employee_id: myEmpId,
+        availability_type: 'block_date',
+        date: newDate,
+        notes: newDateNote || null,
+      })
+      if (error) throw error
+      toast('Blocked date added')
+      setNewDate(''); setNewDateNote('')
+      load()
+    } catch(e) {
+      toast(e?.message || 'Failed to add blocked date', 'error')
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function addRecurringDay() {
     if (newDay === '' || !myEmpId) return
     const dow = parseInt(newDay, 10)
-    // Check not already set
     if (myAvail.some(a => a.availability_type === 'recurring_day' && a.recurring_day_of_week === dow)) {
       toast('Already blocking that day of week', 'info'); return
     }
     setSaving(true)
-    const { error } = await supabase.from('employee_availability').insert({
-      company_id: profile.company_id,
-      employee_id: myEmpId,
-      availability_type: 'recurring_day',
-      recurring_day_of_week: dow,
-      notes: newDayNote || null,
-    })
-    if (error) toast(error.message, 'error')
-    else toast('Recurring unavailability added')
-    setNewDay(''); setNewDayNote('')
-    setSaving(false)
-    load()
+    try {
+      const { error } = await supabase.from('employee_availability').insert({
+        company_id: profile.company_id,
+        employee_id: myEmpId,
+        availability_type: 'recurring_day',
+        recurring_day_of_week: dow,
+        notes: newDayNote || null,
+      })
+      if (error) throw error
+      toast('Recurring unavailability added')
+      setNewDay(''); setNewDayNote('')
+      load()
+    } catch(e) {
+      toast(e?.message || 'Failed to add recurring block', 'error')
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function deleteAvail(id) {
-    await supabase.from('employee_availability').delete().eq('id', id)
-    load()
+    try {
+      const { error } = await supabase.from('employee_availability').delete().eq('id', id).eq('company_id', profile.company_id)
+      if (error) throw error
+      load()
+    } catch(e) {
+      toast(e?.message || 'Failed to remove availability', 'error')
+    }
   }
 
   function empName(id) { const e = employees.find(e => e.id === id); return e ? `${e.first_name} ${e.last_name}` : '—' }

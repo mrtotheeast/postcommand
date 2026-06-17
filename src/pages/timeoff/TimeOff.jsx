@@ -40,19 +40,23 @@ export default function TimeOff() {
 
   async function load() {
     setLoading(true)
-    const [{ data: empMe }, { data: bankData }, { data: balData }, { data: reqData }, { data: empAll }] = await Promise.all([
-      supabase.from('employee').select('id').eq('user_id', profile.id).eq('company_id', profile.company_id).maybeSingle(),
-      supabase.from('pto_bank_config').select('*').eq('company_id', profile.company_id),
-      supabase.from('pto_balance').select('*').eq('company_id', profile.company_id),
-      supabase.from('time_off_request').select('*').eq('company_id', profile.company_id).order('created_at', { ascending: false }),
-      supabase.from('employee').select('id,first_name,last_name').eq('company_id', profile.company_id).order('last_name'),
-    ])
-    setMyEmpId(empMe?.id || null)
-    setBanks(bankData || [])
-    setBalances(balData || [])
-    setRequests(reqData || [])
-    setEmployees(empAll || [])
-    setLoading(false)
+    try {
+      const [{ data: empMe }, { data: bankData }, { data: balData }, { data: reqData }, { data: empAll }] = await Promise.all([
+        supabase.from('employee').select('id').eq('user_id', profile.id).eq('company_id', profile.company_id).maybeSingle(),
+        supabase.from('pto_bank_config').select('*').eq('company_id', profile.company_id),
+        supabase.from('pto_balance').select('*').eq('company_id', profile.company_id),
+        supabase.from('time_off_request').select('*').eq('company_id', profile.company_id).order('created_at', { ascending: false }),
+        supabase.from('employee').select('id,first_name,last_name').eq('company_id', profile.company_id).order('last_name'),
+      ])
+      setMyEmpId(empMe?.id || null)
+      setBanks(bankData || [])
+      setBalances(balData || [])
+      setRequests(reqData || [])
+      setEmployees(empAll || [])
+    } catch(e) {
+    } finally {
+      setLoading(false)
+    }
   }
 
   function myBalance(bankType) {
@@ -74,37 +78,49 @@ export default function TimeOff() {
 
   async function approve(req) {
     setActioning(req.id)
-    await supabase.from('time_off_request').update({ status: 'approved', reviewed_at: new Date().toISOString() }).eq('id', req.id)
-    // Update balance: deduct from balance and pending, add to used
-    const bal = balances.find(b => b.employee_id === req.employee_id && b.bank_type === req.bank_type)
-    if (bal) {
-      await supabase.from('pto_balance').update({
-        balance_hours: Math.max(0, (bal.balance_hours || 0) - (req.hours_requested || 0)),
-        pending_hours: Math.max(0, (bal.pending_hours || 0) - (req.hours_requested || 0)),
-        used_hours:    (bal.used_hours || 0) + (req.hours_requested || 0),
-      }).eq('company_id', profile.company_id).eq('employee_id', req.employee_id).eq('bank_type', req.bank_type)
+    try {
+      const { error: reqErr } = await supabase.from('time_off_request').update({ status: 'approved', reviewed_at: new Date().toISOString() }).eq('id', req.id).eq('company_id', profile.company_id)
+      if (reqErr) throw reqErr
+      const bal = balances.find(b => b.employee_id === req.employee_id && b.bank_type === req.bank_type)
+      if (bal) {
+        const { error: balErr } = await supabase.from('pto_balance').update({
+          balance_hours: Math.max(0, (bal.balance_hours || 0) - (req.hours_requested || 0)),
+          pending_hours: Math.max(0, (bal.pending_hours || 0) - (req.hours_requested || 0)),
+          used_hours:    (bal.used_hours || 0) + (req.hours_requested || 0),
+        }).eq('company_id', profile.company_id).eq('employee_id', req.employee_id).eq('bank_type', req.bank_type)
+        if (balErr) throw balErr
+      }
+      toast('Request approved')
+      load()
+    } catch(e) {
+      toast(e?.message || 'Failed to approve request', 'error')
+    } finally {
+      setActioning(null)
     }
-    toast('Request approved')
-    setActioning(null)
-    load()
   }
 
   async function deny(req) {
     if (!denialReason.trim()) return
     setActioning(req.id)
-    await supabase.from('time_off_request').update({ status: 'denied', denial_reason: denialReason.trim(), reviewed_at: new Date().toISOString() }).eq('id', req.id)
-    // Release the pending hours
-    const bal = balances.find(b => b.employee_id === req.employee_id && b.bank_type === req.bank_type)
-    if (bal) {
-      await supabase.from('pto_balance').update({
-        pending_hours: Math.max(0, (bal.pending_hours || 0) - (req.hours_requested || 0)),
-      }).eq('company_id', profile.company_id).eq('employee_id', req.employee_id).eq('bank_type', req.bank_type)
+    try {
+      const { error: reqErr } = await supabase.from('time_off_request').update({ status: 'denied', denial_reason: denialReason.trim(), reviewed_at: new Date().toISOString() }).eq('id', req.id).eq('company_id', profile.company_id)
+      if (reqErr) throw reqErr
+      const bal = balances.find(b => b.employee_id === req.employee_id && b.bank_type === req.bank_type)
+      if (bal) {
+        const { error: balErr } = await supabase.from('pto_balance').update({
+          pending_hours: Math.max(0, (bal.pending_hours || 0) - (req.hours_requested || 0)),
+        }).eq('company_id', profile.company_id).eq('employee_id', req.employee_id).eq('bank_type', req.bank_type)
+        if (balErr) throw balErr
+      }
+      toast('Request denied', 'info')
+      setDenying(null)
+      setDenialReason('')
+      load()
+    } catch(e) {
+      toast(e?.message || 'Failed to deny request', 'error')
+    } finally {
+      setActioning(null)
     }
-    toast('Request denied', 'info')
-    setActioning(null)
-    setDenying(null)
-    setDenialReason('')
-    load()
   }
 
   if (loading) return (
@@ -294,26 +310,30 @@ function TimeOffRequestModal({ banks, balances, myEmpId, companyId, onClose, onS
     if (!selectedBank) { setError('No PTO bank selected.'); return }
     if (overBalance) { setError(`Insufficient balance. You have ${available.toFixed(1)}h available but this request needs ${hoursRequested}h.`); return }
     setSaving(true); setError(null)
-    const { error: insErr } = await supabase.from('time_off_request').insert({
-      company_id: companyId,
-      employee_id: myEmpId,
-      bank_type: form.bank_type,
-      start_date: form.start_date,
-      end_date: form.end_date,
-      hours_requested: hoursRequested,
-      notes: form.notes || null,
-      status: 'pending',
-    })
-    if (insErr) { setError(insErr.message); setSaving(false); return }
-    // Increment pending_hours
-    if (bal.employee_id) {
-      await supabase.from('pto_balance').update({ pending_hours: (bal.pending_hours || 0) + hoursRequested }).eq('company_id', companyId).eq('employee_id', myEmpId).eq('bank_type', form.bank_type)
-    } else {
-      await supabase.from('pto_balance').insert({ company_id: companyId, employee_id: myEmpId, bank_type: form.bank_type, balance_hours: 0, used_hours: 0, pending_hours: hoursRequested })
+    try {
+      const { error: insErr } = await supabase.from('time_off_request').insert({
+        company_id: companyId,
+        employee_id: myEmpId,
+        bank_type: form.bank_type,
+        start_date: form.start_date,
+        end_date: form.end_date,
+        hours_requested: hoursRequested,
+        notes: form.notes || null,
+        status: 'pending',
+      })
+      if (insErr) throw insErr
+      if (bal.employee_id) {
+        await supabase.from('pto_balance').update({ pending_hours: (bal.pending_hours || 0) + hoursRequested }).eq('company_id', companyId).eq('employee_id', myEmpId).eq('bank_type', form.bank_type)
+      } else {
+        await supabase.from('pto_balance').insert({ company_id: companyId, employee_id: myEmpId, bank_type: form.bank_type, balance_hours: 0, used_hours: 0, pending_hours: hoursRequested })
+      }
+      toast('Request submitted')
+      onSaved()
+    } catch(e) {
+      setError(e.message || 'Failed to submit request')
+    } finally {
+      setSaving(false)
     }
-    toast('Request submitted')
-    setSaving(false)
-    onSaved()
   }
 
   return (

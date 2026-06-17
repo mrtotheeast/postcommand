@@ -47,20 +47,25 @@ export default function ClientManagement() {
 
   async function load() {
     setLoading(true)
-    const [{ data:cl }, { data:si }, { data:ct }] = await Promise.all([
-      supabase.from('client').select('*').eq('company_id',profile.company_id).order('name'),
-      supabase.from('site').select('id,name,client_id').eq('company_id',profile.company_id),
-      supabase.from('client_contact').select('client_id,full_name,phone,email').eq('company_id',profile.company_id).eq('is_main_contact',true),
-    ])
-    const contactMap = {}
-    for (const c of (ct||[])) contactMap[c.client_id] = c
-    const merged = (cl||[]).map(c => ({
-      ...c,
-      contact_name:  contactMap[c.id]?.full_name || null,
-      contact_phone: contactMap[c.id]?.phone     || null,
-      contact_email: contactMap[c.id]?.email     || null,
-    }))
-    setClients(merged); setSites(si||[]); setLoading(false)
+    try {
+      const [{ data:cl }, { data:si }, { data:ct }] = await Promise.all([
+        supabase.from('client').select('*').eq('company_id',profile.company_id).order('name'),
+        supabase.from('site').select('id,name,client_id').eq('company_id',profile.company_id),
+        supabase.from('client_contact').select('client_id,full_name,phone,email').eq('company_id',profile.company_id).eq('is_main_contact',true),
+      ])
+      const contactMap = {}
+      for (const c of (ct||[])) contactMap[c.client_id] = c
+      const merged = (cl||[]).map(c => ({
+        ...c,
+        contact_name:  contactMap[c.id]?.full_name || null,
+        contact_phone: contactMap[c.id]?.phone     || null,
+        contact_email: contactMap[c.id]?.email     || null,
+      }))
+      setClients(merged); setSites(si||[])
+    } catch(e) {
+    } finally {
+      setLoading(false)
+    }
   }
 
   const filtered = useMemo(() => clients.filter(c => !search || c.name?.toLowerCase().includes(search.toLowerCase())), [clients,search])
@@ -197,8 +202,14 @@ function ClientOnboarding({ client, companyId }) {
   }, [client.id])
   async function save() {
     setSaving(true)
-    await supabase.from('client_onboarding').upsert({ client_id:client.id, company_id:companyId, steps, updated_at:new Date().toISOString() }, { onConflict:'client_id' })
-    setSaving(false); setSaved(true); setTimeout(()=>setSaved(false),2500)
+    try {
+      const { error } = await supabase.from('client_onboarding').upsert({ client_id:client.id, company_id:companyId, steps, updated_at:new Date().toISOString() }, { onConflict:'client_id' })
+      if (error) throw error
+      setSaved(true); setTimeout(()=>setSaved(false),2500)
+    } catch(e) {
+    } finally {
+      setSaving(false)
+    }
   }
   const done = Object.values(steps).filter(v=>v.done).length
   const pct  = Math.round((done/ONBOARDING_STEPS.length)*100)
@@ -239,10 +250,16 @@ function ClientContracts({ client, companyId }) {
   async function save() {
     if (!form.title.trim()) return
     setSaving(true)
-    await supabase.from('client_contract').insert({ client_id:client.id, company_id:companyId, ...form, value:Number(form.value)||null })
-    setSaving(false); setShowNew(false); setForm({title:'',file_url:'',start_date:'',end_date:'',value:'',auto_renewal:false,status:'active'})
-    const {data} = await supabase.from('client_contract').select('*').eq('client_id',client.id).order('created_at',{ascending:false})
-    setContracts(data||[])
+    try {
+      const { error } = await supabase.from('client_contract').insert({ client_id:client.id, company_id:companyId, ...form, value:Number(form.value)||null })
+      if (error) throw error
+      setShowNew(false); setForm({title:'',file_url:'',start_date:'',end_date:'',value:'',auto_renewal:false,status:'active'})
+      const {data} = await supabase.from('client_contract').select('*').eq('client_id',client.id).order('created_at',{ascending:false})
+      setContracts(data||[])
+    } catch(e) {
+    } finally {
+      setSaving(false)
+    }
   }
 
   const foc=e=>e.target.style.borderColor='var(--border-focus)'; const blr=e=>e.target.style.borderColor='var(--border)'
@@ -317,12 +334,13 @@ function ClientFormModal({ client, companyId, onClose, onSaved }) {
     setSaving(true)
     let ok = false
     try {
-      await supabase.from('client').update({
+      const { error } = await supabase.from('client').update({
         name: form.company_name.trim(),
         billing_address: form.address.trim() || null,
         status: form.contract_status || 'active',
         notes: form.notes.trim() || null,
-      }).eq('id', client.id)
+      }).eq('id', client.id).eq('company_id', companyId)
+      if (error) throw error
       toast('Client saved')
       ok = true
     } catch (err) {
