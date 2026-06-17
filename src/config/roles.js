@@ -103,7 +103,7 @@ export const FEATURE_ACCESS = {
   billing:          { minLevel:4, description:'Manage billing and subscription' },
   settings:         { minLevel:4, description:'Manage company settings' },
   audit_log:        { minLevel:4, description:'View system audit log' },
-  payroll:          { minLevel:4, description:'Run payroll via Gusto' },
+  payroll:          { minLevel:4, description:'Run payroll via ADP Workforce Now' },
   super_admin:      { minLevel:6, description:'Platform-wide administration' },
 }
 
