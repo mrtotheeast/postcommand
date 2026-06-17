@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './AuthContext'
-import { INCIDENT_STATUSES } from '../lib/constants'
+import { INCIDENT_STATUSES, TIMESHEET_STATUSES, INVOICE_STATUSES } from '../lib/constants'
 
 const NotificationContext = createContext(null)
 
@@ -22,20 +22,42 @@ export function NotificationProvider({ children }) {
   }, [profile?.company_id])
 
   async function loadFromDB() {
-    const { data } = await supabase
-      .from('notifications')
-      .select('*')
-      .eq('company_id', profile.company_id)
-      .order('created_at', { ascending: false })
-      .limit(50)
-    if (data) setNotifications(data)
+    try {
+      const { data } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('company_id', profile.company_id)
+        .order('created_at', { ascending: false })
+        .limit(50)
+      if (data) setNotifications(data)
+    } catch(e) {}
 
-    const { count } = await supabase
-      .from('incident_report')
-      .select('id', { count: 'exact', head: true })
-      .eq('company_id', profile.company_id)
-      .in('status', [INCIDENT_STATUSES.SUBMITTED, INCIDENT_STATUSES.REVIEWED])
-    setBadges(prev => ({ ...prev, open_incidents: count || 0 }))
+    try {
+      const { count } = await supabase
+        .from('incident_report')
+        .select('id', { count: 'exact', head: true })
+        .eq('company_id', profile.company_id)
+        .in('status', [INCIDENT_STATUSES.SUBMITTED, INCIDENT_STATUSES.REVIEWED])
+      setBadges(prev => ({ ...prev, open_incidents: count || 0 }))
+    } catch(e) {}
+
+    try {
+      const { count } = await supabase
+        .from('timesheet')
+        .select('id', { count: 'exact', head: true })
+        .eq('company_id', profile.company_id)
+        .eq('status', TIMESHEET_STATUSES.PENDING)
+      setBadges(prev => ({ ...prev, pending_timesheets: count || 0 }))
+    } catch(e) {}
+
+    try {
+      const { count } = await supabase
+        .from('invoice')
+        .select('id', { count: 'exact', head: true })
+        .eq('company_id', profile.company_id)
+        .not('status', 'in', `(${INVOICE_STATUSES.PAID},${INVOICE_STATUSES.VOID},${INVOICE_STATUSES.CANCELLED})`)
+      setBadges(prev => ({ ...prev, pending_invoices: count || 0 }))
+    } catch(e) {}
   }
 
   async function markRead(id) {

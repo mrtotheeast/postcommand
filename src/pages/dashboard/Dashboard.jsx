@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext'
 import { useNotifications } from '../../context/NotificationContext'
 import { supabase } from '../../lib/supabase'
 import { DASHBOARD_TILES, ROLE_LABELS, atLeast } from '../../config/roles'
+import { INCIDENT_STATUSES } from '../../lib/constants'
 import Icon from '../../components/ui/Icon'
 import Badge from '../../components/ui/Badge'
 
@@ -541,7 +542,7 @@ function ClientDashboard({ profile }) {
       try {
         const [{data:sites},{data:incidents},{data:patrols}] = await Promise.all([
           supabase.from('site').select('id,name,address,status').eq('company_id', profile.company_id).limit(10),
-          supabase.from('incident_report').select('id,incident_type,status,created_at,site_id').eq('company_id', profile.company_id).gte('created_at', since).order('created_at',{ascending:false}).limit(10),
+          supabase.from('incident_report').select('id,incident_type,status,created_at,site_id').eq('company_id', profile.company_id).in('status',[INCIDENT_STATUSES.SUBMITTED,INCIDENT_STATUSES.REVIEWED,INCIDENT_STATUSES.APPROVED]).gte('created_at', since).order('created_at',{ascending:false}).limit(10),
           supabase.from('patrol_log').select('id,site_id,started_at,ended_at,status').eq('company_id', profile.company_id).gte('started_at', since).order('started_at',{ascending:false}).limit(8),
         ])
         setData({ sites:sites||[], incidents:incidents||[], patrols:patrols||[] })
