@@ -59,6 +59,8 @@ serve(async (req) => {
               pdf_url: invoice.pdf_url,
               companyName: invoice.company?.name,
               company_id: invoice.company_id,
+              total_cents: Math.round((invoice.total || 0) * 100),
+              invoice_id: invoice.id,
             }
           })
         })

@@ -34,6 +34,7 @@ export const INVOICE_STATUSES = {
   PAID: 'paid',
   VOID: 'void',
   CANCELLED: 'cancelled',
+  SEND_FAILED: 'send_failed',
 }
 
 export const TIMESHEET_STATUSES = {

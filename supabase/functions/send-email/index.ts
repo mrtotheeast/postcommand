@@ -256,7 +256,42 @@ serve(async (req) => {
     }
 
     case 'invoice': {
-      const { invoiceNumber, amount, dueDate, pdf_url } = data
+      const { invoiceNumber, amount, dueDate, pdf_url, total_cents, invoice_id: invoiceId } = data
+
+      // Attempt to create a Stripe one-time checkout session for the Pay Now button.
+      // Uses price_data (not price_id) so no pre-created Stripe product is needed.
+      // TODO: set STRIPE_SECRET_KEY in Supabase secrets to enable Pay Now links in invoice emails.
+      let payNowUrl: string | null = null
+      const stripeKey = Deno.env.get('STRIPE_SECRET_KEY')
+      if (stripeKey && total_cents && total_cents > 0 && invoiceId) {
+        try {
+          const successUrl = pdf_url || 'https://postcommand.app'
+          const cancelUrl  = pdf_url || 'https://postcommand.app'
+          const params = new URLSearchParams()
+          params.append('mode', 'payment')
+          params.append('line_items[0][price_data][currency]', 'usd')
+          params.append('line_items[0][price_data][unit_amount]', String(total_cents))
+          params.append('line_items[0][price_data][product_data][name]', `Invoice ${invoiceNumber}`)
+          params.append('line_items[0][quantity]', '1')
+          params.append('success_url', `${successUrl}?payment=success`)
+          params.append('cancel_url', cancelUrl)
+          params.append('metadata[invoice_id]', invoiceId)
+          params.append('metadata[company_id]', data.company_id || '')
+          const stripeRes = await fetch('https://api.stripe.com/v1/checkout/sessions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${stripeKey}`,
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: params,
+          })
+          const stripeData = await stripeRes.json()
+          if (stripeRes.ok && stripeData.url) payNowUrl = stripeData.url
+        } catch {
+          // Stripe session creation failed — omit Pay Now button, email still sends
+        }
+      }
+
       emailPayload = branded(
         `Invoice ${invoiceNumber} from ${companyName}`,
         `
@@ -274,8 +309,17 @@ serve(async (req) => {
             <td style="padding:16px 20px;font-size:15px;color:#0f172a;">${dueDate || '—'}</td>
           </tr>
         </table>
+        ${payNowUrl ? `
+        <div style="text-align:center;margin:32px 0 16px;">
+          <a href="${payNowUrl}"
+             style="display:inline-block;background:#0f172a;color:#ffffff;font-weight:700;
+                    font-size:14px;letter-spacing:1.5px;text-transform:uppercase;text-decoration:none;
+                    padding:16px 44px;border-radius:8px;">
+            Pay Now
+          </a>
+        </div>` : ''}
         ${pdf_url ? `
-        <div style="text-align:center;margin:32px 0;">
+        <div style="text-align:center;margin:${payNowUrl ? '8px' : '32px'} 0;">
           <a href="${pdf_url}"
              style="display:inline-block;background:#c8a84b;color:#0d0f14;font-weight:700;
                     font-size:14px;letter-spacing:1.5px;text-transform:uppercase;text-decoration:none;

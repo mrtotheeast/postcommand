@@ -654,6 +654,7 @@ function InvoicesTab({ companyId, profile }) {
   const [loading, setLoading]   = useState(true)
   const [hasClient, setHasClient] = useState(false)
   const [contactId, setContactId] = useState(null)
+  const hasTrackedRef = useRef(false)
 
   useEffect(() => {
     if (!companyId || !profile?.email) { setLoading(false); return }
@@ -681,6 +682,22 @@ function InvoicesTab({ companyId, profile }) {
     }
     load()
   }, [companyId, profile?.email])
+
+  // Log a view for each invoice when the client opens the Invoices tab (once per mount)
+  useEffect(() => {
+    if (hasTrackedRef.current || invoices.length === 0 || !contactId || !profile?.email) return
+    hasTrackedRef.current = true
+    const now = new Date().toISOString()
+    for (const inv of invoices) {
+      supabase.from('invoice_view_log').insert({
+        invoice_id:        inv.id,
+        company_id:        companyId,
+        viewed_by_email:   profile.email,
+        client_contact_id: contactId,
+        viewed_at:         now,
+      }).catch(() => {})
+    }
+  }, [invoices, contactId, profile?.email, companyId])
 
   const fmtMoney = n => new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(n||0)
   const fmtDate  = d => d ? new Date(d+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—'

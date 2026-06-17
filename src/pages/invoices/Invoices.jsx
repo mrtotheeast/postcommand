@@ -4,13 +4,15 @@ import { supabase } from '../../lib/supabase'
 import Icon from '../../components/ui/Icon'
 import { exportInvoicePDF } from '../../lib/pdfExport'
 import { useToast } from '../../components/ui/Toast'
+import { INVOICE_STATUSES } from '../../lib/constants'
 
 const STATUS = {
-  draft:    { label:'Draft',    bg:'var(--border)',              color:'var(--text-muted)' },
-  sent:     { label:'Sent',     bg:'var(--color-info-bg)',       color:'var(--color-info)' },
-  paid:     { label:'Paid',     bg:'var(--color-success-bg)',    color:'var(--color-success)' },
-  overdue:  { label:'Overdue',  bg:'var(--color-danger-bg)',     color:'var(--color-danger)' },
-  void:     { label:'Void',     bg:'rgba(130,130,130,0.12)',     color:'#8899aa' },
+  draft:       { label:'Draft',       bg:'var(--border)',              color:'var(--text-muted)' },
+  sent:        { label:'Sent',        bg:'var(--color-info-bg)',       color:'var(--color-info)' },
+  paid:        { label:'Paid',        bg:'var(--color-success-bg)',    color:'var(--color-success)' },
+  overdue:     { label:'Overdue',     bg:'var(--color-danger-bg)',     color:'var(--color-danger)' },
+  void:        { label:'Void',        bg:'rgba(130,130,130,0.12)',     color:'#8899aa' },
+  send_failed: { label:'Send Failed', bg:'var(--color-danger-bg)',     color:'var(--color-danger)' },
 }
 
 const s = {
@@ -137,14 +139,36 @@ export default function Invoices() {
   async function sendInvoice(inv) {
     if (!inv.client_email) return
     try {
-      await supabase.functions.invoke('send-email', {
-        body: { type:'invoice', to:inv.client_email, data:{ invoiceNumber:inv.invoice_number, amount:fmtMoney(inv.total), dueDate:fmtDate(inv.due_date), pdf_url:inv.pdf_url||null, companyName:company?.name||'PostCommand', company_id:profile.company_id } }
+      const { data: fnData, error: fnError } = await supabase.functions.invoke('send-email', {
+        body: {
+          type: 'invoice',
+          to: inv.client_email,
+          data: {
+            invoiceNumber: inv.invoice_number,
+            amount: fmtMoney(inv.total),
+            dueDate: fmtDate(inv.due_date),
+            pdf_url: inv.pdf_url || null,
+            companyName: company?.name || 'PostCommand',
+            company_id: profile.company_id,
+            total_cents: Math.round((inv.total || 0) * 100),
+            invoice_id: inv.id,
+          },
+        },
       })
-      await supabase.from('invoice').update({ sent_at:new Date().toISOString(), status:inv.status==='draft'?'sent':inv.status }).eq('id',inv.id).eq('company_id',profile.company_id)
+      // functions.invoke returns { data, error } — check both for failures
+      if (fnError) throw new Error(fnError.message || 'Email service error')
+      if (fnData?.error) throw new Error(typeof fnData.error === 'string' ? fnData.error : (fnData.error?.message || JSON.stringify(fnData.error)))
+      // Only mark as sent AFTER confirming the email was accepted by Resend
+      await supabase.from('invoice').update({ sent_at: new Date().toISOString(), status: inv.status === 'draft' ? 'sent' : inv.status }).eq('id', inv.id).eq('company_id', profile.company_id)
       toast('Invoice sent to ' + inv.client_email)
       load()
     } catch(e) {
-      toast('Failed to send invoice', 'error')
+      // Mark draft as send_failed so admin knows the attempt was made but failed
+      if (inv.status === 'draft' || inv.status === INVOICE_STATUSES.SEND_FAILED) {
+        await supabase.from('invoice').update({ status: INVOICE_STATUSES.SEND_FAILED }).eq('id', inv.id).eq('company_id', profile.company_id).catch(() => {})
+        load()
+      }
+      toast(e?.message || 'Failed to send invoice', 'error')
     }
   }
 
@@ -245,6 +269,70 @@ export default function Invoices() {
 
       {editing && <InvoiceFormModal invoices={invoices} mode={editing === 'new' ? 'new' : 'edit'} invoice={editing === 'new' ? null : editing} companyId={profile.company_id} company={company} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load() }} />}
       {viewing && <InvoiceDetailModal invoice={viewing} company={company} onClose={() => setViewing(null)} onEdit={() => { setEditing(viewing); setViewing(null) }} onDelete={deleteInvoice} onStatusChange={(id,st) => { updateStatus(id,st); setViewing(null) }} onSend={sendInvoice} viewLogs={allViewLogs.filter(l => l.invoice_id === viewing.id)} />}
+    </div>
+  )
+}
+
+// ── PDF Preview Modal ─────────────────────────────────────────────────────────
+
+function PdfPreviewModal({ invoice, onClose }) {
+  const [pdfUrl, setPdfUrl]       = useState(invoice.pdf_url || null)
+  const [pdfLoading, setPdfLoading] = useState(!invoice.pdf_url)
+  const [pdfError, setPdfError]   = useState(null)
+
+  useEffect(() => {
+    if (invoice.pdf_url) return
+    // No cached PDF — generate one now
+    supabase.functions.invoke('generate-invoice-pdf', {
+      body: { invoice_id: invoice.id, company_id: invoice.company_id },
+    }).then(({ data, error }) => {
+      if (error || data?.error) {
+        setPdfError('Could not generate PDF. Try downloading instead.')
+      } else if (data?.pdf_url) {
+        setPdfUrl(data.pdf_url)
+      } else {
+        setPdfError('PDF generation returned no URL.')
+      }
+    }).catch(() => {
+      setPdfError('Could not generate PDF. Try downloading instead.')
+    }).finally(() => {
+      setPdfLoading(false)
+    })
+  }, [invoice.id, invoice.company_id, invoice.pdf_url])
+
+  return (
+    <div style={{ ...s.overlay, zIndex:500, alignItems:'center' }} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div style={{ background:'var(--bg-card)', border:'1px solid var(--border-subtle)', borderRadius:'var(--radius-lg)', width:'100%', maxWidth:'860px', boxShadow:'var(--shadow-modal)', display:'flex', flexDirection:'column', maxHeight:'90vh' }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'16px 20px', borderBottom:'1px solid var(--border)' }}>
+          <div style={{ fontFamily:'var(--font-display)', fontSize:'16px', letterSpacing:'1px', color:'var(--text-primary)' }}>
+            PDF PREVIEW — {invoice.invoice_number}
+          </div>
+          <button style={s.closeBtn} onClick={onClose}><Icon name="x" size={18} /></button>
+        </div>
+        <div style={{ flex:1, minHeight:0, padding:'0' }}>
+          {pdfLoading && (
+            <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'60vh', gap:'14px', color:'var(--text-muted)' }}>
+              <div style={{ width:'32px', height:'32px', border:'3px solid var(--border)', borderTopColor:'var(--accent)', borderRadius:'50%', animation:'spin 0.8s linear infinite' }} />
+              <span style={{ fontSize:'12px', fontFamily:'var(--font-condensed)', letterSpacing:'1px' }}>GENERATING PDF...</span>
+              <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+            </div>
+          )}
+          {pdfError && (
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'60vh', padding:'24px', textAlign:'center' }}>
+              <div style={{ padding:'16px 20px', background:'var(--color-danger-bg)', color:'var(--color-danger)', borderRadius:'var(--radius-md)', fontSize:'13px', border:'1px solid rgba(192,57,43,0.3)' }}>
+                {pdfError}
+              </div>
+            </div>
+          )}
+          {!pdfLoading && !pdfError && pdfUrl && (
+            <iframe
+              src={pdfUrl}
+              title={`Invoice ${invoice.invoice_number}`}
+              style={{ width:'100%', height:'75vh', border:'none', display:'block' }}
+            />
+          )}
+        </div>
+      </div>
     </div>
   )
 }
@@ -629,6 +717,7 @@ function InvoiceDetailModal({ invoice, company, onClose, onEdit, onDelete, onSta
   const items = invoice.invoice_item || []
   const [nudging, setNudging] = useState(false)
   const [nudgeMsg, setNudgeMsg] = useState(null)
+  const [showPdfPreview, setShowPdfPreview] = useState(false)
 
   async function sendNudge() {
     if (!invoice.client_email) return
@@ -699,6 +788,7 @@ function InvoiceDetailModal({ invoice, company, onClose, onEdit, onDelete, onSta
   }
 
   return (
+    <>
     <div style={s.overlay} onClick={e => { if (e.target===e.currentTarget) onClose() }}>
       <div style={s.modal}>
         <div style={s.modalHead}>
@@ -708,6 +798,7 @@ function InvoiceDetailModal({ invoice, company, onClose, onEdit, onDelete, onSta
             {company?.name && <div style={{ fontSize:'11px', color:'var(--text-muted)', marginTop:'2px', fontFamily:'var(--font-condensed)', letterSpacing:'0.5px' }}>FROM: {company.name.toUpperCase()}</div>}
           </div>
           <div style={{ display:'flex', gap:'6px', alignItems:'center' }}>
+            <button style={{ ...s.ghostBtn, height:'36px', padding:'0 12px', fontSize:'12px' }} onClick={() => setShowPdfPreview(true)}><Icon name="eye" size={14} />PREVIEW</button>
             <button style={{ ...s.ghostBtn, height:'36px', padding:'0 12px', fontSize:'12px' }} onClick={() => exportInvoicePDF(invoice, items)}><Icon name="download" size={14} />PDF</button>
             <button style={{ ...s.ghostBtn, height:'36px', padding:'0 12px', fontSize:'12px' }} onClick={print}><Icon name="printer" size={14} />PRINT</button>
             <button style={s.closeBtn} onClick={onClose}><Icon name="x" size={18} /></button>
@@ -794,5 +885,7 @@ function InvoiceDetailModal({ invoice, company, onClose, onEdit, onDelete, onSta
         </div>
       </div>
     </div>
+    {showPdfPreview && <PdfPreviewModal invoice={invoice} onClose={() => setShowPdfPreview(false)} />}
+    </>
   )
 }
