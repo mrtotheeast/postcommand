@@ -13,36 +13,36 @@ export const PLANS = {
   starter: {
     id: 'starter',
     name: 'Starter',
-    basePrice: 25,
-    officerLimit: 5,
-    siteLimit: 1,
-    perOfficerPrice: 2,
-    perSitePrice: 10,
+    basePrice: 49,
+    officerLimit: 10,
+    siteLimit: 3,
+    perOfficerPrice: 10, // per block of 5 officers
+    perSitePrice: 15,
   },
   professional: {
     id: 'professional',
     name: 'Professional',
-    basePrice: 75,
-    officerLimit: 15,
-    siteLimit: 3,
-    perOfficerPrice: 2.40,
-    perSitePrice: 10,
+    basePrice: 129,
+    officerLimit: 25,
+    siteLimit: 15,
+    perOfficerPrice: 12, // per block of 5 officers
+    perSitePrice: 15,
   },
   enterprise: {
     id: 'enterprise',
     name: 'Enterprise',
-    basePrice: 199,
-    officerLimit: 25,
+    basePrice: 299,
+    officerLimit: Infinity,
     siteLimit: Infinity,
-    perOfficerPrice: 3,
-    perSitePrice: 10,
+    perOfficerPrice: 15, // per block of 5 officers
+    perSitePrice: 15,
   },
 }
 
 export const PAYROLL_ADDON = {
   id: 'payroll',
-  name: 'Payroll Add-on',
-  price: 29,
+  name: 'ADP Payroll Sync Add-on',
+  price: 49,
 }
 
 export function getPlan(planId) {

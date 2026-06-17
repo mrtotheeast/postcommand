@@ -6,44 +6,44 @@ import { isNative, isIOS, openBrowser } from '../../lib/platform'
 
 const PLANS = [
   {
-    id: 'free_trial',
-    name: 'Free Trial',
-    price: 0,
+    id: 'starter',
+    name: 'Starter',
+    price: 49,
     priceUnit: null,
-    period: '14 days',
-    stripePriceId: null,
-    officers: 10,
-    sites: null,
-    features: ['Up to 10 users', 'Core features only', 'Scheduling & timesheets', 'Incident reports', 'Email support'],
-    color: 'var(--text-muted)',
-    bg: 'var(--border)',
-  },
-  {
-    id: 'standard',
-    name: 'Standard',
-    price: 2.50,
-    priceUnit: 'user',
     period: 'mo',
-    stripePriceId: 'price_standard_per_user', // set in Supabase secrets
-    officers: null,
-    sites: 1,
-    features: ['Single location', '$2.50 / user / month', 'Scheduling & timesheets', 'Incident reports + HR', 'Payroll export (CSV)', 'Invoicing', 'Advanced reports'],
+    stripePriceId: null, // TODO: update stripeMonthlyPriceId when Stripe products created
+    officers: 10,
+    sites: 3,
+    features: ['1 site · 10 officer slots', 'Scheduling, clock-in/out, incidents', 'DAR, patrol, live map, messaging', 'AI features included', '+$10/block of 5 officers · +$15/site'],
     color: 'var(--color-info)',
     bg: 'var(--color-info-bg)',
   },
   {
     id: 'professional',
     name: 'Professional',
-    price: 5.00,
-    priceUnit: 'user',
+    price: 129,
+    priceUnit: null,
     period: 'mo',
-    stripePriceId: 'price_professional_per_user', // set in Supabase secrets
-    officers: null,
-    sites: null,
-    features: ['Multi-location', '$5.00 / user / month', 'Everything in Standard', 'AI features (incident + training)', 'Client portal', 'API access', 'Priority support'],
+    stripePriceId: null, // TODO: update stripeMonthlyPriceId when Stripe products created
+    officers: 25,
+    sites: 15,
+    features: ['3 sites · 25 officer slots', 'Everything in Starter', 'HR docs, client portal, invoicing', 'Time off management · Priority support', '+$12/block of 5 officers · +$15/site'],
     color: 'var(--accent)',
     bg: 'var(--accent-bg)',
     popular: true,
+  },
+  {
+    id: 'enterprise',
+    name: 'Enterprise',
+    price: 299,
+    priceUnit: null,
+    period: 'mo',
+    stripePriceId: null, // TODO: update stripeMonthlyPriceId when Stripe products created
+    officers: null,
+    sites: null,
+    features: ['10 sites · 50 officer slots', 'Everything in Professional', 'Personal onboarding · 4hr SLA', 'Dedicated account manager · ADP payroll sync', '+$15/block of 5 officers · +$15/site (unlimited)'],
+    color: 'var(--color-success)',
+    bg: 'var(--color-success-bg)',
   },
 ]
 

@@ -19,14 +19,14 @@ const PLANS = [
   {
     id: 'starter',
     name: 'STARTER',
-    price: '$25',
+    price: '$49',
     period: '/mo',
     features: [
-      'Up to 10 officers',
-      '1 job site included',
-      'Scheduling & timesheets',
-      'Incident reports',
-      '+$5/officer · +$15/site',
+      '1 site · 10 officer slots',
+      'Scheduling, clock-in, incidents',
+      'DAR, patrol, live map, messaging',
+      'AI features included',
+      '+$10/block of 5 officers · +$15/site',
     ],
     cta: 'SELECT STARTER',
     recommended: false,
@@ -35,14 +35,14 @@ const PLANS = [
   {
     id: 'professional',
     name: 'PROFESSIONAL',
-    price: '$75',
+    price: '$129',
     period: '/mo',
     features: [
-      'Up to 25 officers',
-      '3 job sites included',
-      'All Starter features',
-      'HR documents & client portal',
-      '+$4/officer · +$12/site',
+      '3 sites · 25 officer slots',
+      'Everything in Starter',
+      'HR docs, client portal, invoicing',
+      'Time off management',
+      '+$12/block of 5 officers · +$15/site',
     ],
     cta: 'SELECT PROFESSIONAL',
     recommended: true,
@@ -51,14 +51,14 @@ const PLANS = [
   {
     id: 'enterprise',
     name: 'ENTERPRISE',
-    price: '$199',
+    price: '$299',
     period: '/mo',
     features: [
-      'Unlimited officers & sites',
-      'All Professional features',
-      'Dedicated onboarding',
-      'Custom integrations & API',
-      '+$3/officer · +$10/site',
+      '10 sites · 50 officer slots',
+      'Everything in Professional',
+      'Personal onboarding · 4hr SLA',
+      'Dedicated account manager · API',
+      '+$15/block of 5 officers · +$15/site',
     ],
     cta: 'SELECT ENTERPRISE',
     recommended: false,
@@ -451,8 +451,8 @@ export default function Register() {
                   {wantsPayroll && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0d0f14" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
                 </div>
                 <div style={{ flex:1 }}>
-                  <div style={{ fontFamily:"'Barlow Condensed', sans-serif", fontSize:'13px', fontWeight:700, letterSpacing:'0.5px', color:'#0d0f14' }}>Add Payroll Management — <span style={{ color:'#c8a84b' }}>+$29/mo</span></div>
-                  <div style={{ fontSize:'11px', color:'#8899aa', marginTop:'2px' }}>Run payroll, manage pay rates, and export reports directly in PostCommand.</div>
+                  <div style={{ fontFamily:"'Barlow Condensed', sans-serif", fontSize:'13px', fontWeight:700, letterSpacing:'0.5px', color:'#0d0f14' }}>Add ADP Payroll Sync — <span style={{ color:'#c8a84b' }}>+$49/mo</span></div>
+                  <div style={{ fontSize:'11px', color:'#8899aa', marginTop:'2px' }}>Sync approved timesheets to ADP Workforce Now automatically. Professional & Enterprise only.</div>
                 </div>
               </div>
 

@@ -76,52 +76,49 @@ function Check() {
 const PLANS = [
   {
     name: 'Starter',
-    price: '$25',
-    desc: 'For small teams getting started with digital workforce management.',
+    price: '$49',
+    desc: 'For small security teams getting started with digital workforce management.',
     features: [
-      'Up to 5 officers',
-      'Scheduling and timesheets',
-      'Incident and activity reports',
-      'Mobile app (iOS and Android)',
-      'Client contact portal',
-      'Email support',
+      '1 site included · 10 officer slots',
+      'Add sites: +$15/site/mo (max 3 sites)',
+      'Add officers: +$10/block of 5/mo',
+      'Scheduling, clock-in/out, incidents',
+      'DAR, patrol, live map, messaging',
+      'AI included · 14-day free trial',
     ],
   },
   {
     name: 'Professional',
-    price: '$75',
+    price: '$129',
     desc: 'For growing companies managing multiple sites and clients.',
     featured: true,
     features: [
-      'Up to 15 officers',
+      '3 sites included · 25 officer slots',
+      'Add sites: +$15/site/mo (max 15 sites)',
+      'Add officers: +$12/block of 5/mo',
       'Everything in Starter',
-      'Live officer GPS tracking',
-      'HR document management',
-      'AI-assisted report writing',
-      'Patrol checkpoint logging',
-      'Priority support',
+      'HR docs, client portal, invoicing',
+      'Time off management · Priority support',
     ],
   },
   {
     name: 'Enterprise',
-    price: '$199',
+    price: '$299',
     desc: 'For large operations requiring advanced controls and compliance.',
     features: [
-      'Up to 25 officers (unlimited add-ons)',
+      '10 sites included · 50 officer slots',
+      'Add sites: +$15/site/mo (unlimited)',
+      'Add officers: +$15/block of 5/mo (unlimited)',
       'Everything in Professional',
-      'Full audit log',
-      'Performance reviews',
-      'Custom roles and permissions',
-      'SOS emergency alerts',
-      'Dedicated onboarding',
-      'Phone and priority support',
+      'Personal onboarding · 4hr support SLA',
+      'Dedicated account manager · ADP payroll sync',
     ],
   },
 ]
 
 const ADDONS = [
-  { name: 'Officer blocks (5 officers)', desc: 'Add officer capacity beyond your plan limit.', price: '$10/mo Starter · $12/mo Professional · $15/mo Enterprise' },
-  { name: 'Payroll Integration', desc: 'Connect to ADP, Gusto, or Paychex for direct payroll export.', price: 'Contact us' },
+  { name: 'Officer blocks (5 officers)', desc: 'Add officer capacity beyond your plan base. Blocks of 5.', price: '$10/mo Starter · $12/mo Professional · $15/mo Enterprise' },
+  { name: 'ADP Payroll Sync', desc: 'Sync approved timesheets to ADP Workforce Now automatically. Requires ADP Workforce Now subscription.', price: '$49/mo · Professional & Enterprise only' },
   { name: 'Custom Branding', desc: 'Apply your company logo and colors to client-facing documents and the officer app.', price: 'Contact us' },
 ]
 
@@ -225,7 +222,7 @@ export default function Pricing() {
           ['Can I switch plans later?', 'Yes. You can upgrade or downgrade your plan at any time from your billing settings. Changes take effect at the start of the next billing cycle.'],
           ['What happens after the free trial?', 'After 14 days your account transitions to the plan you selected. You will be notified before any charge occurs. If you choose not to continue, your account is deactivated and your data is retained for 30 days.'],
           ['Is there a setup fee?', 'No. There are no setup fees, no onboarding fees, and no annual commitments. All plans are billed month-to-month.'],
-          ['Can I add more officers later?', 'Yes. Additional officer capacity can be added at any time in blocks of 5 officers. Block pricing is $10/mo on Starter, $12/mo on Professional, and $15/mo on Enterprise.'],
+          ['Can I add more officers later?', 'Yes. Additional officer capacity can be added at any time in blocks of 5 officers. Block pricing is $10/mo on Starter, $12/mo on Professional, and $15/mo on Enterprise. Enterprise supports unlimited blocks.'],
           ['Is my data secure?', 'Yes. PostCommand is hosted on enterprise-grade cloud infrastructure with encryption at rest and in transit. See our Privacy Policy for details on data handling and retention.'],
         ].map(([q, a]) => (
           <div key={q} style={{ borderTop: `1px solid ${C.border}`, padding: '24px 0' }}>
