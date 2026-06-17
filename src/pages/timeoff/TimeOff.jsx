@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
 import { atLeast } from '../../config/roles'
+import { scopeToOwnEmployee, isOwnDataOnly } from '../../lib/scoping'
 import Icon from '../../components/ui/Icon'
 import { useToast } from '../../components/ui/Toast'
 
@@ -45,7 +46,7 @@ export default function TimeOff() {
         supabase.from('employee').select('id').eq('user_id', profile.id).eq('company_id', profile.company_id).maybeSingle(),
         supabase.from('pto_bank_config').select('*').eq('company_id', profile.company_id),
         supabase.from('pto_balance').select('*').eq('company_id', profile.company_id),
-        supabase.from('time_off_request').select('*').eq('company_id', profile.company_id).order('created_at', { ascending: false }),
+        scopeToOwnEmployee(supabase.from('time_off_request').select('*').eq('company_id', profile.company_id).order('created_at', { ascending: false }), profile),
         supabase.from('employee').select('id,first_name,last_name').eq('company_id', profile.company_id).order('last_name'),
       ])
       setMyEmpId(empMe?.id || null)
@@ -66,15 +67,14 @@ export default function TimeOff() {
 
   function empName(id) { const e = employees.find(e => e.id === id); return e ? `${e.first_name} ${e.last_name}` : '—' }
 
-  const isOfficer = !canReview
+  const isOfficer = isOwnDataOnly(profile?.role)
   const visibleRequests = useMemo(() => requests.filter(r => {
-    if (isOfficer && myEmpId && r.employee_id !== myEmpId) return false
     if (filterStatus !== 'all' && r.status !== filterStatus) return false
     if (filterEmp !== 'all' && r.employee_id !== filterEmp) return false
     return true
-  }), [requests, isOfficer, myEmpId, filterStatus, filterEmp])
+  }), [requests, filterStatus, filterEmp])
 
-  const pendingRequests = useMemo(() => requests.filter(r => r.status === 'pending' && !(isOfficer && myEmpId && r.employee_id !== myEmpId)), [requests, isOfficer, myEmpId])
+  const pendingRequests = useMemo(() => requests.filter(r => r.status === 'pending'), [requests])
 
   async function approve(req) {
     setActioning(req.id)

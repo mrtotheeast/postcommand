@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
 import { atLeast } from '../../config/roles'
+import { scopeToOwnEmployee } from '../../lib/scoping'
 import Icon from '../../components/ui/Icon'
 import { useToast } from '../../components/ui/Toast'
 
@@ -31,7 +32,7 @@ export default function Availability() {
     try {
       const [{ data: empMe }, { data: myData }, { data: teamData }, { data: empAll }] = await Promise.all([
         supabase.from('employee').select('id').eq('user_id', profile.id).eq('company_id', profile.company_id).maybeSingle(),
-        supabase.from('employee_availability').select('*').eq('company_id', profile.company_id).order('date', { ascending: true }),
+        scopeToOwnEmployee(supabase.from('employee_availability').select('*').eq('company_id', profile.company_id).order('date', { ascending: true }), profile),
         canReview ? supabase.from('employee_availability').select('*').eq('company_id', profile.company_id) : Promise.resolve({ data: [] }),
         canReview ? supabase.from('employee').select('id,first_name,last_name').eq('company_id', profile.company_id).eq('status', 'active').order('last_name') : Promise.resolve({ data: [] }),
       ])
