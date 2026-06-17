@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './AuthContext'
+import { INCIDENT_STATUSES } from '../lib/constants'
 
 const NotificationContext = createContext(null)
 
@@ -33,7 +34,7 @@ export function NotificationProvider({ children }) {
       .from('incident_report')
       .select('id', { count: 'exact', head: true })
       .eq('company_id', profile.company_id)
-      .in('status', ['submitted', 'reviewed'])
+      .in('status', [INCIDENT_STATUSES.SUBMITTED, INCIDENT_STATUSES.REVIEWED])
     setBadges(prev => ({ ...prev, open_incidents: count || 0 }))
   }
 

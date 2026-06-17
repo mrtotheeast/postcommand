@@ -389,7 +389,7 @@ function OfficerDashboard({ profile, badges, navigate }) {
         {shiftsLoading ? (
           <div style={{color:'var(--text-muted)',fontSize:'12px',padding:'14px 16px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)'}}>Loading...</div>
         ) : shifts.length === 0 ? (
-          <div style={{color:'var(--text-muted)',fontSize:'13px',padding:'14px 16px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)'}}>No shifts scheduled yet.</div>
+          <div style={{color:'var(--text-muted)',fontSize:'13px',padding:'14px 16px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)'}}>No data yet.</div>
         ) : (
           <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
             {shifts.map(s => (
