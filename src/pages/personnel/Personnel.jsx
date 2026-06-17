@@ -332,7 +332,7 @@ function CSVImportModal({ companyId, onClose, onImported }) {
     for (const row of preview.rows) {
       if (!row.first_name || !row.last_name) { failed++; continue }
       const role = VALID_ROLES.includes(row.role) ? row.role : 'officer'
-      const { error } = await supabase.from('employee').insert({
+      const { data: newEmp, error } = await supabase.from('employee').insert({
         company_id: companyId,
         first_name: row.first_name,
         last_name:  row.last_name,
@@ -344,8 +344,13 @@ function CSVImportModal({ companyId, onClose, onImported }) {
         employment_type: ['full_time','part_time','contract'].includes(row.employment_type) ? row.employment_type : 'full_time',
         has_app_access: false,
         invitation_status: 'pending',
-      })
+      }).select('id').single()
       if (error) failed++; else success++
+      if (!error && newEmp?.id) {
+        supabase.from('channel').select('id').eq('company_id', companyId).eq('is_general', true).maybeSingle()
+          .then(({ data: ch }) => { if (ch?.id) supabase.from('channel_member').insert({ channel_id: ch.id, employee_id: newEmp.id }).catch(() => {}) })
+          .catch(() => {})
+      }
     }
     setImporting(false)
     setResult({ success, failed })
@@ -897,6 +902,9 @@ function AddEmployeeModal({ companyId, onClose, onSaved }) {
         invitation_status:'pending',
       }).select().single()
       if (err) throw err
+      supabase.from('channel').select('id').eq('company_id', companyId).eq('is_general', true).maybeSingle()
+        .then(({ data: ch }) => { if (ch?.id) supabase.from('channel_member').insert({ channel_id: ch.id, employee_id: data.id }).catch(() => {}) })
+        .catch(() => {})
       setSavedEmp(data)
       setSuccess(true)
       toast('Employee added successfully')

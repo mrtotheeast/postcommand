@@ -4,13 +4,6 @@ import { supabase } from '../../lib/supabase'
 import { atLeast } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
 
-const CHANNELS = [
-  { id:'general',       name:'General',       icon:'message-circle', desc:'All staff' },
-  { id:'dispatch',      name:'Dispatch',      icon:'radio',          desc:'Operational comms' },
-  { id:'supervisors',   name:'Supervisors',   icon:'shield',         desc:'Supervisors only' },
-  { id:'announcements', name:'Announcements', icon:'bell',           desc:'Admin broadcasts' },
-]
-
 function fmtTime(ts) {
   return new Date(ts).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit', hour12:true })
 }
@@ -25,18 +18,22 @@ function roleLabel(role) {
 
 export default function Messaging() {
   const { profile } = useAuth()
-  const [activeTab, setActiveTab]         = useState('channels')
-  const [activeChannel, setActiveChannel] = useState('general')
-  const [activeDM, setActiveDM]           = useState(null)
-  const [messages, setMessages]           = useState([])
-  const [dmThreads, setDmThreads]         = useState([])
-  const [employees, setEmployees]         = useState([])
-  const [input, setInput]                 = useState('')
-  const [sending, setSending]             = useState(false)
-  const [showDMPicker, setShowDMPicker]   = useState(false)
-  const [dmSearch, setDmSearch]           = useState('')
-  const [scheduleMode, setScheduleMode]  = useState(false)
-  const [scheduleAt, setScheduleAt]      = useState('')
+  const [activeTab, setActiveTab]             = useState('channels')
+  const [activeChannel, setActiveChannel]     = useState(null)
+  const [activeDM, setActiveDM]               = useState(null)
+  const [channels, setChannels]               = useState([])
+  const [messages, setMessages]               = useState([])
+  const [dmThreads, setDmThreads]             = useState([])
+  const [employees, setEmployees]             = useState([])
+  const [input, setInput]                     = useState('')
+  const [sending, setSending]                 = useState(false)
+  const [showDMPicker, setShowDMPicker]       = useState(false)
+  const [dmSearch, setDmSearch]               = useState('')
+  const [showCreateGroup, setShowCreateGroup] = useState(false)
+  const [groupName, setGroupName]             = useState('')
+  const [creatingGroup, setCreatingGroup]     = useState(false)
+  const [scheduleMode, setScheduleMode]       = useState(false)
+  const [scheduleAt, setScheduleAt]           = useState('')
   const messagesEndRef = useRef(null)
   const inputRef       = useRef(null)
   const subRef         = useRef(null)
@@ -44,15 +41,33 @@ export default function Messaging() {
   const isAdmin      = atLeast(profile?.role, 'lieutenant')
   const canBroadcast = atLeast(profile?.role, 'sergeant')
 
-  const visibleChannels = CHANNELS.filter(ch => {
-    if (ch.id === 'supervisors') return atLeast(profile?.role, 'sergeant')
-    return true
-  })
-
+  useEffect(() => { loadChannels() }, [profile?.employee_id, profile?.company_id])
   useEffect(() => { loadEmployees() }, [profile])
   useEffect(() => { loadMessages(); subscribeToMessages(); return () => subRef.current?.unsubscribe() }, [profile, activeChannel, activeDM, activeTab])
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior:'smooth' }) }, [messages])
   useEffect(() => { if (activeTab === 'dms') loadDMThreads() }, [activeTab])
+
+  async function loadChannels() {
+    if (!profile?.employee_id || !profile?.company_id) return
+    const { data } = await supabase
+      .from('channel_member')
+      .select('channel_id, channel:channel_id(id, name, is_general, created_by)')
+      .eq('employee_id', profile.employee_id)
+    const list = (data || [])
+      .map(row => row.channel)
+      .filter(Boolean)
+      .sort((a, b) => {
+        if (a.is_general && !b.is_general) return -1
+        if (!a.is_general && b.is_general) return 1
+        return a.name.localeCompare(b.name)
+      })
+    setChannels(list)
+    setActiveChannel(prev => {
+      if (prev && list.find(c => c.id === prev)) return prev
+      const general = list.find(c => c.is_general)
+      return (general || list[0])?.id || null
+    })
+  }
 
   async function loadEmployees() {
     if (!profile?.company_id) return
@@ -91,27 +106,60 @@ export default function Messaging() {
 
   async function sendMessage() {
     if (!input.trim() || sending) return
-    // Scheduled message — store with future send_at timestamp
+    const ch = channels.find(c => c.id === activeChannel)
     if (scheduleMode && scheduleAt) {
-      const ch = visibleChannels?.find(c=>c.id===activeChannel)
       await supabase.from('scheduled_message').insert({ company_id:profile.company_id, channel_id:activeChannel, channel_name:ch?.name||activeChannel, sender_id:profile.employee_id||null, sender_name:`${profile.first_name} ${profile.last_name}`, sender_role:profile.role, content:input.trim(), send_at:new Date(scheduleAt).toISOString() })
       setInput(''); setSending(false); setScheduleMode(false); setScheduleAt(''); inputRef.current?.focus(); return
     }
     const channelId = activeTab === 'channels' ? activeChannel : getDMId(profile.employee_id||'', activeDM)
-    const ch = CHANNELS.find(c => c.id === activeChannel)
     setSending(true)
     await supabase.from('message').insert({ company_id:profile.company_id, channel_id:channelId, channel_name:activeTab==='channels'?ch?.name:'DM', sender_id:profile.employee_id||null, sender_name:`${profile.first_name} ${profile.last_name}`, sender_role:profile.role, content:input.trim() })
     setInput(''); setSending(false); inputRef.current?.focus()
   }
 
+  async function createGroup() {
+    if (!groupName.trim() || creatingGroup) return
+    setCreatingGroup(true)
+    try {
+      const { data: ch, error: chErr } = await supabase
+        .from('channel')
+        .insert({ company_id: profile.company_id, name: groupName.trim(), is_general: false, created_by: profile.employee_id })
+        .select('id')
+        .single()
+      if (chErr) throw chErr
+
+      // Self-join with retry — RLS "channel creator can self-join own channel" policy covers this
+      let joined = false
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt > 0) await new Promise(r => setTimeout(r, 500))
+        const { error: memErr } = await supabase.from('channel_member').insert({ channel_id: ch.id, employee_id: profile.employee_id })
+        if (!memErr) { joined = true; break }
+      }
+      if (!joined) {
+        alert(`Group "${groupName.trim()}" was created, but you were not added as a member. Ask a lieutenant or admin to add you manually.`)
+        setShowCreateGroup(false)
+        setGroupName('')
+        await loadChannels()
+        return
+      }
+
+      setShowCreateGroup(false)
+      setGroupName('')
+      await loadChannels()
+      setActiveChannel(ch.id)
+    } catch {
+      alert('Failed to create group. Please try again.')
+    } finally {
+      setCreatingGroup(false)
+    }
+  }
+
   function handleKeyDown(e) { if (e.key==='Enter'&&!e.shiftKey) { e.preventDefault(); sendMessage() } }
 
   const canPost = useMemo(() => {
-    if (activeTab==='dms') return !!activeDM
-    if (activeChannel==='announcements') return canBroadcast
-    if (activeChannel==='supervisors') return atLeast(profile?.role,'sergeant')
-    return true
-  }, [activeTab, activeChannel, activeDM, profile])
+    if (activeTab === 'dms') return !!activeDM
+    return !!activeChannel
+  }, [activeTab, activeChannel, activeDM])
 
   const groupedMessages = useMemo(() => {
     const groups = []; let lastDate = null
@@ -129,7 +177,7 @@ export default function Messaging() {
     return `${e.first_name} ${e.last_name}`.toLowerCase().includes(dmSearch.toLowerCase())
   })
 
-  const activeChInfo = CHANNELS.find(c => c.id === activeChannel)
+  const activeChInfo = channels.find(c => c.id === activeChannel)
   const activeDMEmp  = employees.find(e => e.id === activeDM)
 
   return (
@@ -147,18 +195,24 @@ export default function Messaging() {
           </div>
         </div>
         <div style={{flex:1,overflowY:'auto',padding:'8px'}}>
-          {activeTab==='channels' ? visibleChannels.map(ch=>(
-            <button key={ch.id} onClick={()=>setActiveChannel(ch.id)}
-              style={{display:'flex',alignItems:'center',gap:'10px',width:'100%',padding:'10px 12px',border:'none',borderRadius:'var(--radius-md)',background:activeChannel===ch.id?'var(--accent-bg)':'transparent',cursor:'pointer',textAlign:'left',marginBottom:'2px'}}>
-              <div style={{width:'32px',height:'32px',borderRadius:'8px',background:activeChannel===ch.id?'var(--accent)':'var(--bg-card)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
-                <Icon name={ch.icon} size={15} color={activeChannel===ch.id?'var(--text-inverse)':'var(--text-muted)'}/>
-              </div>
-              <div>
-                <div style={{fontSize:'13px',fontWeight:600,color:activeChannel===ch.id?'var(--accent)':'var(--text-primary)'}}>{ch.name}</div>
-                <div style={{fontSize:'11px',color:'var(--text-muted)'}}>{ch.desc}</div>
-              </div>
-            </button>
-          )) : (
+          {activeTab==='channels' ? (
+            <>
+              {canBroadcast && (
+                <button onClick={()=>setShowCreateGroup(true)} style={{display:'flex',alignItems:'center',gap:'8px',width:'100%',padding:'10px 12px',border:'1px dashed var(--border-subtle)',borderRadius:'var(--radius-md)',background:'transparent',cursor:'pointer',color:'var(--text-muted)',fontSize:'12px',fontFamily:'var(--font-condensed)',fontWeight:600,marginBottom:'8px'}}>
+                  <Icon name="plus" size={14}/>NEW GROUP
+                </button>
+              )}
+              {channels.map(ch=>(
+                <button key={ch.id} onClick={()=>setActiveChannel(ch.id)}
+                  style={{display:'flex',alignItems:'center',gap:'10px',width:'100%',padding:'10px 12px',border:'none',borderRadius:'var(--radius-md)',background:activeChannel===ch.id?'var(--accent-bg)':'transparent',cursor:'pointer',textAlign:'left',marginBottom:'2px'}}>
+                  <div style={{width:'32px',height:'32px',borderRadius:'8px',background:activeChannel===ch.id?'var(--accent)':'var(--bg-card)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                    <Icon name={ch.is_general?'message-circle':'message-square'} size={15} color={activeChannel===ch.id?'var(--text-inverse)':'var(--text-muted)'}/>
+                  </div>
+                  <div style={{fontSize:'13px',fontWeight:600,color:activeChannel===ch.id?'var(--accent)':'var(--text-primary)'}}>{ch.name}</div>
+                </button>
+              ))}
+            </>
+          ) : (
             <>
               <button onClick={()=>setShowDMPicker(true)} style={{display:'flex',alignItems:'center',gap:'8px',width:'100%',padding:'10px 12px',border:'1px dashed var(--border-subtle)',borderRadius:'var(--radius-md)',background:'transparent',cursor:'pointer',color:'var(--text-muted)',fontSize:'12px',fontFamily:'var(--font-condensed)',fontWeight:600,marginBottom:'8px'}}>
                 <Icon name="plus" size={14}/>NEW MESSAGE
@@ -196,16 +250,15 @@ export default function Messaging() {
         </div>
       )}
 
-      {/* Chat area + DM picker (hidden in monitor mode) */}
+      {/* Chat area + modals (hidden in monitor mode) */}
       {activeTab!=='dmmonitor' && <><div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
         <div style={{padding:'14px 20px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',gap:'12px',flexShrink:0,background:'var(--bg-surface)'}}>
           {activeTab==='channels' ? <>
             <div style={{width:'36px',height:'36px',borderRadius:'8px',background:'var(--accent-bg)',display:'flex',alignItems:'center',justifyContent:'center'}}>
-              <Icon name={activeChInfo?.icon||'message-circle'} size={17} color="var(--accent)"/>
+              <Icon name={activeChInfo?.is_general?'message-circle':'message-square'} size={17} color="var(--accent)"/>
             </div>
             <div>
               <div style={{fontFamily:'var(--font-condensed)',fontSize:'15px',fontWeight:700,color:'var(--text-primary)'}}>{activeChInfo?.name}</div>
-              <div style={{fontSize:'11px',color:'var(--text-muted)'}}>{activeChInfo?.desc}</div>
             </div>
           </> : activeDMEmp ? <>
             <div style={{width:'36px',height:'36px',borderRadius:'50%',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',fontWeight:700,color:'var(--accent)'}}>
@@ -260,7 +313,7 @@ export default function Messaging() {
         <div style={{padding:'12px 20px',borderTop:'1px solid var(--border)',flexShrink:0,background:'var(--bg-surface)'}}>
           {!canPost ? (
             <div style={{padding:'12px 16px',background:'var(--bg-card)',borderRadius:'var(--radius-md)',border:'1px solid var(--border-subtle)',fontSize:'13px',color:'var(--text-muted)',textAlign:'center'}}>
-              {activeTab==='dms'&&!activeDM?'Select a conversation':'Only supervisors can post here'}
+              {activeTab==='dms'?'Select a conversation':'Select a channel'}
             </div>
           ) : (
             <>
@@ -278,8 +331,8 @@ export default function Messaging() {
                   rows={1} style={{flex:1,padding:'10px 14px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-lg)',color:'var(--text-primary)',fontSize:'14px',resize:'none',outline:'none',lineHeight:1.5,maxHeight:'120px',overflowY:'auto',fontFamily:'inherit'}}
                   onInput={e=>{e.target.style.height='auto';e.target.style.height=Math.min(e.target.scrollHeight,120)+'px'}}
                   onFocus={e=>e.target.style.borderColor='var(--border-focus)'} onBlur={e=>e.target.style.borderColor='var(--border-subtle)'}/>
-                {canBroadcast && activeChannel==='announcements' && !scheduleMode && (
-                  <button onClick={()=>setScheduleMode(true)} title="Schedule announcement" style={{width:'44px',height:'44px',borderRadius:'50%',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,transition:'all 150ms ease'}}>
+                {canBroadcast && activeTab==='channels' && !scheduleMode && (
+                  <button onClick={()=>setScheduleMode(true)} title="Schedule message" style={{width:'44px',height:'44px',borderRadius:'50%',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,transition:'all 150ms ease'}}>
                     <Icon name="clock" size={17} color="var(--text-muted)"/>
                   </button>
                 )}
@@ -319,6 +372,35 @@ export default function Messaging() {
                 <span style={{marginLeft:'auto',fontSize:'10px',fontWeight:700,color:roleColor(e.role),background:'var(--bg-card)',padding:'2px 6px',borderRadius:'4px'}}>{roleLabel(e.role)}</span>
               </button>
             ))}
+          </div>
+        </div>
+      </>}
+
+      {showCreateGroup&&<>
+        <div onClick={()=>{setShowCreateGroup(false);setGroupName('')}} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:200,backdropFilter:'blur(2px)'}}/>
+        <div style={{position:'fixed',top:'50%',left:'50%',transform:'translate(-50%,-50%)',width:'min(400px,95vw)',background:'var(--bg-surface)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-lg)',zIndex:201,display:'flex',flexDirection:'column',boxShadow:'var(--shadow-modal)'}}>
+          <div style={{padding:'16px 20px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
+            <div style={{fontFamily:'var(--font-display)',fontSize:'16px',letterSpacing:'2px',color:'var(--text-primary)'}}>NEW GROUP</div>
+            <button onClick={()=>{setShowCreateGroup(false);setGroupName('')}} style={{background:'transparent',border:'none',color:'var(--text-muted)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',minHeight:'44px',minWidth:'44px'}}><Icon name="x" size={18}/></button>
+          </div>
+          <div style={{padding:'20px'}}>
+            <div style={{fontSize:'11px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',marginBottom:'6px'}}>Group Name</div>
+            <input
+              value={groupName}
+              onChange={e=>setGroupName(e.target.value)}
+              onKeyDown={e=>{ if (e.key==='Enter') createGroup() }}
+              placeholder="e.g. Night Shift, Investigations..."
+              autoFocus
+              style={{width:'100%',padding:'10px 14px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:'var(--text-primary)',fontSize:'13px',outline:'none',boxSizing:'border-box',fontFamily:'inherit'}}
+              onFocus={e=>e.target.style.borderColor='var(--border-focus)'}
+              onBlur={e=>e.target.style.borderColor='var(--border-subtle)'}
+            />
+            <button
+              onClick={createGroup}
+              disabled={!groupName.trim()||creatingGroup}
+              style={{marginTop:'16px',width:'100%',height:'44px',background:groupName.trim()&&!creatingGroup?'var(--accent)':'var(--bg-card)',color:groupName.trim()&&!creatingGroup?'var(--text-inverse)':'var(--text-muted)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:groupName.trim()&&!creatingGroup?'pointer':'default',transition:'all 150ms ease'}}>
+              {creatingGroup?'CREATING...':'CREATE GROUP'}
+            </button>
           </div>
         </div>
       </>}
