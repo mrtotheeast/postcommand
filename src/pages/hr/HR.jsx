@@ -91,15 +91,19 @@ export default function HR() {
 
   async function load() {
     setLoading(true)
-    const [{ data: eData }, { data: dData }, { data: wData }] = await Promise.all([
-      supabase.from('employee').select('id,first_name,last_name,role,status,hire_date,invitation_status,position_title,email').eq('company_id', profile.company_id).order('last_name'),
-      supabase.from('employee_document').select('*').eq('company_id', profile.company_id),
-      supabase.from('employee_writeup').select('*').eq('company_id', profile.company_id).order('created_at', { ascending:false }),
-    ])
-    setEmployees(eData || [])
-    setDocs(dData || [])
-    setWriteups(wData || [])
-    setLoading(false)
+    try {
+      const [{ data: eData }, { data: dData }, { data: wData }] = await Promise.all([
+        supabase.from('employee').select('id,first_name,last_name,role,status,hire_date,invitation_status,position_title,email').eq('company_id', profile.company_id).order('last_name'),
+        supabase.from('employee_document').select('*').eq('company_id', profile.company_id),
+        supabase.from('employee_writeup').select('*').eq('company_id', profile.company_id).order('created_at', { ascending:false }),
+      ])
+      setEmployees(eData || [])
+      setDocs(dData || [])
+      setWriteups(wData || [])
+    } catch(e) {
+    } finally {
+      setLoading(false)
+    }
   }
 
   const empDocs = (empId) => docs.filter(d => d.employee_id === empId)
@@ -146,8 +150,9 @@ export default function HR() {
               try {
                 const { data } = await supabase.functions.invoke('cert-reminders')
                 setReminderResult(`${data?.sent||0} reminder${(data?.sent||0)!==1?'s':''} sent`)
-              } catch { setReminderResult('Error — check Supabase logs') }
-              setSendingReminders(false)
+              } catch { setReminderResult('Error — check Supabase logs') } finally {
+                setSendingReminders(false)
+              }
             }}
             disabled={sendingReminders}
           >
@@ -352,28 +357,38 @@ function EmployeeDocModal({ employee, docs, companyId, onClose, onRefresh }) {
   async function addDoc() {
     if (!form.doc_name.trim() && !form.doc_type) return
     setSaving(true)
-    const docName = form.doc_name.trim() || DOC_TYPES.find(d => d.value === form.doc_type)?.label || form.doc_type
-    await supabase.from('employee_document').insert({
-      company_id: companyId,
-      employee_id: employee.id,
-      doc_type: form.doc_type,
-      doc_name: docName,
-      doc_number: form.doc_number || null,
-      issued_date: form.issued_date || null,
-      expiry_date: form.expiry_date || null,
-      notes: form.notes || null,
-    })
-    setSaving(false)
-    setAdding(false)
-    setForm({ doc_type: 'guard_license', doc_name: '', doc_number: '', issued_date: '', expiry_date: '', notes: '' })
-    onRefresh()
+    try {
+      const docName = form.doc_name.trim() || DOC_TYPES.find(d => d.value === form.doc_type)?.label || form.doc_type
+      const { error } = await supabase.from('employee_document').insert({
+        company_id: companyId,
+        employee_id: employee.id,
+        doc_type: form.doc_type,
+        doc_name: docName,
+        doc_number: form.doc_number || null,
+        issued_date: form.issued_date || null,
+        expiry_date: form.expiry_date || null,
+        notes: form.notes || null,
+      })
+      if (error) throw error
+      setAdding(false)
+      setForm({ doc_type: 'guard_license', doc_name: '', doc_number: '', issued_date: '', expiry_date: '', notes: '' })
+      onRefresh()
+    } catch(e) {
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function deleteDoc(id) {
     setDeleting(id)
-    await supabase.from('employee_document').delete().eq('id', id)
-    setDeleting(null)
-    onRefresh()
+    try {
+      const { error } = await supabase.from('employee_document').delete().eq('id', id).eq('company_id', companyId)
+      if (error) throw error
+      onRefresh()
+    } catch(e) {
+    } finally {
+      setDeleting(null)
+    }
   }
 
   const inputF = e => { e.target.style.borderColor = 'var(--border-focus)' }
@@ -539,17 +554,35 @@ function WriteupModal({ mode, writeup, employees, companyId, onClose, onSaved })
   async function save() {
     if (!form.employee_id || !form.description.trim()) return
     setSaving(true)
-    const payload = { company_id:companyId, employee_id:form.employee_id, type:form.type, severity:form.severity, description:form.description.trim(), incident_date:form.incident_date||null, notes:form.notes.trim()||null }
-    if (writeup?.id) await supabase.from('employee_writeup').update(payload).eq('id', writeup.id)
-    else await supabase.from('employee_writeup').insert(payload)
-    setSaving(false); onSaved()
+    try {
+      const payload = { company_id:companyId, employee_id:form.employee_id, type:form.type, severity:form.severity, description:form.description.trim(), incident_date:form.incident_date||null, notes:form.notes.trim()||null }
+      let err
+      if (writeup?.id) {
+        const res = await supabase.from('employee_writeup').update(payload).eq('id', writeup.id).eq('company_id', companyId)
+        err = res.error
+      } else {
+        const res = await supabase.from('employee_writeup').insert(payload)
+        err = res.error
+      }
+      if (err) throw err
+      onSaved()
+    } catch(e) {
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function del() {
     if (!writeup?.id) return
     setDeleting(true)
-    await supabase.from('employee_writeup').delete().eq('id', writeup.id)
-    setDeleting(false); onSaved()
+    try {
+      const { error } = await supabase.from('employee_writeup').delete().eq('id', writeup.id).eq('company_id', companyId)
+      if (error) throw error
+      onSaved()
+    } catch(e) {
+    } finally {
+      setDeleting(false)
+    }
   }
 
   const viewEmp = writeup ? employees.find(e => e.id === writeup.employee_id) : null
@@ -744,12 +777,17 @@ function ViolationsTab({ companyId }) {
 
   async function loadV() {
     setLoading(true)
-    const [{ data: vData }, { data: eData }, { data: sData }] = await Promise.all([
-      supabase.from('clockin_violation').select('*').eq('company_id', companyId).order('created_at',{ascending:false}).limit(200),
-      supabase.from('employee').select('id,first_name,last_name').eq('company_id', companyId).eq('status','active'),
-      supabase.from('site').select('id,name').eq('company_id', companyId),
-    ])
-    setViolations(vData||[]); setEmployees(eData||[]); setSites(sData||[]); setLoading(false)
+    try {
+      const [{ data: vData }, { data: eData }, { data: sData }] = await Promise.all([
+        supabase.from('clockin_violation').select('*').eq('company_id', companyId).order('created_at',{ascending:false}).limit(200),
+        supabase.from('employee').select('id,first_name,last_name').eq('company_id', companyId).eq('status','active'),
+        supabase.from('site').select('id,name').eq('company_id', companyId),
+      ])
+      setViolations(vData||[]); setEmployees(eData||[]); setSites(sData||[])
+    } catch(e) {
+    } finally {
+      setLoading(false)
+    }
   }
 
   const empMap  = Object.fromEntries((employees||[]).map(e=>[e.id,`${e.first_name} ${e.last_name}`]))
@@ -824,10 +862,27 @@ function RecognitionTab({ companyId, profile, employees }) {
   const [myEmpId, setMyEmpId] = useState(null)
   const empMap = Object.fromEntries(employees.map(e=>[e.id,`${e.first_name} ${e.last_name}`]))
   useEffect(() => { if (!companyId) return; load(); supabase.from('employee').select('id').eq('user_id',profile.id).single().then(({data})=>setMyEmpId(data?.id)) }, [companyId])
-  async function load() { setLoading(true); const { data } = await supabase.from('recognition').select('*').eq('company_id',companyId).order('created_at',{ascending:false}).limit(50); setRecs(data||[]); setLoading(false) }
+  async function load() {
+    setLoading(true)
+    try {
+      const { data } = await supabase.from('recognition').select('*').eq('company_id',companyId).order('created_at',{ascending:false}).limit(50)
+      setRecs(data||[])
+    } catch(e) {
+    } finally {
+      setLoading(false)
+    }
+  }
   async function submit() {
     if (!form.employee_id||!form.message.trim()) return
-    setSaving(true); await supabase.from('recognition').insert({ company_id:companyId, given_by:myEmpId, ...form }); setSaving(false); setShowNew(false); setForm({employee_id:'',recognition_type:REC_TYPES[0],message:'',badge_emoji:'⭐'}); load()
+    setSaving(true)
+    try {
+      const { error } = await supabase.from('recognition').insert({ company_id:companyId, given_by:myEmpId, ...form })
+      if (error) throw error
+      setShowNew(false); setForm({employee_id:'',recognition_type:REC_TYPES[0],message:'',badge_emoji:'⭐'}); load()
+    } catch(e) {
+    } finally {
+      setSaving(false)
+    }
   }
   const TYPE_COLORS = { 'Above & Beyond':'#f59e0b','Perfect Attendance':'#10b981','Safety Champion':'#ef4444','Team Player':'#6366f1','Leadership':'#8b5cf6','Customer Service':'#ec4899' }
   const inp2 = { background:'var(--bg-input)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', padding:'9px 12px', fontSize:'13px', color:'var(--text-primary)', outline:'none', width:'100%', fontFamily:'var(--font-body)', transition:'border-color 150ms ease' }
@@ -883,19 +938,23 @@ function CompanyDocsTab({ profile, companyId, canEdit }) {
 
   async function loadDocs() {
     setLoading(true)
-    const { data } = await supabase.from('hr_document').select('*').eq('company_id', companyId).eq('is_active', true).order('created_at', { ascending: false })
-    setDocs(data || [])
-    if (canEdit && data?.length) {
-      const { data: acks } = await supabase.from('hr_document_acknowledgment').select('document_id,status').eq('company_id', companyId)
-      const counts = {}
-      for (const a of (acks||[])) {
-        if (!counts[a.document_id]) counts[a.document_id] = { total: 0, acked: 0 }
-        counts[a.document_id].total++
-        if (a.status !== 'pending') counts[a.document_id].acked++
+    try {
+      const { data } = await supabase.from('hr_document').select('*').eq('company_id', companyId).eq('is_active', true).order('created_at', { ascending: false })
+      setDocs(data || [])
+      if (canEdit && data?.length) {
+        const { data: acks } = await supabase.from('hr_document_acknowledgment').select('document_id,status').eq('company_id', companyId)
+        const counts = {}
+        for (const a of (acks||[])) {
+          if (!counts[a.document_id]) counts[a.document_id] = { total: 0, acked: 0 }
+          counts[a.document_id].total++
+          if (a.status !== 'pending') counts[a.document_id].acked++
+        }
+        setAckStatus(counts)
       }
-      setAckStatus(counts)
+    } catch(e) {
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   async function acknowledge(doc) {
@@ -1026,18 +1085,27 @@ function PolicyManagementTab({ companyId }) {
 
   async function load() {
     setLoading(true)
-    const { data } = await supabase.from('company_policy').select('*').eq('company_id', companyId).order('category')
-    setPolicies(data||[])
-    setLoading(false)
+    try {
+      const { data } = await supabase.from('company_policy').select('*').eq('company_id', companyId).order('category')
+      setPolicies(data||[])
+    } catch(e) {
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function save() {
     if (!form.title.trim()) return
     setSaving(true)
-    const { error: err } = await supabase.from('company_policy').insert({ company_id:companyId, title:form.title.trim(), category:form.category, content:form.content.trim()||null, file_url:form.file_url.trim()||null, updated_at:new Date().toISOString() })
-    setSaving(false)
-    if (err) { setError(err.message); return }
-    setShowAdd(false); setForm({ title:'', category:'General', content:'', file_url:'' }); load()
+    try {
+      const { error: err } = await supabase.from('company_policy').insert({ company_id:companyId, title:form.title.trim(), category:form.category, content:form.content.trim()||null, file_url:form.file_url.trim()||null, updated_at:new Date().toISOString() })
+      if (err) throw err
+      setShowAdd(false); setForm({ title:'', category:'General', content:'', file_url:'' }); load()
+    } catch(e) {
+      setError(e?.message || 'Save failed')
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function summarize(policy) {
@@ -1049,7 +1117,7 @@ function PolicyManagementTab({ companyId }) {
       })
       if (fnErr) throw new Error(fnErr.message)
       const summary = data?.content?.[0]?.text || data?.text || ''
-      await supabase.from('company_policy').update({ ai_summary:summary }).eq('id', policy.id)
+      await supabase.from('company_policy').update({ ai_summary:summary }).eq('id', policy.id).eq('company_id', companyId)
       load()
     } catch(e) {
       setError(`AI summary failed: ${e.message}`)
@@ -1059,8 +1127,10 @@ function PolicyManagementTab({ companyId }) {
 
   async function del(id) {
     if (!window.confirm('Delete this policy?')) return
-    await supabase.from('company_policy').delete().eq('id', id)
-    load()
+    try {
+      await supabase.from('company_policy').delete().eq('id', id).eq('company_id', companyId)
+      load()
+    } catch(e) {}
   }
 
   const inp = { background:'var(--bg-input)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', padding:'9px 12px', fontSize:'13px', color:'var(--text-primary)', outline:'none', width:'100%', fontFamily:'var(--font-body)', transition:'border-color 150ms ease' }
@@ -1152,20 +1222,24 @@ function PTOSettingsTab({ companyId }) {
 
   async function load() {
     setLoading(true)
-    const [{ data: cfgData }, { data: balData }, { data: empData }] = await Promise.all([
-      supabase.from('pto_bank_config').select('*').eq('company_id', companyId),
-      supabase.from('pto_balance').select('*').eq('company_id', companyId),
-      supabase.from('employee').select('id,first_name,last_name').eq('company_id', companyId).eq('status', 'active').order('last_name'),
-    ])
-    const cfgMap = {}
-    for (const c of (cfgData || [])) cfgMap[c.bank_type] = c
-    for (const b of PTO_BANK_DEFS) {
-      if (!cfgMap[b.type]) cfgMap[b.type] = { bank_type: b.type, enabled: false, accrual_rate_hours: 0.0385, accrual_per_hours_worked: 1, max_balance: 80, max_carryover: 40 }
+    try {
+      const [{ data: cfgData }, { data: balData }, { data: empData }] = await Promise.all([
+        supabase.from('pto_bank_config').select('*').eq('company_id', companyId),
+        supabase.from('pto_balance').select('*').eq('company_id', companyId),
+        supabase.from('employee').select('id,first_name,last_name').eq('company_id', companyId).eq('status', 'active').order('last_name'),
+      ])
+      const cfgMap = {}
+      for (const c of (cfgData || [])) cfgMap[c.bank_type] = c
+      for (const b of PTO_BANK_DEFS) {
+        if (!cfgMap[b.type]) cfgMap[b.type] = { bank_type: b.type, enabled: false, accrual_rate_hours: 0.0385, accrual_per_hours_worked: 1, max_balance: 80, max_carryover: 40 }
+      }
+      setConfigs(cfgMap)
+      setBalances(balData || [])
+      setEmployees(empData || [])
+    } catch(e) {
+    } finally {
+      setLoading(false)
     }
-    setConfigs(cfgMap)
-    setBalances(balData || [])
-    setEmployees(empData || [])
-    setLoading(false)
   }
 
   function setField(bankType, field, value) {
@@ -1207,16 +1281,24 @@ function PTOSettingsTab({ companyId }) {
   async function saveBalance(empId, bankType) {
     const key = `${empId}:${bankType}`
     setBalanceSaving(key)
-    const newBal = parseFloat(editedBalances[key]) || 0
-    const existing = balances.find(b => b.employee_id === empId && b.bank_type === bankType)
-    if (existing) {
-      await supabase.from('pto_balance').update({ balance_hours: newBal }).eq('company_id', companyId).eq('employee_id', empId).eq('bank_type', bankType)
-    } else {
-      await supabase.from('pto_balance').insert({ company_id: companyId, employee_id: empId, bank_type: bankType, balance_hours: newBal, used_hours: 0, pending_hours: 0 })
+    try {
+      const newBal = parseFloat(editedBalances[key]) || 0
+      const existing = balances.find(b => b.employee_id === empId && b.bank_type === bankType)
+      let err
+      if (existing) {
+        const res = await supabase.from('pto_balance').update({ balance_hours: newBal }).eq('company_id', companyId).eq('employee_id', empId).eq('bank_type', bankType)
+        err = res.error
+      } else {
+        const res = await supabase.from('pto_balance').insert({ company_id: companyId, employee_id: empId, bank_type: bankType, balance_hours: newBal, used_hours: 0, pending_hours: 0 })
+        err = res.error
+      }
+      if (err) throw err
+      setEditedBalances(prev => { const n = {...prev}; delete n[key]; return n })
+      load()
+    } catch(e) {
+    } finally {
+      setBalanceSaving(null)
     }
-    setEditedBalances(prev => { const n = {...prev}; delete n[key]; return n })
-    setBalanceSaving(null)
-    load()
   }
 
   const enabledBanks = PTO_BANK_DEFS.filter(b => configs[b.type]?.enabled)

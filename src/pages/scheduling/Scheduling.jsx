@@ -157,33 +157,37 @@ export default function Scheduling() {
   async function loadAll() {
     if (!profile?.company_id) return
     setLoading(true)
-    const [sR, eR, siR, ceR, csR] = await Promise.all([
-      supabase.from('shift').select('*')
-        .eq('company_id', profile.company_id)
-        .gte('start_time', dateRange.start.toISOString())
-        .lte('start_time', dateRange.end.toISOString())
-        .order('start_time'),
-      supabase.from('employee')
-        .select('id,first_name,last_name,position_title,role,profile_photo_url,status,is_armed')
-        .eq('company_id', profile.company_id)
-        .eq('status', 'active')
-        .or('invitation_status.eq.accepted,has_app_access.eq.true')
-        .order('last_name'),
-      supabase.from('site').select('id,name,city,state').eq('company_id', profile.company_id),
-      supabase.from('employee').select('id').eq('company_id', profile.company_id).eq('user_id', profile.id).maybeSingle(),
-      supabase.from('company_settings').select('ot_weekly_hours,ot_week_start').eq('company_id', profile.company_id).maybeSingle(),
-    ])
-    let sd = sR.data || []
-    if (isOfficer) {
-      const me = (eR.data || []).find(e => e.id === profile.employee_id)
-      if (me) sd = sd.filter(s => s.employee_id === me.id)
+    try {
+      const [sR, eR, siR, ceR, csR] = await Promise.all([
+        supabase.from('shift').select('*')
+          .eq('company_id', profile.company_id)
+          .gte('start_time', dateRange.start.toISOString())
+          .lte('start_time', dateRange.end.toISOString())
+          .order('start_time'),
+        supabase.from('employee')
+          .select('id,first_name,last_name,position_title,role,profile_photo_url,status,is_armed')
+          .eq('company_id', profile.company_id)
+          .eq('status', 'active')
+          .or('invitation_status.eq.accepted,has_app_access.eq.true')
+          .order('last_name'),
+        supabase.from('site').select('id,name,city,state').eq('company_id', profile.company_id),
+        supabase.from('employee').select('id').eq('company_id', profile.company_id).eq('user_id', profile.id).maybeSingle(),
+        supabase.from('company_settings').select('ot_weekly_hours,ot_week_start').eq('company_id', profile.company_id).maybeSingle(),
+      ])
+      let sd = sR.data || []
+      if (isOfficer) {
+        const me = (eR.data || []).find(e => e.id === profile.employee_id)
+        if (me) sd = sd.filter(s => s.employee_id === me.id)
+      }
+      setCreatorEmpId(ceR.data?.id || null)
+      setShifts(sd)
+      setEmployees(eR.data || [])
+      setSites(siR.data || [])
+      setOtSettings(csR.data || null)
+    } catch(e) {
+    } finally {
+      setLoading(false)
     }
-    setCreatorEmpId(ceR.data?.id || null)
-    setShifts(sd)
-    setEmployees(eR.data || [])
-    setSites(siR.data || [])
-    setOtSettings(csR.data || null)
-    setLoading(false)
   }
 
   function navigate(dir) {
@@ -347,16 +351,21 @@ export default function Scheduling() {
           canCreate={canCreate}
           onClose={() => setSelected(null)}
           onStatusChange={async (id, status) => {
-            await supabase.from('shift').update({status,...(status==='published'?{published_at:new Date().toISOString()}:{})}).eq('id',id).eq('company_id',profile.company_id)
-            if (status === 'published') {
-              toast('Schedule published')
-              const shift = shifts.find(s => s.id === id)
-              if (shift) {
-                const {data:emp} = await supabase.from('employee').select('first_name,email').eq('id',shift.employee_id).single()
-                if (emp?.email) emailSchedulePublished({ to:emp.email, firstName:emp.first_name, shiftCount:1, period:new Date(shift.start_time).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'}) })
+            try {
+              const { error } = await supabase.from('shift').update({status,...(status==='published'?{published_at:new Date().toISOString()}:{})}).eq('id',id).eq('company_id',profile.company_id)
+              if (error) throw error
+              if (status === 'published') {
+                toast('Schedule published')
+                const shift = shifts.find(s => s.id === id)
+                if (shift) {
+                  const {data:emp} = await supabase.from('employee').select('first_name,email').eq('id',shift.employee_id).single()
+                  if (emp?.email) emailSchedulePublished({ to:emp.email, firstName:emp.first_name, shiftCount:1, period:new Date(shift.start_time).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'}) })
+                }
               }
+              setSelected(null); loadAll()
+            } catch(e) {
+              toast(e?.message || 'Failed to update shift', 'error')
             }
-            setSelected(null); loadAll()
           }}
           onDeleted={() => { setSelected(null); loadAll() }}
         />
@@ -694,17 +703,15 @@ function ShiftDetail({shift,companyId,empName,siteName,canApprove,canPublish,can
   const toast=useToast()
   async function handleDelete(e){
     e.stopPropagation()
-    console.log('[ShiftDetail] handleDelete shift.id:', shift.id)
     setDeleting(true)
     try {
       const { error } = await supabase.from('shift').delete().eq('id', shift.id).eq('company_id', companyId)
-      console.log('[ShiftDetail] delete result error:', error)
-      if (error) { toast('Failed to delete shift','error'); setDeleting(false); return }
+      if (error) throw error
       toast('Shift deleted')
       onDeleted?.()
     } catch(err) {
-      console.error('[ShiftDetail] delete exception:', err)
-      toast('Failed to delete shift','error')
+      toast(err?.message || 'Failed to delete shift','error')
+    } finally {
       setDeleting(false)
     }
   }
@@ -792,18 +799,18 @@ function CreateShiftModal({employees,sites,companyId,createdBy,prefillEmpId,pref
       // Only request the returned id when we need it for the override log — avoids SELECT RLS issues on plain saves
       const q=logOT?supabase.from('shift').insert(payload).select('id').single():supabase.from('shift').insert(payload)
       const{data:newShift,error}=await q
-      if(error){setError(error.message);setSaving(false);return}
+      if(error) throw error
       if(logOT&&otResult&&newShift?.id){
         try{
           await supabase.from('ot_override_log').insert({company_id:companyId,employee_id:form.employee_id,shift_id:newShift.id,week_start_date:otResult.weekStartDate,projected_hours:otResult.projectedHours,ot_threshold:otSettings.ot_weekly_hours,ot_hours:otResult.otHours,approved_by_employee_id:createdBy})
         }catch{}
       }
       toast('Shift saved')
-      setSaving(false)
       setAddAnotherMode(true)
       onRefresh?.()
     }catch(err){
       setError(err?.message||'Failed to save shift.')
+    } finally {
       setSaving(false)
     }
   }
@@ -957,6 +964,7 @@ function CopyShiftModal({ shift, shifts, companyId, createdBy, otSettings, empNa
       onSaved()
     } catch (err) {
       toast('Failed to copy shifts', 'error')
+    } finally {
       setSaving(false)
     }
   }
@@ -1028,14 +1036,23 @@ function SwapsPanel({ companyId, profile, employees, shifts, canApprove }) {
   useEffect(() => { load() }, [companyId])
   async function load() {
     setLoading(true)
-    const [{ data: myEmp }, { data: swapData }] = await Promise.all([
-      supabase.from('employee').select('id').eq('user_id', profile.id).single(),
-      supabase.from('shift_swap_request').select('*').eq('company_id', companyId).order('created_at',{ascending:false}),
-    ])
-    setEmployee(myEmp); setSwaps(swapData||[]); setLoading(false)
+    try {
+      const [{ data: myEmp }, { data: swapData }] = await Promise.all([
+        supabase.from('employee').select('id').eq('user_id', profile.id).single(),
+        supabase.from('shift_swap_request').select('*').eq('company_id', companyId).order('created_at',{ascending:false}),
+      ])
+      setEmployee(myEmp); setSwaps(swapData||[])
+    } catch(e) {
+    } finally {
+      setLoading(false)
+    }
   }
   async function updateStatus(id, status) {
-    await supabase.from('shift_swap_request').update({ status, reviewed_at:new Date().toISOString() }).eq('id', id).eq('company_id', companyId); load()
+    try {
+      const { error } = await supabase.from('shift_swap_request').update({ status, reviewed_at:new Date().toISOString() }).eq('id', id).eq('company_id', companyId)
+      if (error) throw error
+      load()
+    } catch(e) {}
   }
 
   const empMap   = Object.fromEntries(employees.map(e=>[e.id,`${e.first_name} ${e.last_name}`]))
@@ -1092,8 +1109,14 @@ function SwapRequestModal({ companyId, employee, shifts, employees, allShifts, o
   async function save() {
     if (!form.requester_shift_id || !employee?.id) return
     setSaving(true)
-    await supabase.from('shift_swap_request').insert({ company_id:companyId, requester_employee_id:employee.id, requester_shift_id:form.requester_shift_id, target_employee_id:form.target_employee_id||null, target_shift_id:form.target_shift_id||null, notes:form.notes||null, status:'pending' })
-    setSaving(false); onSaved()
+    try {
+      const { error } = await supabase.from('shift_swap_request').insert({ company_id:companyId, requester_employee_id:employee.id, requester_shift_id:form.requester_shift_id, target_employee_id:form.target_employee_id||null, target_shift_id:form.target_shift_id||null, notes:form.notes||null, status:'pending' })
+      if (error) throw error
+      onSaved()
+    } catch(e) {
+    } finally {
+      setSaving(false)
+    }
   }
   const ov  = { position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:400,display:'flex',alignItems:'center',justifyContent:'center',padding:'20px' }
   const mod = { background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-lg)',padding:'28px',width:'100%',maxWidth:'440px',boxShadow:'var(--shadow-modal)' }
@@ -1148,13 +1171,15 @@ function AvailabilityPanel({ companyId, profile, employees, canEdit }) {
 
   useEffect(() => { load() }, [companyId])
   async function load() {
-    const [{ data: myEmp }, { data: availData }] = await Promise.all([
-      supabase.from('employee').select('id').eq('user_id', profile.id).single(),
-      supabase.from('employee_availability').select('*').eq('company_id', companyId),
-    ])
-    setEmployee(myEmp)
-    if (!viewEmpId && myEmp) setViewEmpId(myEmp.id)
-    setAvail(availData||[])
+    try {
+      const [{ data: myEmp }, { data: availData }] = await Promise.all([
+        supabase.from('employee').select('id').eq('user_id', profile.id).single(),
+        supabase.from('employee_availability').select('*').eq('company_id', companyId),
+      ])
+      setEmployee(myEmp)
+      if (!viewEmpId && myEmp) setViewEmpId(myEmp.id)
+      setAvail(availData||[])
+    } catch(e) {}
   }
 
   useEffect(() => {
@@ -1170,11 +1195,16 @@ function AvailabilityPanel({ companyId, profile, employees, canEdit }) {
   async function saveAvail() {
     if (!viewEmpId) return
     setSaving(true)
-    await supabase.from('employee_availability').delete().eq('company_id', companyId).eq('employee_id', viewEmpId)
-    await supabase.from('employee_availability').insert(
-      Object.entries(localAvail).map(([day,val]) => ({ company_id:companyId, employee_id:viewEmpId, day_of_week:parseInt(day), is_available:val.is_available, start_time:val.start_time, end_time:val.end_time }))
-    )
-    setSaving(false); load()
+    try {
+      await supabase.from('employee_availability').delete().eq('company_id', companyId).eq('employee_id', viewEmpId)
+      await supabase.from('employee_availability').insert(
+        Object.entries(localAvail).map(([day,val]) => ({ company_id:companyId, employee_id:viewEmpId, day_of_week:parseInt(day), is_available:val.is_available, start_time:val.start_time, end_time:val.end_time }))
+      )
+      load()
+    } catch(e) {
+    } finally {
+      setSaving(false)
+    }
   }
 
   function toggle(day) { setLocalAvail(p=>({...p,[day]:{...p[day],is_available:!p[day]?.is_available}})) }
@@ -1265,14 +1295,20 @@ function AutoAssignModal({ employees, sites, shifts, companyId, createdBy, onClo
   async function assign() {
     if (!preview?.candidates?.length) return
     setSaving(true)
-    const rows = preview.candidates.map(e => ({
-      company_id:companyId, employee_id:e.id, site_id:form.site_id,
-      start_time:preview.start.toISOString(), end_time:preview.end.toISOString(),
-      role:form.role==='any'?e.role:form.role, is_armed:false, status:'draft', created_by:createdBy
-    }))
-    const { error } = await supabase.from('shift').insert(rows)
-    if (error) { setError(error.message); setSaving(false); return }
-    setSaving(false); onSaved()
+    try {
+      const rows = preview.candidates.map(e => ({
+        company_id:companyId, employee_id:e.id, site_id:form.site_id,
+        start_time:preview.start.toISOString(), end_time:preview.end.toISOString(),
+        role:form.role==='any'?e.role:form.role, is_armed:false, status:'draft', created_by:createdBy
+      }))
+      const { error } = await supabase.from('shift').insert(rows)
+      if (error) throw error
+      onSaved()
+    } catch(e) {
+      setError(e?.message || 'Failed to assign shifts')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -1351,19 +1387,30 @@ function ShiftBidsPanel({ companyId, profile, employees, sites, canPost, otSetti
   useEffect(() => { if (!companyId) return; load(); supabase.from('employee').select('id').eq('user_id',profile.id).single().then(({data})=>setMyEmpId(data?.id)) }, [companyId])
   async function load() {
     setLoading(true)
-    const [{ data:bidData }, { data:appData }] = await Promise.all([
-      supabase.from('shift_bid').select('*').eq('company_id',companyId).eq('status','open').order('start_time'),
-      supabase.from('shift_bid_application').select('*').eq('company_id',companyId),
-    ])
-    setBids(bidData||[]); setApplications(appData||[]); setLoading(false)
+    try {
+      const [{ data:bidData }, { data:appData }] = await Promise.all([
+        supabase.from('shift_bid').select('*').eq('company_id',companyId).eq('status','open').order('start_time'),
+        supabase.from('shift_bid_application').select('*').eq('company_id',companyId),
+      ])
+      setBids(bidData||[]); setApplications(appData||[])
+    } catch(e) {
+    } finally {
+      setLoading(false)
+    }
   }
   async function postBid() {
     if (!form.site_id||!form.date) return
     setSaving(true)
-    const start = new Date(form.date+'T'+form.sh+':'+form.sm+':00')
-    const end   = new Date(form.date+'T'+form.eh+':'+form.em+':00')
-    await supabase.from('shift_bid').insert({ company_id:companyId, site_id:form.site_id, start_time:start.toISOString(), end_time:end.toISOString(), role:form.role, bonus:Number(form.bonus)||0, status:'open' })
-    setSaving(false); setShowNew(false); load()
+    try {
+      const start = new Date(form.date+'T'+form.sh+':'+form.sm+':00')
+      const end   = new Date(form.date+'T'+form.eh+':'+form.em+':00')
+      const { error } = await supabase.from('shift_bid').insert({ company_id:companyId, site_id:form.site_id, start_time:start.toISOString(), end_time:end.toISOString(), role:form.role, bonus:Number(form.bonus)||0, status:'open' })
+      if (error) throw error
+      setShowNew(false); load()
+    } catch(e) {
+    } finally {
+      setSaving(false)
+    }
   }
   async function applyBid(bidId) {
     if (!myEmpId) return

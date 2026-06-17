@@ -129,20 +129,24 @@ export default function SiteManagement() {
 
   async function load() {
     setLoading(true)
-    const today = new Date().toISOString().slice(0, 10)
-    const [{ data: siteData }, { data: tsData }, { data: compData }] = await Promise.all([
-      supabase.from('site').select('*').eq('company_id', profile.company_id).order('name'),
-      supabase.from('timesheet').select('site_id').eq('company_id', profile.company_id).is('clock_out', null).eq('date', today),
-      supabase.from('company').select('plan').eq('id', profile.company_id).single(),
-    ])
-    setSites(siteData || [])
-    setCompanyPlan(compData?.plan || 'trial')
-    const map = {}
-    for (const ts of (tsData || [])) {
-      map[ts.site_id] = (map[ts.site_id] || 0) + 1
+    try {
+      const today = new Date().toISOString().slice(0, 10)
+      const [{ data: siteData }, { data: tsData }, { data: compData }] = await Promise.all([
+        supabase.from('site').select('*').eq('company_id', profile.company_id).order('name'),
+        supabase.from('timesheet').select('site_id').eq('company_id', profile.company_id).is('clock_out', null).eq('date', today),
+        supabase.from('company').select('plan').eq('id', profile.company_id).single(),
+      ])
+      setSites(siteData || [])
+      setCompanyPlan(compData?.plan || 'trial')
+      const map = {}
+      for (const ts of (tsData || [])) {
+        map[ts.site_id] = (map[ts.site_id] || 0) + 1
+      }
+      setActiveTSMap(map)
+    } catch(e) {
+    } finally {
+      setLoading(false)
     }
-    setActiveTSMap(map)
-    setLoading(false)
   }
 
   const filtered = useMemo(() => (sites || []).filter(s => {
@@ -154,11 +158,16 @@ export default function SiteManagement() {
   }), [sites, search, filterActive])
 
   async function deleteSite(id) {
-    await supabase.from('site').delete().eq('id', id)
-    setConfirmDelete(null)
-    setDetail(null)
-    toast('Site deleted', 'info')
-    load()
+    try {
+      const { error } = await supabase.from('site').delete().eq('id', id).eq('company_id', profile.company_id)
+      if (error) throw error
+      setConfirmDelete(null)
+      setDetail(null)
+      toast('Site deleted', 'info')
+      load()
+    } catch(e) {
+      toast(e?.message || 'Failed to delete site', 'error')
+    }
   }
 
   const totalActive   = sites.filter(s => s.is_active !== false).length
@@ -385,35 +394,40 @@ function SiteFormModal({ site, companyId, onClose, onSaved }) {
     if (!form.city?.trim())    { setError('City is required.'); return }
     setError(null)
     setSaving(true)
-    const payload = {
-      company_id: companyId,
-      name: form.name.trim(),
-      address: form.address.trim() || null,
-      address_line_2: form.address_line_2?.trim() || null,
-      city: form.city.trim() || null,
-      state: form.state || null,
-      zip_code: form.zip_code || null,
-      description: form.description.trim() || null,
-      contact_name: form.contact_name.trim() || null,
-      contact_phone: form.contact_phone.trim() || null,
-      latitude: form.latitude ? Number(form.latitude) : null,
-      longitude: form.longitude ? Number(form.longitude) : null,
-      geofence_radius: Number(form.geofence_radius) || 150,
-      is_active: form.is_active,
-      requires_dar: form.requires_dar ?? false,
+    try {
+      const payload = {
+        company_id: companyId,
+        name: form.name.trim(),
+        address: form.address.trim() || null,
+        address_line_2: form.address_line_2?.trim() || null,
+        city: form.city.trim() || null,
+        state: form.state || null,
+        zip_code: form.zip_code || null,
+        description: form.description.trim() || null,
+        contact_name: form.contact_name.trim() || null,
+        contact_phone: form.contact_phone.trim() || null,
+        latitude: form.latitude ? Number(form.latitude) : null,
+        longitude: form.longitude ? Number(form.longitude) : null,
+        geofence_radius: Number(form.geofence_radius) || 150,
+        is_active: form.is_active,
+        requires_dar: form.requires_dar ?? false,
+      }
+      let err
+      if (site?.id) {
+        const res = await supabase.from('site').update(payload).eq('id', site.id).eq('company_id', companyId)
+        err = res.error
+      } else {
+        const res = await supabase.from('site').insert(payload)
+        err = res.error
+      }
+      if (err) throw err
+      toast('Site saved successfully')
+      onSaved()
+    } catch(e) {
+      toast(friendlyError(e), 'error')
+    } finally {
+      setSaving(false)
     }
-    let err
-    if (site?.id) {
-      const res = await supabase.from('site').update(payload).eq('id', site.id)
-      err = res.error
-    } else {
-      const res = await supabase.from('site').insert(payload)
-      err = res.error
-    }
-    setSaving(false)
-    if (err) { toast(friendlyError(err), 'error'); return }
-    toast('Site saved successfully')
-    onSaved()
   }
 
   const inputF = e => { e.target.style.borderColor = 'var(--border-focus)' }
@@ -675,11 +689,20 @@ function SiteDocs({ siteId, companyId, canEdit }) {
   async function save() {
     if (!form.title.trim()) return
     setSaving(true)
-    await supabase.from('site_document').insert({ company_id:companyId, site_id:siteId, title:form.title.trim(), doc_type:form.doc_type, content:form.content.trim()||null, file_url:form.file_url.trim()||null })
-    setSaving(false); setAdding(false); setForm({ title:'', doc_type:'SOP', content:'', file_url:'' }); load()
+    try {
+      const { error } = await supabase.from('site_document').insert({ company_id:companyId, site_id:siteId, title:form.title.trim(), doc_type:form.doc_type, content:form.content.trim()||null, file_url:form.file_url.trim()||null })
+      if (error) throw error
+      setAdding(false); setForm({ title:'', doc_type:'SOP', content:'', file_url:'' }); load()
+    } catch(e) {
+    } finally {
+      setSaving(false)
+    }
   }
   async function del(id) {
-    await supabase.from('site_document').delete().eq('id', id); load()
+    try {
+      await supabase.from('site_document').delete().eq('id', id).eq('company_id', companyId)
+      load()
+    } catch(e) {}
   }
 
   const inputF = e => { e.target.style.borderColor='var(--border-focus)' }
@@ -750,20 +773,33 @@ function SiteCheckpoints({ siteId, companyId, siteName, canEdit }) {
 
   async function load() {
     setLoading(true)
-    const { data } = await supabase.from('site_checkpoint').select('*').eq('site_id', siteId).order('order_index')
-    setCheckpoints(data || [])
-    setLoading(false)
+    try {
+      const { data } = await supabase.from('site_checkpoint').select('*').eq('site_id', siteId).order('order_index')
+      setCheckpoints(data || [])
+    } catch(e) {
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function save() {
     if (!form.name.trim()) return
     setSaving(true)
-    await supabase.from('site_checkpoint').insert({ company_id:companyId, site_id:siteId, name:form.name.trim(), location_hint:form.location_hint.trim()||null, order_index:checkpoints.length })
-    setSaving(false); setAdding(false); setForm({ name:'', location_hint:'', order_index:0 }); load()
+    try {
+      const { error } = await supabase.from('site_checkpoint').insert({ company_id:companyId, site_id:siteId, name:form.name.trim(), location_hint:form.location_hint.trim()||null, order_index:checkpoints.length })
+      if (error) throw error
+      setAdding(false); setForm({ name:'', location_hint:'', order_index:0 }); load()
+    } catch(e) {
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function del(id) {
-    await supabase.from('site_checkpoint').delete().eq('id', id); load()
+    try {
+      await supabase.from('site_checkpoint').delete().eq('id', id).eq('company_id', companyId)
+      load()
+    } catch(e) {}
   }
 
   const inputF = e => { e.target.style.borderColor='var(--border-focus)' }
@@ -867,18 +903,29 @@ function SiteInspections({ siteId, companyId, siteName, canEdit }) {
   useEffect(() => { load() }, [siteId])
   async function load() {
     setLoading(true)
-    const { data } = await supabase.from('site_inspection').select('*').eq('site_id', siteId).order('inspected_at', { ascending:false }).limit(20)
-    setInspections(data || []); setLoading(false)
+    try {
+      const { data } = await supabase.from('site_inspection').select('*').eq('site_id', siteId).order('inspected_at', { ascending:false }).limit(20)
+      setInspections(data || [])
+    } catch(e) {
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function save() {
     setSaving(true)
-    const items = Object.entries(checks).map(([item, result]) => ({ item, result: result || 'na' }))
-    const passed = items.filter(i=>i.result==='pass').length
-    const failed = items.filter(i=>i.result==='fail').length
-    const score  = items.filter(i=>i.result!=='na').length > 0 ? Math.round((passed/(passed+failed))*100) : null
-    await supabase.from('site_inspection').insert({ company_id:companyId, site_id:siteId, inspected_at:new Date().toISOString(), items, notes:notes.trim()||null, score, passed, failed })
-    setSaving(false); setShowNew(false); setChecks(Object.fromEntries(INSPECTION_ITEMS.map(i=>[i,null]))); setNotes(''); load()
+    try {
+      const items = Object.entries(checks).map(([item, result]) => ({ item, result: result || 'na' }))
+      const passed = items.filter(i=>i.result==='pass').length
+      const failed = items.filter(i=>i.result==='fail').length
+      const score  = items.filter(i=>i.result!=='na').length > 0 ? Math.round((passed/(passed+failed))*100) : null
+      const { error } = await supabase.from('site_inspection').insert({ company_id:companyId, site_id:siteId, inspected_at:new Date().toISOString(), items, notes:notes.trim()||null, score, passed, failed })
+      if (error) throw error
+      setShowNew(false); setChecks(Object.fromEntries(INSPECTION_ITEMS.map(i=>[i,null]))); setNotes(''); load()
+    } catch(e) {
+    } finally {
+      setSaving(false)
+    }
   }
 
   const RESULT_STYLES = {
@@ -1027,26 +1074,31 @@ function SiteCSVImport({ companyId, onClose, onImported }) {
   async function doImport() {
     if (!rows?.length) return
     setImporting(true)
-    let ok = 0, skipped = 0
-    for (const row of rows) {
-      if (!row.name?.trim()) { skipped++; continue }
-      const { error } = await supabase.from('site').insert({
-        company_id: companyId,
-        name: row.name.trim(),
-        address: row.address?.trim() || null,
-        city: row.city?.trim() || null,
-        state: row.state?.trim() || null,
-        zip_code: row.zip_code?.trim() || null,
-        contact_name: row.contact_name?.trim() || null,
-        contact_phone: row.contact_phone?.trim() || null,
-        description: row.description?.trim() || null,
-        geofence_radius: Number(row.geofence_radius) || 150,
-        is_active: true,
-      })
-      if (error) skipped++; else ok++
+    try {
+      let ok = 0, skipped = 0
+      for (const row of rows) {
+        if (!row.name?.trim()) { skipped++; continue }
+        const { error } = await supabase.from('site').insert({
+          company_id: companyId,
+          name: row.name.trim(),
+          address: row.address?.trim() || null,
+          city: row.city?.trim() || null,
+          state: row.state?.trim() || null,
+          zip_code: row.zip_code?.trim() || null,
+          contact_name: row.contact_name?.trim() || null,
+          contact_phone: row.contact_phone?.trim() || null,
+          description: row.description?.trim() || null,
+          geofence_radius: Number(row.geofence_radius) || 150,
+          is_active: true,
+        })
+        if (error) skipped++; else ok++
+      }
+      setResult({ ok, skipped })
+    } catch(e) {
+      setError(e?.message || 'Import failed')
+    } finally {
+      setImporting(false)
     }
-    setImporting(false)
-    setResult({ ok, skipped })
   }
 
   const ov  = { position:'fixed',inset:0,background:'rgba(0,0,0,0.65)',zIndex:400,display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'32px 16px',overflowY:'auto' }
