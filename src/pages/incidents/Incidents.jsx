@@ -1,7 +1,8 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
 import { atLeast } from '../../config/roles'
+import { isOwnDataOnly } from '../../lib/scoping'
 import { isNative } from '../../lib/platform'
 import Icon from '../../components/ui/Icon'
 import { useToast } from '../../components/ui/Toast'
@@ -49,6 +50,9 @@ export default function Incidents() {
   const canDelete  = atLeast(profile?.role, 'chief')
   const canAnalyze = atLeast(profile?.role, 'lieutenant')
   const [mainTab, setMainTab] = useState('reports')
+  const isOfficer = isOwnDataOnly(profile?.role)
+  const [employees, setEmployees] = useState([])
+  const [searchEmp, setSearchEmp] = useState(null)
 
   useEffect(() => { loadReports() }, [profile?.company_id, profile?.role])
 
@@ -59,17 +63,26 @@ export default function Incidents() {
     if (!atLeast(profile?.role, 'lieutenant')) {
       q = q.or('is_confidential.is.null,is_confidential.eq.false')
     }
-    const { data } = await q
-    setReports(data || [])
+    const [{ data: reportData }, { data: empData }] = await Promise.all([
+      q,
+      supabase.from('employee').select('id,first_name,last_name').eq('company_id', profile.company_id).eq('status', 'active').order('last_name'),
+    ])
+    setReports(reportData || [])
+    setEmployees(empData || [])
     setLoading(false)
   }
 
+  const isViewingOthers = isOfficer && searchEmp !== null && !canApprove
   const filtered = useMemo(() => reports.filter(r => {
+    if (isOfficer) {
+      const targetId = searchEmp || profile.employee_id
+      if (targetId && r.employee_id !== targetId) return false
+    }
     const matchStatus = filterStatus === 'all' || r.status === filterStatus
     const matchType   = filterType === 'all' || r.incident_type === filterType
     const matchSearch = !search || r.cad_number?.toLowerCase().includes(search.toLowerCase()) || r.incident_type?.toLowerCase().includes(search.toLowerCase()) || r.narrative?.toLowerCase().includes(search.toLowerCase())
     return matchStatus && matchType && matchSearch
-  }), [reports, filterStatus, filterType, search])
+  }), [reports, filterStatus, filterType, search, isOfficer, searchEmp, profile.employee_id])
 
   const stats = useMemo(() => ({
     total:     reports.length,
@@ -120,6 +133,14 @@ export default function Incidents() {
           <option value="all">All Types</option>
           {INCIDENT_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
         </select>
+        {isOfficer && employees.length > 1 && (
+          <select value={searchEmp || ''} onChange={e=>setSearchEmp(e.target.value||null)} style={selStyle}>
+            <option value="">My Reports</option>
+            {employees.filter(e=>e.id!==profile.employee_id).map(e=>(
+              <option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>
+            ))}
+          </select>
+        )}
       </div>
 
       {loading ? (
@@ -135,7 +156,7 @@ export default function Incidents() {
       )}
 
       {showForm && <IncidentForm profile={profile} onClose={()=>setShowForm(false)} onSaved={()=>{setShowForm(false);loadReports()}}/>}
-      {selected && <ReportDetail report={selected} canReview={canReview} canApprove={canApprove} canVoid={canVoid} canDelete={canDelete} profile={profile} onClose={()=>setSelected(null)} onUpdated={()=>{setSelected(null);loadReports()}}/>}
+      {selected && <ReportDetail report={selected} canReview={canReview} canApprove={canApprove} canVoid={canVoid} canDelete={canDelete} profile={profile} onClose={()=>setSelected(null)} onUpdated={()=>{setSelected(null);loadReports()}} isViewingOthers={isViewingOthers}/>}
     </div>
   )
 }function ReportRow({report,isLast,onClick}) {
@@ -481,13 +502,54 @@ function IncidentForm({profile,onClose,onSaved}) {
       </div>
     </>
   )
-}function ReportDetail({report,canReview,canApprove,canVoid,canDelete,onClose,onUpdated,profile}) {
+}function ReportDetail({report,canReview,canApprove,canVoid,canDelete,onClose,onUpdated,profile,isViewingOthers}) {
   const toast = useToast()
   const ss=STATUS_STYLES[report.status]||STATUS_STYLES.draft
   const [notes,setNotes]=useState('')
   const [voidReason,setVoidReason]=useState('')
   const [saving,setSaving]=useState(false)
   const [showVoid,setShowVoid]=useState(false)
+  const [blurred,setBlurred]=useState(false)
+  const openedAt = useRef(new Date().toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}))
+  const viewerName = (`${profile?.first_name||''} ${profile?.last_name||''}`).trim() || profile?.email || 'Viewer'
+
+  useEffect(() => {
+    if (!report.is_confidential) return
+    const onHide = () => setBlurred(true)
+    const onShow = () => setBlurred(false)
+    const onVisibility = () => { document.hidden ? onHide() : onShow() }
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('blur', onHide)
+    window.addEventListener('focus', onShow)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('blur', onHide)
+      window.removeEventListener('focus', onShow)
+    }
+  }, [report.is_confidential])
+
+  useEffect(() => {
+    if (!report.is_confidential || !isNative()) return
+    let cleanup = () => {}
+    // @capacitor/screenshot-listener is not currently installed.
+    // To enable: npm i @capacitor/screenshot-listener && npx cap sync
+    ;(async () => {
+      try {
+        const { ScreenshotListener } = await import(/* @vite-ignore */ '@capacitor/screenshot-listener')
+        const handle = await ScreenshotListener.addListener('screenshotTaken', () => {
+          setBlurred(true)
+          supabase.from('screenshot_audit_log').insert({
+            company_id: profile.company_id,
+            user_id: profile.id,
+            incident_report_id: report.id,
+            occurred_at: new Date().toISOString(),
+          }).catch(() => {})
+        })
+        cleanup = () => handle.remove()
+      } catch { /* plugin not installed — no-op until added */ }
+    })()
+    return () => cleanup()
+  }, [report.id, report.is_confidential])
 
   async function shareReport() {
     const text = `PostCommand Incident Report\nCAD: ${report.cad_number}\nType: ${report.incident_type}\nFiled: ${new Date(report.created_at).toLocaleDateString()}`
@@ -543,6 +605,15 @@ function IncidentForm({profile,onClose,onSaved}) {
     <>
       <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:100,backdropFilter:'blur(2px)'}}/>
       <div style={{position:'fixed',top:0,right:0,bottom:0,width:'min(520px,100vw)',background:'var(--bg-surface)',borderLeft:'1px solid var(--border)',zIndex:101,display:'flex',flexDirection:'column'}}>
+        {report.is_confidential && (
+          <div aria-hidden style={{position:'absolute',inset:0,pointerEvents:'none',overflow:'hidden',zIndex:1,userSelect:'none'}}>
+            {Array.from({length:12}).map((_,i)=>(
+              <div key={i} style={{position:'absolute',top:`${i*9}%`,left:'-50%',width:'200%',transform:'rotate(-35deg)',fontSize:'11px',color:'var(--text-primary)',opacity:0.10,whiteSpace:'nowrap',fontFamily:'var(--font-condensed)',letterSpacing:'2px',lineHeight:'2.5'}}>
+                {`${viewerName.toUpperCase()} · ${openedAt.current}  `.repeat(6)}
+              </div>
+            ))}
+          </div>
+        )}
         <div style={{padding:'18px 20px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexShrink:0}}>
           <div>
             <div style={{fontFamily:'var(--font-display)',fontSize:'20px',letterSpacing:'2px',color:'var(--accent)'}}>{report.cad_number}</div>
@@ -550,7 +621,7 @@ function IncidentForm({profile,onClose,onSaved}) {
           </div>
           <button onClick={onClose} style={{background:'transparent',border:'none',color:'var(--text-muted)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',minHeight:'44px',minWidth:'44px'}}><Icon name="x" size={18}/></button>
         </div>
-        <div style={{flex:1,overflowY:'auto',padding:'20px'}}>
+        <div style={{flex:1,overflowY:'auto',padding:'20px',transition:'filter 200ms ease',filter:blurred?'blur(20px)':undefined}}>
           <div style={{display:'flex',gap:'8px',marginBottom:'20px',flexWrap:'wrap'}}>
             <span style={{fontSize:'12px',fontWeight:700,padding:'4px 12px',borderRadius:'10px',background:ss.bg,color:ss.color}}>{ss.label.toUpperCase()}</span>
             {report.injuries&&<span style={{fontSize:'12px',fontWeight:700,padding:'4px 12px',borderRadius:'10px',background:'var(--color-danger-bg)',color:'var(--color-danger)'}}>INJURIES</span>}
@@ -604,7 +675,7 @@ function IncidentForm({profile,onClose,onSaved}) {
           {report.status==='reviewed'&&canApprove&&<button onClick={()=>updateStatus('approved')} disabled={saving} style={{height:'44px',background:'var(--color-success-bg)',border:'1px solid rgba(58,170,106,0.3)',borderRadius:'var(--radius-md)',color:'var(--color-success)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}><Icon name="check" size={15}/>APPROVE REPORT</button>}
           {canVoid&&report.status!=='void'&&!showVoid&&<button onClick={()=>setShowVoid(true)} style={{height:'44px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:'var(--text-muted)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}><Icon name="x" size={15}/>VOID REPORT</button>}
           {canDelete && <button onClick={deleteReport} disabled={saving} style={{height:'44px',background:'transparent',border:'1px solid rgba(224,85,85,0.3)',borderRadius:'var(--radius-md)',color:'var(--color-danger)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}><Icon name="trash-2" size={15}/>DELETE REPORT</button>}
-          {(report.status==='approved'||report.status==='submitted')&&<button onClick={shareReport} style={{height:'44px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:'var(--text-muted)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}><Icon name="send" size={15}/>SHARE</button>}
+          {(report.status==='approved'||report.status==='submitted')&&!isViewingOthers&&<button onClick={shareReport} style={{height:'44px',background:'transparent',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:'var(--text-muted)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}><Icon name="send" size={15}/>SHARE</button>}
         </div>
       </div>
     </>
