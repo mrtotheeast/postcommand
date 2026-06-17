@@ -1239,7 +1239,7 @@ function PTOSettingsTab({ companyId }) {
                   <div style={{ fontSize:'13px', fontWeight:600, color:'var(--text-primary)' }}>{label}</div>
                   <label style={{ display:'flex', alignItems:'center', gap:'8px', cursor:'pointer' }}>
                     <input type="checkbox" checked={cfg.enabled || false} onChange={e => setField(type, 'enabled', e.target.checked)} style={{ accentColor:'var(--accent)', width:'15px', height:'15px' }} />
-                    <span style={{ fontSize:'11px', color: cfg.enabled ? 'var(--color-success)' : 'var(--text-muted)', fontFamily:'var(--font-condensed)', fontWeight:700 }}>{cfg.enabled ? 'ENABLED' : 'DISABLED'}</span>
+                    <span style={{ fontSize:'11px', color: cfg.enabled ? 'var(--color-success)' : 'var(--text-muted)', fontFamily:'var(--font-condensed)', fontWeight:700 }}>ENABLED</span>
                   </label>
                 </div>
                 <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', marginBottom:'14px' }}>

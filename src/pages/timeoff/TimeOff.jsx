@@ -42,7 +42,7 @@ export default function TimeOff() {
     setLoading(true)
     const [{ data: empMe }, { data: bankData }, { data: balData }, { data: reqData }, { data: empAll }] = await Promise.all([
       supabase.from('employee').select('id').eq('user_id', profile.id).eq('company_id', profile.company_id).maybeSingle(),
-      supabase.from('pto_bank_config').select('*').eq('company_id', profile.company_id).eq('enabled', true),
+      supabase.from('pto_bank_config').select('*').eq('company_id', profile.company_id),
       supabase.from('pto_balance').select('*').eq('company_id', profile.company_id),
       supabase.from('time_off_request').select('*').eq('company_id', profile.company_id).order('created_at', { ascending: false }),
       supabase.from('employee').select('id,first_name,last_name').eq('company_id', profile.company_id).order('last_name'),
@@ -131,10 +131,10 @@ export default function TimeOff() {
         </button>
       </div>
 
-      {/* Balance cards — officer's own balances */}
-      {banks.length > 0 && myEmpId && (
+      {/* Balance cards — only enabled banks */}
+      {banks.filter(b => b.enabled).length > 0 && myEmpId && (
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))', gap:'10px', marginBottom:'24px' }}>
-          {banks.map(bank => {
+          {banks.filter(b => b.enabled).map(bank => {
             const bal = myBalance(bank.bank_type)
             const available = Math.max(0, (bal.balance_hours || 0) - (bal.pending_hours || 0))
             return (
@@ -151,9 +151,9 @@ export default function TimeOff() {
         </div>
       )}
 
-      {banks.length === 0 && (
+      {banks.length === 0 && !atLeast(profile?.role, 'lieutenant') && (
         <div style={{ background:'var(--color-warning-bg)', border:'1px solid rgba(232,148,58,0.3)', borderRadius:'var(--radius-md)', padding:'14px 18px', marginBottom:'20px', fontSize:'13px', color:'var(--color-warning)' }}>
-          No PTO banks are enabled for your company. A lieutenant or above can configure them in HR → PTO Settings.
+          No PTO banks are configured for your company. A lieutenant or above can set them up in HR → PTO Settings.
         </div>
       )}
 
@@ -261,7 +261,7 @@ export default function TimeOff() {
 
       {showNew && (
         <TimeOffRequestModal
-          banks={banks}
+          banks={banks.filter(b => b.enabled)}
           balances={balances}
           myEmpId={myEmpId}
           companyId={profile.company_id}
