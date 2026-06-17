@@ -91,6 +91,9 @@ export default function TimeOff() {
         if (balErr) throw balErr
       }
       toast('Request approved')
+      supabase.functions.invoke('send-push', {
+        body: { company_id: profile.company_id, type: 'time_off_decision', title: 'Time Off Approved', body: `Your ${req.bank_type} request was approved`, target_employee_id: req.employee_id }
+      }).catch(() => {})
       load()
     } catch(e) {
       toast(e?.message || 'Failed to approve request', 'error')
@@ -113,6 +116,9 @@ export default function TimeOff() {
         if (balErr) throw balErr
       }
       toast('Request denied', 'info')
+      supabase.functions.invoke('send-push', {
+        body: { company_id: profile.company_id, type: 'time_off_decision', title: 'Time Off Denied', body: `Your ${req.bank_type} request was denied`, target_employee_id: req.employee_id }
+      }).catch(() => {})
       setDenying(null)
       setDenialReason('')
       load()
@@ -291,6 +297,7 @@ export default function TimeOff() {
 
 function TimeOffRequestModal({ banks, balances, myEmpId, companyId, onClose, onSaved }) {
   const toast = useToast()
+  const { profile: submitterProfile } = useAuth()
   const [form, setForm] = useState({ bank_type: banks[0]?.bank_type || 'paid', start_date: '', end_date: '', notes: '' })
   const [saving, setSaving] = useState(false)
   const [error, setError]   = useState(null)
@@ -328,6 +335,10 @@ function TimeOffRequestModal({ banks, balances, myEmpId, companyId, onClose, onS
         await supabase.from('pto_balance').insert({ company_id: companyId, employee_id: myEmpId, bank_type: form.bank_type, balance_hours: 0, used_hours: 0, pending_hours: hoursRequested })
       }
       toast('Request submitted')
+      const empName = submitterProfile ? `${submitterProfile.first_name || ''} ${submitterProfile.last_name || ''}`.trim() : 'An employee'
+      supabase.functions.invoke('send-push', {
+        body: { company_id: companyId, type: 'time_off_request', title: 'Time Off Request', body: `${empName} requested ${form.bank_type} time off`, target_roles: ['sergeant', 'lieutenant', 'chief'] }
+      }).catch(() => {})
       onSaved()
     } catch(e) {
       setError(e.message || 'Failed to submit request')

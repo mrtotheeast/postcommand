@@ -277,6 +277,11 @@ function IncidentForm({profile,onClose,onSaved}) {
       })
       if(insErr){setError(insErr.message);return}
       toast('Incident report saved')
+      if (!asDraft) {
+        supabase.functions.invoke('send-push', {
+          body: { company_id: profile.company_id, type: 'incident_submitted', title: 'New Incident Report', body: `${form.incident_type} submitted`, target_roles: ['lieutenant', 'chief', 'super_admin'] }
+        }).catch(() => {})
+      }
       ok = true
     } catch(e){setError(e.message)}
     finally {

@@ -358,6 +358,9 @@ export default function Scheduling() {
                 toast('Schedule published')
                 const shift = shifts.find(s => s.id === id)
                 if (shift) {
+                  supabase.functions.invoke('send-push', {
+                    body: { company_id: profile.company_id, type: 'shift_published', title: 'New Shift Published', body: 'A shift has been assigned to you', target_employee_id: shift.employee_id }
+                  }).catch(() => {})
                   const {data:emp} = await supabase.from('employee').select('first_name,email').eq('id',shift.employee_id).single()
                   if (emp?.email) emailSchedulePublished({ to:emp.email, firstName:emp.first_name, shiftCount:1, period:new Date(shift.start_time).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'}) })
                 }
