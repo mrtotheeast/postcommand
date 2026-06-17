@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext'
 import { useNotifications } from '../../context/NotificationContext'
 import { supabase } from '../../lib/supabase'
 import { atLeast, ROLE_LABELS } from '../../config/roles'
+import { scopeToOwnEmployee } from '../../lib/scoping'
 import Icon from '../../components/ui/Icon'
 import { emailTrainingAssigned } from '../../lib/email'
 
@@ -108,7 +109,7 @@ export default function Training() {
         supabase.from('employee').select('id,first_name,last_name,role').eq('user_id', profile.id).single(),
         supabase.from('employee').select('id,first_name,last_name,role,status').eq('company_id', profile.company_id).eq('status','active').order('last_name'),
         supabase.from('training_course').select('*').eq('company_id', profile.company_id).order('created_at', { ascending:false }),
-        supabase.from('training_assignment').select('*').eq('company_id', profile.company_id).order('created_at', { ascending:false }),
+        scopeToOwnEmployee(supabase.from('training_assignment').select('*').eq('company_id', profile.company_id).order('created_at', { ascending:false }), profile),
       ])
 
       console.log('[Training] employee row:', JSON.stringify(empData), '| error:', empErr)
