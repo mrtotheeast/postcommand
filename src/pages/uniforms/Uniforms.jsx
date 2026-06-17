@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
 import { atLeast, ROLE_LABELS } from '../../config/roles'
+import { scopeToOwnEmployee } from '../../lib/scoping'
 import Icon from '../../components/ui/Icon'
 
 const ITEMS = ['Duty Shirt','Polo Shirt','Pants / BDU','Jacket / Windbreaker','Rain Gear','Belt','Hat / Cap','Boots','Gloves','Body Armor Carrier','ID Badge / Holder','Patches','Hi-Vis Vest','Winter Coat','Other']
@@ -68,7 +69,7 @@ export default function Uniforms() {
     const [{ data: empData }, { data: allEmp }, { data: reqData }] = await Promise.all([
       supabase.from('employee').select('id,first_name,last_name,role').eq('user_id', profile.id).single(),
       supabase.from('employee').select('id,first_name,last_name,role').eq('company_id', profile.company_id).eq('status','active'),
-      supabase.from('uniform_request').select('*').eq('company_id', profile.company_id).order('created_at', { ascending:false }),
+      scopeToOwnEmployee(supabase.from('uniform_request').select('*').eq('company_id', profile.company_id).order('created_at', { ascending:false }), profile),
     ])
     setEmployee(empData)
     setEmployees(allEmp || [])
@@ -79,7 +80,6 @@ export default function Uniforms() {
   const empMap = Object.fromEntries((employees||[]).map(e => [e.id,e]))
 
   const filtered = useMemo(() => requests.filter(r => {
-    if (!isAdmin && employee && r.employee_id !== employee.id) return false
     if (filterStatus !== 'all' && r.status !== filterStatus) return false
     if (search) {
       const emp = empMap[r.employee_id]
