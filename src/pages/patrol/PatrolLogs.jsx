@@ -5,6 +5,7 @@ import 'leaflet/dist/leaflet.css'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
 import { atLeast } from '../../config/roles'
+import { scopeToOwnEmployee } from '../../lib/scoping'
 import Icon from '../../components/ui/Icon'
 
 delete L.Icon.Default.prototype._getIconUrl
@@ -91,7 +92,6 @@ function useTimer(startISO) {
 export default function PatrolLogs() {
   const { profile } = useAuth()
   const isAdmin     = atLeast(profile?.role, 'sergeant')
-  const canSee      = atLeast(profile?.role, 'lieutenant')
   const [employee, setEmployee]     = useState(null)
   const [sites, setSites]           = useState([])
   const [patrols, setPatrols]       = useState([])
@@ -116,7 +116,7 @@ export default function PatrolLogs() {
       const [{ data: empData }, { data: siteData }, { data: patrolData }, { data: allEmpData }] = await Promise.all([
         supabase.from('employee').select('id,first_name,last_name,role').eq('user_id', profile.id).single(),
         supabase.from('site').select('id,name,city,state').eq('company_id', profile.company_id),
-        supabase.from('patrol_log').select('*').eq('company_id', profile.company_id).order('started_at', { ascending:false }).limit(100),
+        scopeToOwnEmployee(supabase.from('patrol_log').select('*').eq('company_id', profile.company_id).order('started_at', { ascending:false }).limit(100), profile),
         supabase.from('employee').select('id,first_name,last_name').eq('company_id', profile.company_id),
       ])
       const emp = empData
@@ -169,7 +169,6 @@ export default function PatrolLogs() {
   }
 
   const visiblePatrols = patrols.filter(p => {
-    if (!canSee && employee && p.employee_id !== employee.id) return false
     if (filterStatus !== 'all' && p.status !== filterStatus) return false
     if (search) {
       const emp = empMap[p.employee_id]

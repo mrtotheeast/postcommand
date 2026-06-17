@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
 import { atLeast } from '../../config/roles'
+import { scopeToOwnEmployee } from '../../lib/scoping'
 import Icon from '../../components/ui/Icon'
 import { exportTimesheetPDF } from '../../lib/pdfExport'
 import { emailTimesheetApproved, emailTimesheetRejected, emailPTOApproved, emailPTODenied } from '../../lib/email'
@@ -61,7 +62,7 @@ export default function Timesheets() {
 
   const canReview = atLeast(profile?.role, 'sergeant')
   const canExport = atLeast(profile?.role, 'lieutenant')
-  const isOfficer = ['officer', 'corporal'].includes(profile?.role)
+  const isOfficer = profile?.role === 'officer'
 
   useEffect(() => { loadAll() }, [profile])
 
@@ -69,16 +70,11 @@ export default function Timesheets() {
     if (!profile?.company_id) return
     setLoading(true)
     const [tsRes, empRes, siteRes] = await Promise.all([
-      supabase.from('timesheet').select('*').eq('company_id', profile.company_id).order('date', { ascending: false }).order('clock_in', { ascending: false }),
+      scopeToOwnEmployee(supabase.from('timesheet').select('*').eq('company_id', profile.company_id).order('date', { ascending: false }).order('clock_in', { ascending: false }), profile),
       supabase.from('employee').select('id,first_name,last_name,position_title').eq('company_id', profile.company_id).or('invitation_status.eq.accepted,has_app_access.eq.true'),
       supabase.from('site').select('id,name').eq('company_id', profile.company_id),
     ])
-    let data = tsRes.data || []
-    if (isOfficer) {
-      const myEmp = (empRes.data || []).find(e => e.id === profile.employee_id)
-      if (myEmp) data = data.filter(t => t.employee_id === myEmp.id)
-    }
-    setSheets(data); setEmployees(empRes.data || []); setSites(siteRes.data || [])
+    setSheets(tsRes.data || []); setEmployees(empRes.data || []); setSites(siteRes.data || [])
     setLoading(false)
   }
 
@@ -278,6 +274,7 @@ function TimesheetRow({ts,isLast,empName,siteName,onClick}) {
       <div>
         <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-primary)'}}>{empName(ts.employee_id)}</div>
         <div style={{fontSize:'11px',color:'var(--text-muted)'}}>{siteName(ts.site_id)}</div>
+        {ts.reviewed_by && <div style={{fontSize:'10px',color:'var(--text-muted)',marginTop:'2px'}}>Edited by {empName(ts.reviewed_by)}{ts.reviewed_at ? ' · '+new Date(ts.reviewed_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : ''}</div>}
       </div>
       <div style={{fontSize:'12px',color:'var(--text-secondary)'}}>
         <div>{fmt12(ts.clock_in)} → {fmt12(ts.clock_out)}</div>
@@ -412,7 +409,7 @@ function TimesheetDetail({ts,empName,siteName,canReview,onClose,onUpdated,profil
           </DSec>}
           {ts.notes&&<DSec title="Notes"><p style={{fontSize:'13px',color:'var(--text-secondary)',lineHeight:1.5,margin:0}}>{ts.notes}</p></DSec>}
           {ts.rejection_reason&&<DSec title="Rejection Reason"><p style={{fontSize:'13px',color:'var(--color-danger)',lineHeight:1.5,margin:0}}>{ts.rejection_reason}</p></DSec>}
-          {ts.reviewed_at&&<DSec title="Reviewed"><DR l="At" v={new Date(ts.reviewed_at).toLocaleString()}/></DSec>}
+          {ts.reviewed_at&&<DSec title="Reviewed">{ts.reviewed_by&&<DR l="By" v={empName(ts.reviewed_by)}/>}<DR l="At" v={new Date(ts.reviewed_at).toLocaleString()}/></DSec>}
           {showReject&&<DSec title="Rejection Reason">
             <textarea value={rejReason} onChange={e=>setRejReason(e.target.value)} rows={3} placeholder="Explain why this timesheet is being rejected..." style={{width:'100%',padding:'10px 12px',background:'var(--bg-input)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:'var(--text-primary)',fontSize:'13px',resize:'vertical',lineHeight:1.5,boxSizing:'border-box',outline:'none'}}/>
             <div style={{display:'flex',gap:'8px',marginTop:'8px'}}>
