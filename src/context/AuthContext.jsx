@@ -72,6 +72,21 @@ export function AuthProvider({ children }) {
 
       let profile = profileData
 
+      // Helper: wraps any Supabase promise in a 4-second race identical to the primary
+      // user_profile query above. On timeout, resolves to { data: null } so callers can
+      // treat it the same as a missing row rather than throwing.
+      function withTimeout(promise, label) {
+        return Promise.race([
+          promise,
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error(`${label} query timed out`)), 4000)
+          ),
+        ]).catch(err => {
+          console.log(`[Auth] ${label} query failed or timed out:`, err?.message)
+          return { data: null, error: { message: err?.message || 'timeout' } }
+        })
+      }
+
       if (profile) {
         // Backfill name from employee record if missing
         if (!profile.first_name && user?.email) {
@@ -108,75 +123,112 @@ export function AuthProvider({ children }) {
           }
         }
       } else {
-        // No profile row yet — look up employee by email for reliable data
-        const { data: emp } = await supabase
-          .from('employee')
-          .select('id, company_id, role, first_name, last_name')
-          .eq('email', user?.email || '')
-          .maybeSingle()
+        // No profile row yet — look up employee by email for reliable data.
+        // Each query uses withTimeout so a single hung call can't lock loadingProfileRef
+        // forever. On any timeout we short-circuit to the metadata fallback immediately
+        // rather than cascading into multiple sequential timeouts.
+        let usedMetadataFallback = false
+
+        const { data: emp } = await withTimeout(
+          supabase.from('employee')
+            .select('id, company_id, role, first_name, last_name')
+            .eq('email', user?.email || '')
+            .maybeSingle(),
+          'employee SELECT'
+        )
 
         if (emp) {
-          const { data: created } = await supabase
-            .from('user_profile')
-            .insert({
-              id:         userId,
-              company_id: emp.company_id,
-              role:       emp.role || 'officer',
-              first_name: emp.first_name || '',
-              last_name:  emp.last_name  || '',
-            })
-            .select('*, company(role_style, custom_titles, custom_ranks, name)')
-            .single()
-          profile = created
+          const { data: created } = await withTimeout(
+            supabase.from('user_profile')
+              .insert({
+                id:         userId,
+                company_id: emp.company_id,
+                role:       emp.role || 'officer',
+                first_name: emp.first_name || '',
+                last_name:  emp.last_name  || '',
+              })
+              .select('*, company(role_style, custom_titles, custom_ranks, name)')
+              .single(),
+            'user_profile INSERT (employee)'
+          )
 
-          // Link auth user to employee record and mark app access
-          await supabase.from('employee')
-            .update({ has_app_access: true, invitation_status: 'accepted', user_id: userId })
-            .eq('id', emp.id)
+          if (created) {
+            profile = created
+            // Fire-and-forget: don't let a slow UPDATE hold up profile resolution
+            withTimeout(
+              supabase.from('employee')
+                .update({ has_app_access: true, invitation_status: 'accepted', user_id: userId })
+                .eq('id', emp.id),
+              'employee UPDATE'
+            ).catch(() => {})
+          } else {
+            // INSERT timed out or returned nothing — drop to metadata fallback
+            usedMetadataFallback = true
+          }
         } else {
           // No employee record — check if this is a client contact
-          const { data: contact } = await supabase
-            .from('client_contact')
-            .select('id, client_id, company_id, full_name')
-            .eq('email', user?.email || '')
-            .maybeSingle()
+          const { data: contact } = await withTimeout(
+            supabase.from('client_contact')
+              .select('id, client_id, company_id, full_name')
+              .eq('email', user?.email || '')
+              .maybeSingle(),
+            'client_contact SELECT'
+          )
 
           if (contact) {
             const nameParts = (contact.full_name || '').trim().split(' ')
             const firstName = nameParts[0] || ''
             const lastName  = nameParts.slice(1).join(' ')
-            const { data: created } = await supabase
-              .from('user_profile')
-              .insert({
-                id:         userId,
-                company_id: contact.company_id,
-                role:       'client',
-                first_name: firstName,
-                last_name:  lastName,
-              })
-              .select('*, company(role_style, custom_titles, custom_ranks, name)')
-              .single()
-            profile = created
-            await supabase.from('client_contact')
-              .update({ portal_user_id: userId, invite_status: 'accepted' })
-              .eq('id', contact.id)
+            const { data: created } = await withTimeout(
+              supabase.from('user_profile')
+                .insert({
+                  id:         userId,
+                  company_id: contact.company_id,
+                  role:       'client',
+                  first_name: firstName,
+                  last_name:  lastName,
+                })
+                .select('*, company(role_style, custom_titles, custom_ranks, name)')
+                .single(),
+              'user_profile INSERT (client)'
+            )
+
+            if (created) {
+              profile = created
+              // Fire-and-forget: don't block on the contact update
+              withTimeout(
+                supabase.from('client_contact')
+                  .update({ portal_user_id: userId, invite_status: 'accepted' })
+                  .eq('id', contact.id),
+                'client_contact UPDATE'
+              ).catch(() => {})
+            } else {
+              // INSERT timed out or returned nothing — drop to metadata fallback
+              usedMetadataFallback = true
+            }
           } else {
-            // No employee AND no client contact — fall back to auth metadata
-            const meta = user?.user_metadata
-            const fresh = {
-              id:         userId,
-              first_name: meta?.first_name || '',
-              last_name:  meta?.last_name  || '',
-              company_id: meta?.company_id || null,
-              role:       meta?.role       || 'officer',
-            }
-            try {
-              await supabase.from('user_profile').insert(fresh)
-            } catch (e) {
-              console.warn('[Auth] fallback profile insert failed (RLS may have blocked it):', e?.message)
-            }
-            profile = fresh
+            // No employee AND no client contact (or client_contact SELECT timed out)
+            usedMetadataFallback = true
           }
+        }
+
+        if (usedMetadataFallback) {
+          // Metadata fallback: build a minimal profile from auth user_metadata so the app
+          // can render rather than hanging. The profile row insert is best-effort only.
+          const meta = user?.user_metadata
+          const fresh = {
+            id:         userId,
+            first_name: meta?.first_name || '',
+            last_name:  meta?.last_name  || '',
+            company_id: meta?.company_id || null,
+            role:       meta?.role       || 'officer',
+          }
+          try {
+            await supabase.from('user_profile').insert(fresh)
+          } catch (e) {
+            console.warn('[Auth] fallback profile insert failed (RLS may have blocked it):', e?.message)
+          }
+          profile = fresh
         }
       }
 
