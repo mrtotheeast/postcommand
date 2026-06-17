@@ -254,7 +254,7 @@ function ClientContracts({ client, companyId }) {
       const { error } = await supabase.from('client_contract').insert({ client_id:client.id, company_id:companyId, ...form, value:Number(form.value)||null })
       if (error) throw error
       setShowNew(false); setForm({title:'',file_url:'',start_date:'',end_date:'',value:'',auto_renewal:false,status:'active'})
-      const {data} = await supabase.from('client_contract').select('*').eq('client_id',client.id).order('created_at',{ascending:false})
+      const {data} = await supabase.from('client_contract').select('*').eq('client_id',client.id).eq('company_id',companyId).order('created_at',{ascending:false})
       setContracts(data||[])
     } catch(e) {
     } finally {

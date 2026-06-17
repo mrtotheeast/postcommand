@@ -91,19 +91,23 @@ export default function Reports() {
 
   async function load() {
     setLoading(true)
-    const start = periodStart()
-    const cid = profile.company_id
+    try {
+      const start = periodStart()
+      const cid = profile.company_id
 
-    const [{ data: incidents }, { data: timesheets }, { data: employees }, { data: patrols }, { data: sites }] = await Promise.all([
-      supabase.from('incident_report').select('id,incident_type,status,created_at,site_id').eq('company_id', cid).gte('created_at', start),
-      supabase.from('timesheet').select('id,employee_id,site_id,clock_in,clock_out,date,status').eq('company_id', cid).gte('date', start.slice(0,10)),
-      supabase.from('employee').select('id,first_name,last_name,role,status').eq('company_id', cid),
-      supabase.from('patrol_log').select('id,employee_id,site_id,started_at,ended_at,status').eq('company_id', cid).gte('started_at', start),
-      supabase.from('site').select('id,name').eq('company_id', cid),
-    ])
+      const [{ data: incidents }, { data: timesheets }, { data: employees }, { data: patrols }, { data: sites }] = await Promise.all([
+        supabase.from('incident_report').select('id,incident_type,status,created_at,site_id').eq('company_id', cid).gte('created_at', start),
+        supabase.from('timesheet').select('id,employee_id,site_id,clock_in,clock_out,date,status').eq('company_id', cid).gte('date', start.slice(0,10)),
+        supabase.from('employee').select('id,first_name,last_name,role,status').eq('company_id', cid),
+        supabase.from('patrol_log').select('id,employee_id,site_id,started_at,ended_at,status').eq('company_id', cid).gte('started_at', start),
+        supabase.from('site').select('id,name').eq('company_id', cid),
+      ])
 
-    setData({ incidents: incidents||[], timesheets: timesheets||[], employees: employees||[], patrols: patrols||[], sites: sites||[] })
-    setLoading(false)
+      setData({ incidents: incidents||[], timesheets: timesheets||[], employees: employees||[], patrols: patrols||[], sites: sites||[] })
+    } catch(e) {
+    } finally {
+      setLoading(false)
+    }
   }
 
   const computed = useMemo(() => {
@@ -351,14 +355,18 @@ function FinancialTab({ companyId, period }) {
 
   async function load() {
     setLoading(true)
-    const now = new Date()
-    let start = new Date(now - 30*86400000)
-    if (period==='30d') start = new Date(now - 30*86400000)
-    else if (period==='90d') start = new Date(now - 90*86400000)
-    else if (period==='ytd') start = new Date(now.getFullYear(),0,1)
-    const { data } = await supabase.from('invoice').select('id,invoice_number,client_name,total,status,issue_date,due_date').eq('company_id', companyId).order('issue_date', { ascending:false })
-    setInvoices(data || [])
-    setLoading(false)
+    try {
+      const now = new Date()
+      let start = new Date(now - 30*86400000)
+      if (period==='30d') start = new Date(now - 30*86400000)
+      else if (period==='90d') start = new Date(now - 90*86400000)
+      else if (period==='ytd') start = new Date(now.getFullYear(),0,1)
+      const { data } = await supabase.from('invoice').select('id,invoice_number,client_name,total,status,issue_date,due_date').eq('company_id', companyId).order('issue_date', { ascending:false })
+      setInvoices(data || [])
+    } catch(e) {
+    } finally {
+      setLoading(false)
+    }
   }
 
   const now = new Date()
@@ -476,50 +484,55 @@ function PerformanceTab({ companyId, period }) {
 
   async function load() {
     setLoading(true)
-    const start = periodStart()
-    const today = new Date().toISOString().slice(0,10)
-    const [{ data: employees }, { data: timesheets }, { data: shifts }, { data: incidents },
-           { data: patrols }, { data: checkpoints }, { data: violations }, { data: trainAssign }] = await Promise.all([
-      supabase.from('employee').select('id,first_name,last_name,role,position_title').eq('company_id', companyId).eq('status','active'),
-      supabase.from('timesheet').select('id,employee_id,clock_in,clock_out,total_hours,status,date').eq('company_id', companyId).gte('date', start.slice(0,10)),
-      supabase.from('shift').select('id,employee_id,start_time').eq('company_id', companyId).gte('start_time', start).not('status','eq','cancelled'),
-      supabase.from('incident_report').select('id,employee_id').eq('company_id', companyId).gte('created_at', start),
-      supabase.from('patrol_log').select('id,employee_id,started_at,ended_at,status').eq('company_id', companyId).gte('started_at', start),
-      supabase.from('patrol_checkpoint').select('id,patrol_log_id').eq('company_id', companyId),
-      supabase.from('clockin_violation').select('id,employee_id,overridden').eq('company_id', companyId).gte('created_at', start),
-      supabase.from('training_assignment').select('id,employee_id,status').eq('company_id', companyId),
-    ])
+    try {
+      const start = periodStart()
+      const today = new Date().toISOString().slice(0,10)
+      const [{ data: employees }, { data: timesheets }, { data: shifts }, { data: incidents },
+             { data: patrols }, { data: checkpoints }, { data: violations }, { data: trainAssign }] = await Promise.all([
+        supabase.from('employee').select('id,first_name,last_name,role,position_title').eq('company_id', companyId).eq('status','active'),
+        supabase.from('timesheet').select('id,employee_id,clock_in,clock_out,total_hours,status,date').eq('company_id', companyId).gte('date', start.slice(0,10)),
+        supabase.from('shift').select('id,employee_id,start_time').eq('company_id', companyId).gte('start_time', start).not('status','eq','cancelled'),
+        supabase.from('incident_report').select('id,employee_id').eq('company_id', companyId).gte('created_at', start),
+        supabase.from('patrol_log').select('id,employee_id,started_at,ended_at,status').eq('company_id', companyId).gte('started_at', start),
+        supabase.from('patrol_checkpoint').select('id,patrol_log_id').eq('company_id', companyId),
+        supabase.from('clockin_violation').select('id,employee_id,overridden').eq('company_id', companyId).gte('created_at', start),
+        supabase.from('training_assignment').select('id,employee_id,status').eq('company_id', companyId),
+      ])
 
-    const cpMap = {} // patrol_log_id → count
-    for (const cp of (checkpoints||[])) { cpMap[cp.patrol_log_id] = (cpMap[cp.patrol_log_id]||0)+1 }
+      const cpMap = {} // patrol_log_id → count
+      for (const cp of (checkpoints||[])) { cpMap[cp.patrol_log_id] = (cpMap[cp.patrol_log_id]||0)+1 }
 
-    const stats = (employees||[]).map(emp => {
-      const empTs     = (timesheets||[]).filter(t=>t.employee_id===emp.id)
-      const empShifts = (shifts||[]).filter(s=>s.employee_id===emp.id)
-      const hours     = empTs.filter(t=>t.status==='approved').reduce((a,t)=>a+(Number(t.total_hours)||0),0)
-      const empPatrols = (patrols||[]).filter(p=>p.employee_id===emp.id&&p.status==='completed'&&p.ended_at)
-      const patrolHours = empPatrols.reduce((a,p)=>a+(new Date(p.ended_at)-new Date(p.started_at))/3600000,0)
-      const cps       = empPatrols.reduce((a,p)=>a+(cpMap[p.id]||0),0)
-      const empInc    = (incidents||[]).filter(i=>i.employee_id===emp.id).length
-      const empViol   = (violations||[]).filter(v=>v.employee_id===emp.id)
-      const empTrain  = (trainAssign||[]).filter(a=>a.employee_id===emp.id)
-      const trainPct  = empTrain.length>0 ? Math.round((empTrain.filter(a=>a.status==='completed').length/empTrain.length)*100) : null
+      const stats = (employees||[]).map(emp => {
+        const empTs     = (timesheets||[]).filter(t=>t.employee_id===emp.id)
+        const empShifts = (shifts||[]).filter(s=>s.employee_id===emp.id)
+        const hours     = empTs.filter(t=>t.status==='approved').reduce((a,t)=>a+(Number(t.total_hours)||0),0)
+        const empPatrols = (patrols||[]).filter(p=>p.employee_id===emp.id&&p.status==='completed'&&p.ended_at)
+        const patrolHours = empPatrols.reduce((a,p)=>a+(new Date(p.ended_at)-new Date(p.started_at))/3600000,0)
+        const cps       = empPatrols.reduce((a,p)=>a+(cpMap[p.id]||0),0)
+        const empInc    = (incidents||[]).filter(i=>i.employee_id===emp.id).length
+        const empViol   = (violations||[]).filter(v=>v.employee_id===emp.id)
+        const empTrain  = (trainAssign||[]).filter(a=>a.employee_id===emp.id)
+        const trainPct  = empTrain.length>0 ? Math.round((empTrain.filter(a=>a.status==='completed').length/empTrain.length)*100) : null
 
-      // Punctuality: clock_in vs shift start_time (minutes late)
-      let lateMinutes = 0, lateCount = 0
-      for (const ts of empTs) {
-        const sh = empShifts.find(s=>s.start_time?.slice(0,10)===ts.date)
-        if (sh && ts.clock_in) {
-          const diff = (new Date(ts.clock_in)-new Date(sh.start_time))/60000
-          if (diff>5) { lateMinutes+=diff; lateCount++ }
+        // Punctuality: clock_in vs shift start_time (minutes late)
+        let lateMinutes = 0, lateCount = 0
+        for (const ts of empTs) {
+          const sh = empShifts.find(s=>s.start_time?.slice(0,10)===ts.date)
+          if (sh && ts.clock_in) {
+            const diff = (new Date(ts.clock_in)-new Date(sh.start_time))/60000
+            if (diff>5) { lateMinutes+=diff; lateCount++ }
+          }
         }
-      }
-      const avgLate = lateCount>0 ? Math.round(lateMinutes/lateCount) : 0
+        const avgLate = lateCount>0 ? Math.round(lateMinutes/lateCount) : 0
 
-      return { ...emp, hours:Math.round(hours*10)/10, shifts:empTs.length, incidents:empInc, patrols:empPatrols.length, patrolHours:Math.round(patrolHours*10)/10, checkpoints:cps, violations:empViol.length, overrides:empViol.filter(v=>v.overridden).length, lateCount, avgLate, trainPct }
-    })
+        return { ...emp, hours:Math.round(hours*10)/10, shifts:empTs.length, incidents:empInc, patrols:empPatrols.length, patrolHours:Math.round(patrolHours*10)/10, checkpoints:cps, violations:empViol.length, overrides:empViol.filter(v=>v.overridden).length, lateCount, avgLate, trainPct }
+      })
 
-    setData(stats); setLoading(false)
+      setData(stats)
+    } catch(e) {
+    } finally {
+      setLoading(false)
+    }
   }
 
   const sorted = data ? [...data].sort((a,b)=>(b[sort]-a[sort])*dir).slice(0,50) : []
@@ -739,9 +752,13 @@ function ReportAutomationTab({ companyId }) {
 
   async function load() {
     setLoading(true)
-    const { data } = await supabase.from('report_automation').select('*').eq('company_id', companyId).order('created_at', {ascending:false})
-    setAutomations(data||[])
-    setLoading(false)
+    try {
+      const { data } = await supabase.from('report_automation').select('*').eq('company_id', companyId).order('created_at', {ascending:false})
+      setAutomations(data||[])
+    } catch(e) {
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function save() {
@@ -754,13 +771,13 @@ function ReportAutomationTab({ companyId }) {
   }
 
   async function toggle(id, enabled) {
-    await supabase.from('report_automation').update({ enabled }).eq('id', id)
+    await supabase.from('report_automation').update({ enabled }).eq('id', id).eq('company_id', companyId)
     load()
   }
 
   async function del(id) {
     if (!window.confirm('Delete this automation?')) return
-    await supabase.from('report_automation').delete().eq('id', id)
+    await supabase.from('report_automation').delete().eq('id', id).eq('company_id', companyId)
     load()
   }
 
@@ -848,23 +865,27 @@ function SiteReportsTab({ companyId }) {
 
   useEffect(() => {
     if (!companyId) return
-    supabase.from('site').select('id,name').eq('company_id', companyId).then(({ data }) => setSites(data||[]))
+    supabase.from('site').select('id,name').eq('company_id', companyId).then(({ data }) => setSites(data||[])).catch(() => {})
   }, [companyId])
 
   async function generate() {
     if (!selectedSite || !companyId) return
     setLoading(true)
-    const days = period === '7d' ? 7 : period === '30d' ? 30 : 90
-    const since = new Date(Date.now() - days*86400000).toISOString()
-    const [{ data:ts },{ data:inc },{ data:pat }] = await Promise.all([
-      supabase.from('timesheet').select('id,employee_id,clock_in,clock_out').eq('company_id',companyId).eq('site_id',selectedSite).gte('clock_in',since),
-      supabase.from('incident_report').select('id,incident_type,status,created_at').eq('company_id',companyId).eq('site_id',selectedSite).gte('created_at',since),
-      supabase.from('patrol_log').select('id,status,started_at,ended_at').eq('company_id',companyId).eq('site_id',selectedSite).gte('started_at',since),
-    ])
-    const totalHours = (ts||[]).filter(t=>t.clock_out).reduce((a,t)=>a+(new Date(t.clock_out)-new Date(t.clock_in))/3600000,0)
-    const completedPatrols = (pat||[]).filter(p=>p.status==='completed').length
-    setReport({ timesheets:ts||[], incidents:inc||[], patrols:pat||[], totalHours, completedPatrols })
-    setLoading(false)
+    try {
+      const days = period === '7d' ? 7 : period === '30d' ? 30 : 90
+      const since = new Date(Date.now() - days*86400000).toISOString()
+      const [{ data:ts },{ data:inc },{ data:pat }] = await Promise.all([
+        supabase.from('timesheet').select('id,employee_id,clock_in,clock_out').eq('company_id',companyId).eq('site_id',selectedSite).gte('clock_in',since),
+        supabase.from('incident_report').select('id,incident_type,status,created_at').eq('company_id',companyId).eq('site_id',selectedSite).gte('created_at',since),
+        supabase.from('patrol_log').select('id,status,started_at,ended_at').eq('company_id',companyId).eq('site_id',selectedSite).gte('started_at',since),
+      ])
+      const totalHours = (ts||[]).filter(t=>t.clock_out).reduce((a,t)=>a+(new Date(t.clock_out)-new Date(t.clock_in))/3600000,0)
+      const completedPatrols = (pat||[]).filter(p=>p.status==='completed').length
+      setReport({ timesheets:ts||[], incidents:inc||[], patrols:pat||[], totalHours, completedPatrols })
+    } catch(e) {
+    } finally {
+      setLoading(false)
+    }
   }
 
   const siteName = sites.find(s=>s.id===selectedSite)?.name || 'Site'

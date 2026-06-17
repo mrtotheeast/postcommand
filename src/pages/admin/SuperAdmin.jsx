@@ -50,15 +50,18 @@ export default function SuperAdmin() {
   async function loadCompanyStats() {
     const cid = profile?.company_id
     if (!cid) return
-    const today = new Date().toISOString().slice(0,10)
-    const [{ count: officers }, { count: sites }, { count: openInc }, { count: pendingTS }, { data: sub }] = await Promise.all([
-      supabase.from('employee').select('id',{count:'exact',head:true}).eq('company_id',cid).eq('status','active'),
-      supabase.from('site').select('id',{count:'exact',head:true}).eq('company_id',cid).eq('is_active',true),
-      supabase.from('incident_report').select('id',{count:'exact',head:true}).eq('company_id',cid).in('status',['submitted','reviewed']),
-      supabase.from('timesheet').select('id',{count:'exact',head:true}).eq('company_id',cid).eq('status','pending'),
-      supabase.from('company_subscription').select('*').eq('company_id',cid).single(),
-    ])
-    setCompanyStats({ officers, sites, openInc, pendingTS, sub:sub||null })
+    try {
+      const today = new Date().toISOString().slice(0,10)
+      const [{ count: officers }, { count: sites }, { count: openInc }, { count: pendingTS }, { data: sub }] = await Promise.all([
+        supabase.from('employee').select('id',{count:'exact',head:true}).eq('company_id',cid).eq('status','active'),
+        supabase.from('site').select('id',{count:'exact',head:true}).eq('company_id',cid).eq('is_active',true),
+        supabase.from('incident_report').select('id',{count:'exact',head:true}).eq('company_id',cid).in('status',['submitted','reviewed']),
+        supabase.from('timesheet').select('id',{count:'exact',head:true}).eq('company_id',cid).eq('status','pending'),
+        supabase.from('company_subscription').select('*').eq('company_id',cid).single(),
+      ])
+      setCompanyStats({ officers, sites, openInc, pendingTS, sub:sub||null })
+    } catch(e) {
+    }
   }
 
   return (
@@ -179,13 +182,17 @@ function CCWMonitorPanel() {
 
   async function loadLogs() {
     setLoading(true)
-    const { data } = await supabase
-      .from('ccw_monitor_log')
-      .select('*')
-      .order('checked_at', { ascending: false })
-      .limit(12)
-    setLogs(data || [])
-    setLoading(false)
+    try {
+      const { data } = await supabase
+        .from('ccw_monitor_log')
+        .select('*')
+        .order('checked_at', { ascending: false })
+        .limit(12)
+      setLogs(data || [])
+    } catch(e) {
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function runCheck() {

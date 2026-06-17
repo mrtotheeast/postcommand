@@ -112,30 +112,34 @@ export default function PatrolLogs() {
   async function load() {
     if (!profile?.company_id) return
     setLoading(true)
-    const [{ data: empData }, { data: siteData }, { data: patrolData }, { data: allEmpData }] = await Promise.all([
-      supabase.from('employee').select('id,first_name,last_name,role').eq('user_id', profile.id).single(),
-      supabase.from('site').select('id,name,city,state').eq('company_id', profile.company_id),
-      supabase.from('patrol_log').select('*').eq('company_id', profile.company_id).order('started_at', { ascending:false }).limit(100),
-      supabase.from('employee').select('id,first_name,last_name').eq('company_id', profile.company_id),
-    ])
-    const emp = empData
-    setEmployee(emp)
-    setSites(siteData || [])
-    setPatrols(patrolData || [])
-    setSiteMap(Object.fromEntries((siteData||[]).map(s => [s.id, s])))
-    setEmpMap(Object.fromEntries((allEmpData||[]).map(e => [e.id, e])))
-    // Find active patrol for this officer
-    if (emp) {
-      const active = (patrolData||[]).find(p => p.employee_id === emp.id && p.status === 'active')
-      if (active) {
-        setActive(active)
-        const { data: cpData } = await supabase.from('patrol_checkpoint').select('*').eq('patrol_log_id', active.id).order('scanned_at')
-        setCheckpoints(cpData || [])
-      } else {
-        setActive(null); setCheckpoints([])
+    try {
+      const [{ data: empData }, { data: siteData }, { data: patrolData }, { data: allEmpData }] = await Promise.all([
+        supabase.from('employee').select('id,first_name,last_name,role').eq('user_id', profile.id).single(),
+        supabase.from('site').select('id,name,city,state').eq('company_id', profile.company_id),
+        supabase.from('patrol_log').select('*').eq('company_id', profile.company_id).order('started_at', { ascending:false }).limit(100),
+        supabase.from('employee').select('id,first_name,last_name').eq('company_id', profile.company_id),
+      ])
+      const emp = empData
+      setEmployee(emp)
+      setSites(siteData || [])
+      setPatrols(patrolData || [])
+      setSiteMap(Object.fromEntries((siteData||[]).map(s => [s.id, s])))
+      setEmpMap(Object.fromEntries((allEmpData||[]).map(e => [e.id, e])))
+      // Find active patrol for this officer
+      if (emp) {
+        const active = (patrolData||[]).find(p => p.employee_id === emp.id && p.status === 'active')
+        if (active) {
+          setActive(active)
+          const { data: cpData } = await supabase.from('patrol_checkpoint').select('*').eq('patrol_log_id', active.id).eq('company_id', profile.company_id).order('scanned_at')
+          setCheckpoints(cpData || [])
+        } else {
+          setActive(null); setCheckpoints([])
+        }
       }
+    } catch(e) {
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   async function startPatrol(siteId) {
@@ -148,7 +152,7 @@ export default function PatrolLogs() {
 
   async function endPatrol() {
     if (!activePatrol) return
-    await supabase.from('patrol_log').update({ status:'completed', ended_at: new Date().toISOString() }).eq('id', activePatrol.id)
+    await supabase.from('patrol_log').update({ status:'completed', ended_at: new Date().toISOString() }).eq('id', activePatrol.id).eq('company_id', profile.company_id)
     setActive(null); setCheckpoints([]); load()
   }
 
@@ -512,6 +516,7 @@ function PatrolDetailPanel({ patrol, siteMap, empMap, onClose }) {
   useEffect(() => {
     supabase.from('patrol_checkpoint').select('*').eq('patrol_log_id', patrol.id).order('scanned_at')
       .then(({ data }) => setCheckpoints(data || []))
+      .catch(() => {})
   }, [patrol.id])
 
   const geoPoints = checkpoints.filter(cp => cp.latitude && cp.longitude)

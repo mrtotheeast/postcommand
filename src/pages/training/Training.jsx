@@ -144,7 +144,7 @@ export default function Training() {
   }
 
   async function deleteCourse(id) {
-    await supabase.from('training_course').delete().eq('id', id)
+    await supabase.from('training_course').delete().eq('id', id).eq('company_id', profile.company_id)
     setViewing(null); load()
   }
 
@@ -268,7 +268,7 @@ export default function Training() {
 
       {/* ── Assignments ── */}
       {tab === 'assignments' && (
-        <AssignmentsTab assignments={assignments} courses={courses} empMap={empMap} onRefresh={load} />
+        <AssignmentsTab assignments={assignments} courses={courses} empMap={empMap} companyId={profile.company_id} onRefresh={load} />
       )}
 
       {tab === 'badges' && <BadgesTab companyId={profile?.company_id} employees={employees} employee={employee} />}
@@ -281,7 +281,7 @@ export default function Training() {
 
       {/* ── My Training ── */}
       {tab === 'my' && (
-        <MyTrainingTab assignments={myAssignments} employee={employee} onRefresh={load} />
+        <MyTrainingTab assignments={myAssignments} employee={employee} companyId={profile.company_id} onRefresh={load} />
       )}
 
       {editing && <CourseFormModal course={editing==='new'?null:editing} companyId={profile.company_id} employeeId={employee?.id} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load() }} />}
@@ -293,13 +293,13 @@ export default function Training() {
 
 // ── Assignments Tab ───────────────────────────────────────────────────────────
 
-function AssignmentsTab({ assignments, courses, empMap, onRefresh }) {
+function AssignmentsTab({ assignments, courses, empMap, companyId, onRefresh }) {
   const [filterStatus, setFilterStatus] = useState('all')
   const courseMap = Object.fromEntries(courses.map(c=>[c.id,c]))
   const visible = assignments.filter(a => filterStatus==='all'||a.status===filterStatus)
 
   async function markComplete(id) {
-    await supabase.from('training_assignment').update({ status:'completed', completed_at:new Date().toISOString() }).eq('id',id)
+    await supabase.from('training_assignment').update({ status:'completed', completed_at:new Date().toISOString() }).eq('id',id).eq('company_id',companyId)
     onRefresh()
   }
 
@@ -341,19 +341,19 @@ function AssignmentsTab({ assignments, courses, empMap, onRefresh }) {
 
 // ── My Training Tab ───────────────────────────────────────────────────────────
 
-function MyTrainingTab({ assignments, employee, onRefresh }) {
+function MyTrainingTab({ assignments, employee, companyId, onRefresh }) {
   const [reading, setReading] = useState(null)
 
   async function startOrComplete(assignment) {
     if (assignment.status === 'pending') {
-      await supabase.from('training_assignment').update({ status:'in_progress' }).eq('id', assignment.id)
+      await supabase.from('training_assignment').update({ status:'in_progress' }).eq('id', assignment.id).eq('company_id', companyId)
       onRefresh()
     }
     setReading(assignment)
   }
 
   async function markComplete(id) {
-    await supabase.from('training_assignment').update({ status:'completed', completed_at:new Date().toISOString() }).eq('id', id)
+    await supabase.from('training_assignment').update({ status:'completed', completed_at:new Date().toISOString() }).eq('id', id).eq('company_id', companyId)
     setReading(null); onRefresh()
   }
 
@@ -581,7 +581,7 @@ function CourseFormModal({ course, companyId, employeeId, onClose, onSaved }) {
     setSaving(true)
     const payload = { company_id:companyId, title:form.title.trim(), description:form.description.trim()||null, content:form.content.trim()||null, duration_minutes:parseInt(form.duration_minutes)||null, status:form.status, created_by:employeeId||null }
     let courseId = course?.id
-    if (course?.id) { await supabase.from('training_course').update(payload).eq('id',course.id) }
+    if (course?.id) { await supabase.from('training_course').update(payload).eq('id',course.id).eq('company_id',companyId) }
     else { const {data} = await supabase.from('training_course').insert(payload).select().single(); courseId=data?.id }
     if (courseId) {
       await supabase.from('training_quiz_question').delete().eq('course_id', courseId)
@@ -741,18 +741,23 @@ function AssignModal({ course, employees, assignments, companyId, onClose, onSav
   async function save() {
     if (selected.length === 0) return
     setSaving(true)
-    await supabase.from('training_assignment').insert(
-      selected.map(eid => ({ company_id:companyId, course_id:course.id, employee_id:eid, status:'pending', due_date:dueDate||null }))
-    )
-    // Email each assigned employee
-    for (const eid of selected) {
-      const emp = employees.find(e=>e.id===eid)
-      if (emp?.email) {
-        const dueFmt = dueDate ? new Date(dueDate+'T12:00:00').toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}) : null
-        emailTrainingAssigned({ to:emp.email, firstName:emp.first_name, courseTitle:course.title, dueDate:dueFmt, duration:course.duration_minutes })
+    try {
+      await supabase.from('training_assignment').insert(
+        selected.map(eid => ({ company_id:companyId, course_id:course.id, employee_id:eid, status:'pending', due_date:dueDate||null }))
+      )
+      // Email each assigned employee
+      for (const eid of selected) {
+        const emp = employees.find(e=>e.id===eid)
+        if (emp?.email) {
+          const dueFmt = dueDate ? new Date(dueDate+'T12:00:00').toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}) : null
+          emailTrainingAssigned({ to:emp.email, firstName:emp.first_name, courseTitle:course.title, dueDate:dueFmt, duration:course.duration_minutes })
+        }
       }
+    } catch(e) {
+    } finally {
+      setSaving(false)
     }
-    setSaving(false); onSaved()
+    onSaved()
   }
 
   const eligible = employees.filter(e=>!alreadyAssigned.has(e.id))
@@ -873,11 +878,16 @@ function BadgesTab({ companyId, employees, employee }) {
   useEffect(() => { if (companyId) load() }, [companyId])
   async function load() {
     setLoading(true)
-    const [{ data:bd },{ data:eb }] = await Promise.all([
-      supabase.from('badge').select('*').eq('company_id',companyId).order('created_at',{ascending:false}),
-      supabase.from('employee_badge').select('*').eq('company_id',companyId),
-    ])
-    setBadges(bd||[]); setEmpBadges(eb||[]); setLoading(false)
+    try {
+      const [{ data:bd },{ data:eb }] = await Promise.all([
+        supabase.from('badge').select('*').eq('company_id',companyId).order('created_at',{ascending:false}),
+        supabase.from('employee_badge').select('*').eq('company_id',companyId),
+      ])
+      setBadges(bd||[]); setEmpBadges(eb||[])
+    } catch(e) {
+    } finally {
+      setLoading(false)
+    }
   }
   async function create() {
     if (!form.name.trim()) return
