@@ -48,6 +48,7 @@ import MarketingTerms from './pages/marketing/Terms'
 import Support from './pages/marketing/Support'
 import TimeOff from './pages/timeoff/TimeOff'
 import Availability from './pages/availability/Availability'
+import { isOwnDataOnly } from './lib/scoping'
 
 function ComingSoon({ name }) {
   return <div style={{padding:'40px 24px',fontFamily:'var(--font-display)',fontSize:'24px',letterSpacing:'2px',color:'var(--accent)'}}>{name.toUpperCase()} — COMING SOON</div>
@@ -148,7 +149,7 @@ export default function App() {
       <Route path="/portal" element={<ClientRoute><ClientPortal /></ClientRoute>} />
       <Route path="/dashboard"  element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/personnel"  element={<ProtectedRoute><Personnel /></ProtectedRoute>} />
-      <Route path="/scheduling"  element={<ProtectedRoute><Scheduling /></ProtectedRoute>} />
+      <Route path="/scheduling"  element={<ProtectedRoute>{isOwnDataOnly(role) ? <OpenShifts /> : <Scheduling />}</ProtectedRoute>} />
       <Route path="/open-shifts" element={<ProtectedRoute><OpenShifts /></ProtectedRoute>} />
       <Route path="/timesheets" element={<ProtectedRoute><Timesheets /></ProtectedRoute>} />
       <Route path="/incidents" element={<ProtectedRoute><Incidents /></ProtectedRoute>} />
