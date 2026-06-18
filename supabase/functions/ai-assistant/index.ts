@@ -11,7 +11,7 @@ serve(async (req) => {
   }
 
   try {
-    const { messages, model, system } = await req.json()
+    const { messages, model, system, max_tokens } = await req.json()
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -22,7 +22,7 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         model: model || 'claude-sonnet-4-20250514',
-        max_tokens: 1024,
+        max_tokens: max_tokens || 1024,
         system: system || 'You are a helpful assistant for a security workforce management platform.',
         messages,
       }),

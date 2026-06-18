@@ -701,31 +701,104 @@ function DR({l,v}) {
 // ── AI Incident Analysis ──────────────────────────────────────────────────────
 
 function AIIncidentAnalysis({ reports, companyId }) {
-  const KEY = `pc-ai-analysis-${companyId}`
+  const KEY = `pc-ai-analysis-v2-${companyId}`
   const [result, setResult]   = useState(() => { try { return JSON.parse(localStorage.getItem(KEY)||'null') } catch { return null } })
   const [running, setRunning] = useState(false)
   const [error,   setError]   = useState(null)
 
-  const since90 = new Date(Date.now()-90*86400000).toISOString()
-  const recentReports = reports.filter(r=>r.created_at>=since90)
+  const since90str    = new Date(Date.now() -  90*86400000).toISOString()
+  const recentCount   = reports.filter(r => r.created_at >= since90str && r.status !== 'void').length
 
   async function runAnalysis() {
     setRunning(true); setError(null)
     try {
-      const byType = Object.entries(recentReports.reduce((a,r)=>{a[r.incident_type]=(a[r.incident_type]||0)+1;return a},{})).sort((a,b)=>b[1]-a[1]).slice(0,8)
-      const byStatus = Object.entries(recentReports.reduce((a,r)=>{a[r.status]=(a[r.status]||0)+1;return a},{}))
-      const prompt = `You are a security operations analyst. Analyze this incident data and respond with a single valid JSON object (no markdown, no explanation) containing exactly:
-- "topTypes": array of {type, count} objects sorted by count descending (max 8)
-- "recommendations": array of 3 to 5 short actionable recommendation strings for a security operations team
+      const since90d  = new Date(Date.now() -  90*86400000).toISOString()
+      const since180d = new Date(Date.now() - 180*86400000).toISOString()
 
-Data (last 90 days, ${recentReports.length} total incidents):
-Types: ${JSON.stringify(byType)}
-Statuses: ${JSON.stringify(byStatus)}`
+      // Two parallel queries: current period (with site join + narrative), prior period (count only)
+      const [{ data: currentRaw }, { data: priorRaw }] = await Promise.all([
+        supabase
+          .from('incident_report')
+          .select('incident_type, created_at, status, narrative, site:site_id(name)')
+          .eq('company_id', companyId)
+          .gte('created_at', since90d)
+          .neq('status', 'void')
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('incident_report')
+          .select('incident_type')
+          .eq('company_id', companyId)
+          .gte('created_at', since180d)
+          .lt('created_at', since90d)
+          .neq('status', 'void'),
+      ])
+
+      const current = currentRaw || []
+      const prior   = priorRaw   || []
+
+      if (current.length === 0) {
+        const empty = { typeAnalyses: [], dataNote: 'No incidents in the last 90 days.', timestamp: new Date().toISOString(), reportCount: 0 }
+        localStorage.setItem(KEY, JSON.stringify(empty))
+        setResult(empty)
+        return
+      }
+
+      // Prior period by-type counts for trend context line in prompt
+      const priorByType   = prior.reduce((a,r) => { a[r.incident_type]=(a[r.incident_type]||0)+1; return a }, {})
+      const priorSummary  = Object.entries(priorByType).map(([t,c]) => `${t}: ${c}`).join(', ') || 'none'
+
+      // Format each report for the prompt — truncate narratives to 500 chars
+      const formatted = current.map((r, i) => {
+        const site      = r.site?.name || 'Unknown site'
+        const date      = new Date(r.created_at).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'})
+        const narrative = r.narrative
+          ? (r.narrative.length > 500 ? r.narrative.slice(0,500) + '...[truncated]' : r.narrative)
+          : '(no narrative provided)'
+        return `${i+1}. Type: ${r.incident_type} | Site: ${site} | Date: ${date} | Status: ${r.status}\n   Narrative: "${narrative}"`
+      }).join('\n\n')
+
+      const systemPrompt =
+        'You are a security operations analyst for a private security company. ' +
+        'Analyze incident report data and produce grounded, honest analysis. ' +
+        'You must not fabricate specifics that are not present in the narrative text provided to you. ' +
+        'If data is thin — especially single incidents of a type — acknowledge the limited data clearly ' +
+        'rather than writing confident-sounding language about patterns that do not exist. ' +
+        'For a security operations context, a false or overstated recommendation is worse than ' +
+        'an honest acknowledgment of limited data.'
+
+      const trendLine = prior.length > 0
+        ? `\n- For trend context: the prior 90-day period (days 90–180 ago) had these incident counts — ${priorSummary}. Include a brief trend observation in dataNote if the comparison is meaningful.`
+        : ''
+
+      const userPrompt =
+        `Analyze the following ${current.length} security incident report${current.length!==1?'s':''} from the last 90 days ` +
+        `and respond with a single valid JSON object (no markdown, no code blocks, no text outside the JSON).\n\n` +
+        `Required JSON structure:\n` +
+        `{\n` +
+        `  "typeAnalyses": [\n` +
+        `    {\n` +
+        `      "type": "incident type name (exactly as given)",\n` +
+        `      "count": number,\n` +
+        `      "summary": "1-3 sentences grounded in the actual narrative text — what specifically happened. If only 1 incident of this type, explicitly say so and keep it brief. Do not imply a pattern from a single event.",\n` +
+        `      "recommendations": ["1-2 recommendations that reference actual site names and specific details from narratives. If only 1 incident or the narrative is too thin for a specific recommendation, write exactly: 'Monitor for recurrence — insufficient data to identify a pattern from this single incident.' instead of generic advice."]\n` +
+        `    }\n` +
+        `  ],\n` +
+        `  "dataNote": "One honest sentence about overall data volume and what can or cannot be concluded. If fewer than 5 incidents total, note that findings are preliminary."\n` +
+        `}\n\n` +
+        `Rules:\n` +
+        `- Include one object per unique incident type in the data\n` +
+        `- Do not invent details not present in the provided narratives\n` +
+        `- Site names and specific locations must come from the data, not be assumed\n` +
+        `- Narratives may be truncated at 500 characters; do not assume the incident ended at the truncation point` +
+        trendLine + `\n\n` +
+        `Incident data (${current.length} report${current.length!==1?'s':''}, last 90 days):\n` +
+        formatted
 
       const { data, error: fnErr } = await supabase.functions.invoke('ai-assistant', {
-        body: { messages: [{ role: 'user', content: prompt }] }
+        body: { system: systemPrompt, messages: [{ role: 'user', content: userPrompt }], max_tokens: 2048 }
       })
       if (fnErr) throw fnErr
+
       const text = data?.content?.[0]?.text || ''
       let parsed
       try { parsed = JSON.parse(text) }
@@ -733,8 +806,14 @@ Statuses: ${JSON.stringify(byStatus)}`
         const m = text.match(/\{[\s\S]*\}/)
         parsed = m ? JSON.parse(m[0]) : null
       }
-      if (!parsed?.topTypes) parsed = { topTypes: byType.map(([type,count])=>({type,count})), recommendations: [] }
-      const saved = { topTypes: parsed.topTypes, recommendations: parsed.recommendations||[], timestamp: new Date().toISOString(), reportCount: recentReports.length }
+      if (!parsed?.typeAnalyses) throw new Error('Analysis returned an unexpected format — try again.')
+
+      const saved = {
+        typeAnalyses: parsed.typeAnalyses,
+        dataNote:     parsed.dataNote || '',
+        timestamp:    new Date().toISOString(),
+        reportCount:  current.length,
+      }
       localStorage.setItem(KEY, JSON.stringify(saved))
       setResult(saved)
     } catch(e) {
@@ -748,8 +827,10 @@ Statuses: ${JSON.stringify(byStatus)}`
     <div style={{marginBottom:'24px'}}>
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'16px',flexWrap:'wrap',gap:'10px'}}>
         <div>
-          <div style={{fontSize:'11px',color:'var(--text-muted)',fontFamily:'var(--font-condensed)',textTransform:'uppercase',letterSpacing:'1px'}}>Analyzing {recentReports.length} incidents from last 90 days</div>
-          {result?.timestamp && <div style={{fontSize:'11px',color:'var(--text-muted)',marginTop:'2px'}}>Last run: {new Date(result.timestamp).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</div>}
+          <div style={{fontSize:'11px',color:'var(--text-muted)',fontFamily:'var(--font-condensed)',textTransform:'uppercase',letterSpacing:'1px'}}>
+            {recentCount} incident{recentCount!==1?'s':''} in last 90 days
+          </div>
+          {result?.timestamp && <div style={{fontSize:'11px',color:'var(--text-muted)',marginTop:'2px'}}>Last run: {new Date(result.timestamp).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})} · {result.reportCount} report{result.reportCount!==1?'s':''}</div>}
         </div>
         <button style={{display:'inline-flex',alignItems:'center',gap:'8px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-sm)',padding:'0 18px',height:'40px',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',opacity:running?0.6:1}} onClick={runAnalysis} disabled={running}>
           <Icon name="cpu" size={14}/>{running?'ANALYZING...':'RUN ANALYSIS'}
@@ -759,33 +840,43 @@ Statuses: ${JSON.stringify(byStatus)}`
       {error && (
         <div style={{background:'var(--color-danger-bg)',border:'1px solid rgba(224,85,85,0.3)',borderRadius:'var(--radius-md)',padding:'12px 16px',fontSize:'13px',color:'var(--color-danger)',marginBottom:'12px'}}>{error}</div>
       )}
+
       {!result ? (
         <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'40px',textAlign:'center',color:'var(--text-muted)',fontSize:'13px'}}>
-          <Icon name="cpu" size={28} color="var(--text-muted)"/><div style={{marginTop:'10px'}}>Click "Run Analysis" to generate AI-powered insights from your incident data.</div>
+          <Icon name="cpu" size={28} color="var(--text-muted)"/>
+          <div style={{marginTop:'10px'}}>Click "Run Analysis" to generate AI-powered insights using real incident narratives.</div>
+          <div style={{marginTop:'6px',fontSize:'11px'}}>Analysis reads actual narrative text to produce site-specific, grounded recommendations.</div>
+        </div>
+      ) : result.typeAnalyses?.length === 0 ? (
+        <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'24px',textAlign:'center',color:'var(--text-muted)',fontSize:'13px'}}>
+          No incidents to analyze for the last 90 days.
         </div>
       ) : (
-        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:'12px'}}>
-          {result.topTypes?.length > 0 && (
-            <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'18px'}}>
-              <div style={{fontSize:'11px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1.5px',fontFamily:'var(--font-condensed)',marginBottom:'12px'}}>Top Incident Types</div>
-              {result.topTypes.map((t,i)=>(
-                <div key={i} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderBottom:'1px solid var(--border)',fontSize:'13px'}}>
-                  <span style={{color:'var(--text-primary)'}}>{t.type}</span>
-                  <span style={{color:'var(--accent)',fontFamily:'var(--font-condensed)',fontWeight:700}}>{t.count}</span>
-                </div>
-              ))}
+        <div style={{display:'flex',flexDirection:'column',gap:'12px'}}>
+          {result.dataNote && (
+            <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'12px 16px',fontSize:'12px',color:'var(--text-muted)',fontStyle:'italic',lineHeight:1.5}}>
+              {result.dataNote}
             </div>
           )}
-          {result.recommendations?.length > 0 && (
-            <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'18px',gridColumn:'span 1'}}>
-              <div style={{fontSize:'11px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1.5px',fontFamily:'var(--font-condensed)',marginBottom:'12px'}}>Recommendations</div>
-              {result.recommendations.map((r,i)=>(
-                <div key={i} style={{display:'flex',gap:'8px',padding:'6px 0',borderBottom:'1px solid var(--border)',fontSize:'12px',color:'var(--text-secondary)',lineHeight:1.5}}>
-                  <span style={{color:'var(--accent)',flexShrink:0,fontWeight:700}}>{i+1}.</span><span>{r}</span>
-                </div>
-              ))}
+          {result.typeAnalyses.map((ta, i) => (
+            <div key={i} style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'18px'}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'10px'}}>
+                <div style={{fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,color:'var(--text-primary)',textTransform:'uppercase',letterSpacing:'0.5px'}}>{ta.type}</div>
+                <span style={{fontSize:'11px',fontFamily:'var(--font-condensed)',fontWeight:700,color:'var(--accent)',background:'var(--accent-bg)',padding:'2px 10px',borderRadius:'10px'}}>{ta.count} report{ta.count!==1?'s':''}</span>
+              </div>
+              <p style={{fontSize:'13px',color:'var(--text-secondary)',lineHeight:1.6,margin:'0 0 12px 0'}}>{ta.summary}</p>
+              {ta.recommendations?.length > 0 && (
+                <>
+                  <div style={{fontSize:'10px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',marginBottom:'8px'}}>Recommendations</div>
+                  {ta.recommendations.map((rec, j) => (
+                    <div key={j} style={{display:'flex',gap:'8px',padding:'7px 0',borderTop:'1px solid var(--border)',fontSize:'12px',color:'var(--text-secondary)',lineHeight:1.5}}>
+                      <span style={{color:'var(--accent)',flexShrink:0,fontWeight:700,fontFamily:'var(--font-condensed)'}}>{j+1}.</span><span>{rec}</span>
+                    </div>
+                  ))}
+                </>
+              )}
             </div>
-          )}
+          ))}
         </div>
       )}
     </div>
