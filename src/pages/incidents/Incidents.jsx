@@ -712,37 +712,36 @@ function AIIncidentAnalysis({ reports, companyId }) {
   async function runAnalysis() {
     setRunning(true); setError(null)
     try {
-      const summary = {
-        total: recentReports.length,
-        byType: Object.entries(recentReports.reduce((a,r)=>{a[r.incident_type]=(a[r.incident_type]||0)+1;return a},{})).sort((a,b)=>b[1]-a[1]).slice(0,8),
-        byStatus: Object.entries(recentReports.reduce((a,r)=>{a[r.status]=(a[r.status]||0)+1;return a},{})),
-      }
-      const { data, error: fnErr } = await supabase.functions.invoke('generate-analysis', {
-        body: { type:'incident_analysis', data: summary, period:'last 90 days' }
+      const byType = Object.entries(recentReports.reduce((a,r)=>{a[r.incident_type]=(a[r.incident_type]||0)+1;return a},{})).sort((a,b)=>b[1]-a[1]).slice(0,8)
+      const byStatus = Object.entries(recentReports.reduce((a,r)=>{a[r.status]=(a[r.status]||0)+1;return a},{}))
+      const prompt = `You are a security operations analyst. Analyze this incident data and respond with a single valid JSON object (no markdown, no explanation) containing exactly:
+- "topTypes": array of {type, count} objects sorted by count descending (max 8)
+- "recommendations": array of 3 to 5 short actionable recommendation strings for a security operations team
+
+Data (last 90 days, ${recentReports.length} total incidents):
+Types: ${JSON.stringify(byType)}
+Statuses: ${JSON.stringify(byStatus)}`
+
+      const { data, error: fnErr } = await supabase.functions.invoke('ai-assistant', {
+        body: { messages: [{ role: 'user', content: prompt }] }
       })
-      if (fnErr || data?.error) throw new Error(fnErr?.message || data?.error || 'Analysis failed')
-      const saved = { ...data, timestamp: new Date().toISOString(), reportCount: recentReports.length }
+      if (fnErr) throw fnErr
+      const text = data?.content?.[0]?.text || ''
+      let parsed
+      try { parsed = JSON.parse(text) }
+      catch {
+        const m = text.match(/\{[\s\S]*\}/)
+        parsed = m ? JSON.parse(m[0]) : null
+      }
+      if (!parsed?.topTypes) parsed = { topTypes: byType.map(([type,count])=>({type,count})), recommendations: [] }
+      const saved = { topTypes: parsed.topTypes, recommendations: parsed.recommendations||[], timestamp: new Date().toISOString(), reportCount: recentReports.length }
       localStorage.setItem(KEY, JSON.stringify(saved))
       setResult(saved)
     } catch(e) {
-      // Fallback: generate basic analysis from local data
-      const types = recentReports.reduce((a,r)=>{a[r.incident_type]=(a[r.incident_type]||0)+1;return a},{})
-      const topType = Object.entries(types).sort((a,b)=>b[1]-a[1])[0]
-      const fallback = {
-        timestamp: new Date().toISOString(),
-        reportCount: recentReports.length,
-        topTypes: Object.entries(types).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([t,c])=>({type:t,count:c})),
-        recommendations: [
-          'Review incident patterns monthly with field supervisors',
-          'Ensure all incidents are submitted within 24 hours of occurrence',
-          topType ? `High volume of ${topType[0]} incidents — consider targeted prevention measures` : 'Maintain current reporting standards',
-        ],
-        note: 'Basic analysis (AI edge function not configured — set ANTHROPIC_API_KEY in Supabase secrets to enable AI-powered insights)'
-      }
-      localStorage.setItem(KEY, JSON.stringify(fallback))
-      setResult(fallback)
+      setError(e.message || 'Analysis failed')
+    } finally {
+      setRunning(false)
     }
-    setRunning(false)
   }
 
   return (
@@ -757,6 +756,9 @@ function AIIncidentAnalysis({ reports, companyId }) {
         </button>
       </div>
 
+      {error && (
+        <div style={{background:'var(--color-danger-bg)',border:'1px solid rgba(224,85,85,0.3)',borderRadius:'var(--radius-md)',padding:'12px 16px',fontSize:'13px',color:'var(--color-danger)',marginBottom:'12px'}}>{error}</div>
+      )}
       {!result ? (
         <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'40px',textAlign:'center',color:'var(--text-muted)',fontSize:'13px'}}>
           <Icon name="cpu" size={28} color="var(--text-muted)"/><div style={{marginTop:'10px'}}>Click "Run Analysis" to generate AI-powered insights from your incident data.</div>
@@ -782,11 +784,6 @@ function AIIncidentAnalysis({ reports, companyId }) {
                   <span style={{color:'var(--accent)',flexShrink:0,fontWeight:700}}>{i+1}.</span><span>{r}</span>
                 </div>
               ))}
-            </div>
-          )}
-          {result.note && (
-            <div style={{background:'var(--color-warning-bg)',border:'1px solid rgba(232,148,58,0.3)',borderRadius:'var(--radius-md)',padding:'14px',gridColumn:'1/-1'}}>
-              <div style={{fontSize:'12px',color:'var(--color-warning)',lineHeight:1.6}}>{result.note}</div>
             </div>
           )}
         </div>

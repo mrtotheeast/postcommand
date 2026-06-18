@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
+import { atLeast } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
 import { useToast } from '../../components/ui/Toast'
 
@@ -33,7 +34,9 @@ const s = {
 
 export default function ClientManagement() {
   const { profile } = useAuth()
+  const toast = useToast()
   const isMobile = window.innerWidth < 640
+  const canDelete = atLeast(profile?.role, 'chief')
   const [clients,    setClients]    = useState([])
   const [sites,      setSites]      = useState([])
   const [loading,    setLoading]    = useState(true)
@@ -42,6 +45,7 @@ export default function ClientManagement() {
   const [panelTab,   setPanelTab]   = useState('overview')
   const [showModal,  setShowModal]  = useState(false)
   const [editClient, setEditClient] = useState(null)
+  const [deleting,   setDeleting]   = useState(null)
 
   useEffect(() => { if (profile?.company_id) load() }, [profile])
 
@@ -68,6 +72,36 @@ export default function ClientManagement() {
     }
   }
 
+  async function handleDelete(client) {
+    const linkedSites = sites.filter(s => s.client_id === client.id)
+    const siteWarning = linkedSites.length > 0
+      ? `\n\nWarning: this client has ${linkedSites.length} site${linkedSites.length !== 1 ? 's' : ''} (${linkedSites.map(s=>s.name).join(', ')}) that will also need to be removed or reassigned before deletion can succeed.`
+      : ''
+    const confirmed = window.confirm(
+      `Permanently delete "${client.name}"?${siteWarning}\n\nThis cannot be undone.`
+    )
+    if (!confirmed) return
+    setDeleting(client.id)
+    try {
+      const { error } = await supabase.from('client').delete().eq('id', client.id).eq('company_id', profile.company_id)
+      if (error) {
+        if (error.code === '23503') {
+          toast('Cannot delete: client has associated sites, contracts, or contacts. Remove those first.', 'error')
+        } else {
+          toast(error.message || 'Delete failed', 'error')
+        }
+        return
+      }
+      if (selected?.id === client.id) setSelected(null)
+      toast(`${client.name} deleted`)
+      load()
+    } catch(e) {
+      toast(e?.message || 'Delete failed', 'error')
+    } finally {
+      setDeleting(null)
+    }
+  }
+
   const filtered = useMemo(() => clients.filter(c => !search || c.name?.toLowerCase().includes(search.toLowerCase())), [clients,search])
 
   const clientSites = (id) => sites.filter(s=>s.client_id===id)
@@ -85,7 +119,7 @@ export default function ClientManagement() {
       </div>
       <div style={{...s.card, overflowX:isMobile?'auto':'visible'}}>
         <table style={{width:'100%',borderCollapse:'collapse',minWidth:isMobile?'600px':'auto'}}>
-          <thead><tr>{['Company','Contact','Phone','Email','Sites','Status',''].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead>
+          <thead><tr>{['Company','Contact','Phone','Email','Sites','Status','Actions'].map(h=><th key={h} style={s.th}>{h}</th>)}</tr></thead>
           <tbody>
             {filtered.map(c => {
               const cnt = clientSites(c.id).length
@@ -99,7 +133,18 @@ export default function ClientManagement() {
                   <td style={s.td}>{cnt} site{cnt!==1?'s':''}</td>
                   <td style={s.td}><span style={{...s.pill,background:st.bg,color:st.color}}>{st.label}</span></td>
                   <td style={s.td} onClick={e=>e.stopPropagation()}>
-                    <button style={{...s.ghost,height:'32px',padding:'0 10px',fontSize:'11px'}} onClick={e=>{e.stopPropagation();setEditClient(c);setShowModal(true)}}><Icon name="edit-2" size={12}/>EDIT</button>
+                    <div style={{display:'flex',gap:'6px'}}>
+                      <button style={{...s.ghost,height:'32px',padding:'0 10px',fontSize:'11px'}} onClick={e=>{e.stopPropagation();setEditClient(c);setShowModal(true)}}><Icon name="edit-2" size={12}/>EDIT</button>
+                      {canDelete && (
+                        <button
+                          style={{display:'inline-flex',alignItems:'center',gap:'6px',height:'32px',padding:'0 10px',fontSize:'11px',background:'transparent',color:'var(--color-danger)',border:'1px solid rgba(224,85,85,0.3)',borderRadius:'var(--radius-sm)',cursor:'pointer',opacity:deleting===c.id?0.5:1,fontFamily:'var(--font-condensed)',letterSpacing:'0.5px'}}
+                          onClick={e=>{e.stopPropagation();handleDelete(c)}}
+                          disabled={deleting===c.id}
+                        >
+                          <Icon name="trash-2" size={12}/>DELETE
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               )

@@ -6,6 +6,7 @@ import { supabase } from '../../lib/supabase'
 import { ROLE_LABELS, ROLE_LEVELS, atLeast, ROLE_TITLES } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
 import { useToast } from '../../components/ui/Toast'
+import CompanySettings from './CompanySettings'
 
 // ── Shared primitives ─────────────────────────────────────────────────────────
 
@@ -67,6 +68,7 @@ function setKey(k, v) { localStorage.setItem(k, JSON.stringify(v)) }
 const TABS = [
   { id:'company',       label:'Company Profile',  icon:'briefcase' },
   { id:'team',          label:'Team & Roles',      icon:'users' },
+  { id:'ops',           label:'Operations',        icon:'sliders' },
   { id:'notifications', label:'Notifications',     icon:'bell' },
   { id:'integrations',  label:'Integrations',      icon:'link' },
   { id:'security',      label:'Security',          icon:'lock' },
@@ -105,6 +107,7 @@ export default function Settings() {
         <div style={s.panel}>
           {tab === 'company'       && <CompanyTab       profile={profile} companyId={companyId} />}
           {tab === 'team'          && <TeamTab          profile={profile} companyId={companyId} theme={theme} toggleTheme={toggleTheme} />}
+          {tab === 'ops'           && <CompanySettings  embedded />}
           {tab === 'notifications' && <NotificationsTab profile={profile} companyId={companyId} />}
           {tab === 'integrations'  && <IntegrationsTab  companyId={companyId} />}
           {tab === 'security'      && <SecurityTab      profile={profile} companyId={companyId} />}
@@ -1191,12 +1194,6 @@ function SupervisorAssignmentTab({ companyId }) {
             </button>
           </>
         )}
-      </div>
-      <div style={{...s.card,background:'var(--bg-surface)',border:'1px solid var(--border)'}}>
-        <div style={s.cardTitle}>SQL — Create supervisor_assignment table</div>
-        <div style={{fontSize:'11px',color:'var(--text-muted)',lineHeight:1.6}}>
-          Run in Supabase dashboard: <code>CREATE TABLE IF NOT EXISTS supervisor_assignment (id UUID DEFAULT gen_random_uuid() PRIMARY KEY, company_id UUID NOT NULL, supervisor_id UUID NOT NULL, employee_id UUID NOT NULL, assigned_at TIMESTAMPTZ DEFAULT NOW(), UNIQUE(company_id,supervisor_id,employee_id)); ALTER TABLE supervisor_assignment ENABLE ROW LEVEL SECURITY; CREATE POLICY "company scope" ON supervisor_assignment USING (company_id = (SELECT company_id FROM user_profile WHERE id = auth.uid()));</code>
-        </div>
       </div>
     </>
   )

@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
 import { atLeast, ROLE_LABELS } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
+import { useToast } from '../../components/ui/Toast'
 
 const PERIODS = ['Q1 2026','Q2 2026','Q3 2026','Q4 2026','Q1 2025','Q2 2025','Q3 2025','Q4 2025']
 const CATS    = ['Attendance','Professionalism','Performance','Communication','Teamwork']
@@ -96,6 +97,7 @@ export default function PerformanceReviews() {
   )
 }
 function ReviewModal({ emp, profile, onClose, onSaved }) {
+  const toast = useToast()
   const [form, setForm] = useState({ period:PERIODS[0], rating:0, attendance:3, professionalism:3, performance:3, communication:3, teamwork:3, comments:'' })
   const [saving, setSaving] = useState(false)
   function setF(k,v) { setForm(p=>({...p,[k]:v})) }
@@ -103,9 +105,22 @@ function ReviewModal({ emp, profile, onClose, onSaved }) {
   async function save() {
     if (form.rating===0) { alert('Please set an overall rating.'); return }
     setSaving(true)
-    const { data:reviewer } = await supabase.from('employee').select('id').eq('user_id',profile.id).single()
-    await supabase.from('performance_review').insert({ company_id:profile.company_id, employee_id:emp.id, reviewer_id:reviewer?.id, ...form })
-    setSaving(false); onSaved()
+    try {
+      const { data:reviewer } = await supabase.from('employee').select('id').eq('user_id',profile.id).maybeSingle()
+      const { data:inserted, error } = await supabase
+        .from('performance_review')
+        .insert({ company_id:profile.company_id, employee_id:emp.id, reviewer_id:reviewer?.id, ...form })
+        .select('id')
+        .single()
+      if (error) throw error
+      if (!inserted?.id) throw new Error('Review was not saved — no record returned')
+      toast('Review saved')
+      onSaved()
+    } catch(e) {
+      toast(e?.message || 'Failed to save review', 'error')
+    } finally {
+      setSaving(false)
+    }
   }
   return (
     <div style={s.overlay} onClick={e=>{if(e.target===e.currentTarget)onClose()}}>

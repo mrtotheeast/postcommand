@@ -131,7 +131,6 @@ export const NAV_ITEMS = [
   ]},
   { section:'Admin', items:[
     { id:'sites', label:'Site Management', path:'/sites', icon:'map', roles:['super_admin','chief','lieutenant','office_staff'] },
-    { id:'company-settings', label:'Company Settings', path:'/settings/company', icon:'settings', roles:['super_admin','chief'] },
     { id:'hr', label:'HR & Documents', path:'/hr', icon:'folder', roles:['super_admin','chief','lieutenant','hr','office_staff'] },
     { id:'invoices', label:'Invoices', path:'/invoices', icon:'file-text', roles:['super_admin','chief','accounting'] },
     { id:'payroll',  label:'Payroll',  path:'/payroll',  icon:'dollar-sign', roles:['super_admin','chief','lieutenant','accounting'] },

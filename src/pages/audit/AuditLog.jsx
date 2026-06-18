@@ -163,9 +163,6 @@ export default function AuditLog() {
         </div>
       )}
 
-      <div style={{ marginTop:'16px', padding:'12px 16px', background:'var(--bg-surface)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', fontSize:'11px', color:'var(--text-muted)', lineHeight:1.6 }}>
-        SQL: <code>CREATE TABLE IF NOT EXISTS audit_log (id UUID DEFAULT gen_random_uuid() PRIMARY KEY, company_id UUID NOT NULL, actor_id UUID, actor_name TEXT, action TEXT NOT NULL, resource_type TEXT, resource_id TEXT, resource_name TEXT, metadata JSONB, created_at TIMESTAMPTZ DEFAULT NOW()); ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY; CREATE POLICY "company scope" ON audit_log USING (company_id = (SELECT company_id FROM user_profile WHERE id = auth.uid()));</code>
-      </div>
     </div>
   )
 }
