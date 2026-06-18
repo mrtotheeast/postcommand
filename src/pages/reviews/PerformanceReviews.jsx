@@ -7,6 +7,18 @@ import { useToast } from '../../components/ui/Toast'
 
 const PERIODS = ['Q1 2026','Q2 2026','Q3 2026','Q4 2026','Q1 2025','Q2 2025','Q3 2025','Q4 2025']
 const CATS    = ['Attendance','Professionalism','Performance','Communication','Teamwork']
+const Q_STARTS = { Q1:'01-01', Q2:'04-01', Q3:'07-01', Q4:'10-01' }
+const Q_ENDS   = { Q1:'03-31', Q2:'06-30', Q3:'09-30', Q4:'12-31' }
+function periodToDates(period) {
+  const [q, year] = period.split(' ')
+  return { review_period_start:`${year}-${Q_STARTS[q]}`, review_period_end:`${year}-${Q_ENDS[q]}` }
+}
+function fmtPeriod(start) {
+  if (!start) return '—'
+  const d = new Date(start + 'T12:00:00Z')
+  const m = d.getUTCMonth() + 1, y = d.getUTCFullYear()
+  return (m <= 3 ? 'Q1' : m <= 6 ? 'Q2' : m <= 9 ? 'Q3' : 'Q4') + ' ' + y
+}
 const s = {
   page:    { padding:'24px', maxWidth:'1100px', animation:'fadeIn 200ms ease' },
   heading: { fontFamily:'var(--font-display)', fontSize:'28px', letterSpacing:'2px', color:'var(--text-primary)', lineHeight:1, marginBottom:'4px' },
@@ -77,8 +89,8 @@ export default function PerformanceReviews() {
                   <td style={s.tdName}>{emp.first_name} {emp.last_name}<div style={{fontSize:'11px',color:'var(--text-muted)',fontWeight:400,marginTop:'1px'}}>{emp.position_title||'—'}</div></td>
                   <td style={s.td}>{ROLE_LABELS[emp.role]||emp.role}</td>
                   <td style={s.td}>{lr ? new Date(lr.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : <span style={{color:'var(--text-muted)'}}>Never reviewed</span>}</td>
-                  <td style={s.td}>{lr?.period||'—'}</td>
-                  <td style={s.td}>{lr ? <Stars value={lr.rating||0} readOnly /> : '—'}</td>
+                  <td style={s.td}>{lr ? fmtPeriod(lr.review_period_start) : '—'}</td>
+                  <td style={s.td}>{lr ? <Stars value={lr.overall_rating||0} readOnly /> : '—'}</td>
                   <td style={s.td} onClick={e=>e.stopPropagation()}>
                     <div style={{display:'flex',gap:'6px'}}>
                       {isAdmin && <button style={{...s.btn,height:'32px',padding:'0 12px',fontSize:'11px'}} onClick={()=>{setEditEmp(emp);setShowModal(true)}}><Icon name="edit" size={12}/>REVIEW</button>}
@@ -107,9 +119,24 @@ function ReviewModal({ emp, profile, onClose, onSaved }) {
     setSaving(true)
     try {
       const { data:reviewer } = await supabase.from('employee').select('id').eq('user_id',profile.id).maybeSingle()
+      const dates = periodToDates(form.period)
       const { data:inserted, error } = await supabase
         .from('performance_review')
-        .insert({ company_id:profile.company_id, employee_id:emp.id, reviewer_id:reviewer?.id, ...form })
+        .insert({
+          company_id:          profile.company_id,
+          employee_id:         emp.id,
+          reviewer_id:         reviewer?.id,
+          review_period_start: dates.review_period_start,
+          review_period_end:   dates.review_period_end,
+          review_date:         new Date().toISOString().slice(0, 10),
+          overall_rating:      form.rating,
+          attendance:          form.attendance,
+          professionalism:     form.professionalism,
+          performance:         form.performance,
+          communication:       form.communication,
+          teamwork:            form.teamwork,
+          reviewer_comments:   form.comments,
+        })
         .select('id')
         .single()
       if (error) throw error
@@ -173,10 +200,10 @@ function HistoryPanel({ emp, reviews, onClose }) {
           {reviews.map((r,i)=>(
             <div key={r.id} style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'14px',marginBottom:'12px'}}>
               <div style={{display:'flex',justifyContent:'space-between',marginBottom:'8px'}}>
-                <div style={{fontFamily:'var(--font-condensed)',fontSize:'12px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px'}}>{r.period}</div>
+                <div style={{fontFamily:'var(--font-condensed)',fontSize:'12px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px'}}>{fmtPeriod(r.review_period_start)}</div>
                 <div style={{fontSize:'11px',color:'var(--text-muted)'}}>{new Date(r.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>
               </div>
-              <Stars value={r.rating} readOnly />
+              <Stars value={r.overall_rating||0} readOnly />
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'6px',marginTop:'10px'}}>
                 {CATS.map(cat=>(
                   <div key={cat} style={{fontSize:'11px',color:'var(--text-secondary)'}}>
@@ -184,7 +211,7 @@ function HistoryPanel({ emp, reviews, onClose }) {
                   </div>
                 ))}
               </div>
-              {r.comments && <div style={{marginTop:'10px',fontSize:'12px',color:'var(--text-secondary)',lineHeight:1.6,padding:'8px',background:'var(--bg-surface)',borderRadius:'var(--radius-sm)'}}>{r.comments}</div>}
+              {r.reviewer_comments && <div style={{marginTop:'10px',fontSize:'12px',color:'var(--text-secondary)',lineHeight:1.6,padding:'8px',background:'var(--bg-surface)',borderRadius:'var(--radius-sm)'}}>{r.reviewer_comments}</div>}
             </div>
           ))}
         </div>
