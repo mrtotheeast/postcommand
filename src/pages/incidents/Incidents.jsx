@@ -802,6 +802,7 @@ function AIIncidentAnalysis({ reports, companyId }) {
         body: { system: systemPrompt, messages: [{ role: 'user', content: userPrompt }], max_tokens: 2048 }
       })
       if (fnErr) throw fnErr
+      if (data?.error) throw new Error(`AI API error: ${data.error.type} — ${data.error.message}`)
 
       const text = data?.content?.[0]?.text || ''
       setRawResponse(text)
