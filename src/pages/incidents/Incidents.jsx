@@ -701,16 +701,20 @@ function DR({l,v}) {
 // ── AI Incident Analysis ──────────────────────────────────────────────────────
 
 function AIIncidentAnalysis({ reports, companyId }) {
+  const { profile } = useAuth()
   const KEY = `pc-ai-analysis-v2-${companyId}`
-  const [result, setResult]   = useState(() => { try { return JSON.parse(localStorage.getItem(KEY)||'null') } catch { return null } })
-  const [running, setRunning] = useState(false)
-  const [error,   setError]   = useState(null)
+  const [result,      setResult]      = useState(() => { try { return JSON.parse(localStorage.getItem(KEY)||'null') } catch { return null } })
+  const [running,     setRunning]     = useState(false)
+  const [error,       setError]       = useState(null)
+  const [rawResponse, setRawResponse] = useState(null)
+  const [showDebug,   setShowDebug]   = useState(false)
+  const canDebug = atLeast(profile?.role, 'chief')
 
-  const since90str    = new Date(Date.now() -  90*86400000).toISOString()
-  const recentCount   = reports.filter(r => r.created_at >= since90str && r.status !== 'void').length
+  const since90str  = new Date(Date.now() -  90*86400000).toISOString()
+  const recentCount = reports.filter(r => r.created_at >= since90str && r.status !== 'void').length
 
   async function runAnalysis() {
-    setRunning(true); setError(null)
+    setRunning(true); setError(null); setRawResponse(null); setShowDebug(false)
     try {
       const since90d  = new Date(Date.now() -  90*86400000).toISOString()
       const since180d = new Date(Date.now() - 180*86400000).toISOString()
@@ -800,13 +804,32 @@ function AIIncidentAnalysis({ reports, companyId }) {
       if (fnErr) throw fnErr
 
       const text = data?.content?.[0]?.text || ''
-      let parsed
-      try { parsed = JSON.parse(text) }
-      catch {
-        const m = text.match(/\{[\s\S]*\}/)
-        parsed = m ? JSON.parse(m[0]) : null
+      setRawResponse(text)
+
+      // Strip markdown code fences before parsing, then extract the JSON object.
+      // The greedy \{[\s\S]*\} handles preamble text and trailing text; the fence
+      // strip handles ```json...``` wrappers so we aren't relying on the regex to
+      // cut through backticks. If text is truncated (no closing }) both attempts
+      // fail gracefully and we surface a useful error + the raw response.
+      const stripped = text
+        .replace(/^```(?:json)?\s*/im, '')
+        .replace(/```\s*$/im, '')
+        .trim()
+
+      let parsed = null
+      try { parsed = JSON.parse(stripped) } catch {}
+      if (!parsed) {
+        const m = stripped.match(/\{[\s\S]*\}/)
+        if (m) { try { parsed = JSON.parse(m[0]) } catch {} }
       }
-      if (!parsed?.typeAnalyses) throw new Error('Analysis returned an unexpected format — try again.')
+      if (!parsed?.typeAnalyses) {
+        const hint = !text
+          ? 'no response received from model'
+          : stripped.length < 30
+            ? 'response was too short to contain JSON'
+            : 'response may have been truncated mid-JSON — try again'
+        throw new Error(`Analysis returned an unexpected format (${hint}).`)
+      }
 
       const saved = {
         typeAnalyses: parsed.typeAnalyses,
@@ -838,7 +861,21 @@ function AIIncidentAnalysis({ reports, companyId }) {
       </div>
 
       {error && (
-        <div style={{background:'var(--color-danger-bg)',border:'1px solid rgba(224,85,85,0.3)',borderRadius:'var(--radius-md)',padding:'12px 16px',fontSize:'13px',color:'var(--color-danger)',marginBottom:'12px'}}>{error}</div>
+        <div style={{marginBottom:'12px'}}>
+          <div style={{background:'var(--color-danger-bg)',border:'1px solid rgba(224,85,85,0.3)',borderRadius:'var(--radius-md)',padding:'12px 16px',fontSize:'13px',color:'var(--color-danger)'}}>{error}</div>
+          {canDebug && rawResponse && (
+            <div style={{marginTop:'6px'}}>
+              <button onClick={()=>setShowDebug(s=>!s)} style={{fontSize:'11px',color:'var(--text-muted)',background:'transparent',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',padding:'4px 10px',cursor:'pointer',fontFamily:'var(--font-condensed)',letterSpacing:'0.5px'}}>
+                {showDebug?'▲ HIDE':'▼ SHOW'} RAW RESPONSE (ADMIN DEBUG)
+              </button>
+              {showDebug && (
+                <pre style={{marginTop:'6px',padding:'12px',background:'var(--bg-surface)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',fontSize:'11px',color:'var(--text-muted)',overflowX:'auto',whiteSpace:'pre-wrap',wordBreak:'break-all',maxHeight:'300px',overflowY:'auto',lineHeight:1.5}}>
+                  {rawResponse||'(empty)'}
+                </pre>
+              )}
+            </div>
+          )}
+        </div>
       )}
 
       {!result ? (
