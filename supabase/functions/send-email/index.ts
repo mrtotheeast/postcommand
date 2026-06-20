@@ -89,12 +89,15 @@ serve(async (req) => {
         `You've been invited to join ${companyName}`,
         `
         <h2 style="margin:0 0 8px;font-size:24px;color:#0f172a;">Welcome to the team, ${firstName}!</h2>
-        <p style="margin:0 0 24px;font-size:15px;color:#475569;line-height:1.6;">
-          ${companyName} has invited you to join their workforce management platform. 
+        <p style="margin:0 0 16px;font-size:15px;color:#475569;line-height:1.6;">
+          ${companyName} has invited you to join their workforce management platform.
           Click below to set up your account and get started.
         </p>
+        <p style="margin:0 0 24px;font-size:14px;color:#64748b;line-height:1.6;">
+          On your first login you will be asked to create a password for your account.
+        </p>
         <div style="text-align:center;margin:32px 0;">
-          <a href="${inviteUrl}" 
+          <a href="${inviteUrl}"
              style="display:inline-block;background:${primaryColor};color:#ffffff;font-weight:700;
                     font-size:14px;letter-spacing:1px;text-transform:uppercase;text-decoration:none;
                     padding:16px 40px;border-radius:8px;">

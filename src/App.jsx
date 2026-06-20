@@ -8,6 +8,7 @@ import AppLayout from './components/layout/AppLayout'
 import PrivacyBanner from './components/ui/PrivacyBanner'
 import Login from './pages/auth/Login'
 import Register from './pages/auth/Register'
+import SetPassword from './pages/auth/SetPassword'
 import Dashboard from './pages/dashboard/Dashboard'
 import Personnel from './pages/personnel/Personnel'
 import Scheduling from './pages/scheduling/Scheduling'
@@ -51,17 +52,32 @@ import { isOwnDataOnly } from './lib/scoping'
 function ComingSoon({ name }) {
   return <div style={{padding:'40px 24px',fontFamily:'var(--font-display)',fontSize:'24px',letterSpacing:'2px',color:'var(--accent)'}}>{name.toUpperCase()} — COMING SOON</div>
 }
+const Spinner = () => <div style={{minHeight:'100vh',backgroundColor:'var(--bg-base)',display:'flex',alignItems:'center',justifyContent:'center'}}><style>{`@keyframes spinY{0%{transform:rotateY(0deg)}100%{transform:rotateY(360deg)}}`}</style><img src="/app-icon-transparent.png" alt="PostCommand" style={{width:'80px',height:'80px',objectFit:'contain',animation:'spinY 1.4s linear infinite',transformStyle:'preserve-3d'}}/></div>
+
 function ProtectedRoute({ children }) {
-  const { isAuthenticated, loading, role } = useAuth()
-  if (loading) return <div style={{minHeight:'100vh',backgroundColor:'var(--bg-base)',display:'flex',alignItems:'center',justifyContent:'center'}}><style>{`@keyframes spinY{0%{transform:rotateY(0deg)}100%{transform:rotateY(360deg)}}`}</style><img src="/app-icon-transparent.png" alt="PostCommand" style={{width:'80px',height:'80px',objectFit:'contain',animation:'spinY 1.4s linear infinite',transformStyle:'preserve-3d'}}/></div>
+  const { isAuthenticated, loading, role, needsPassword } = useAuth()
+  if (loading) return <Spinner />
   if (!isAuthenticated) return <Navigate to="/login" replace />
+  // Redirect invited employees/clients to set a password before accessing any page.
+  // Checks password_set === false strictly — null (legacy users) never redirects.
+  if (needsPassword) return <Navigate to="/set-password" replace />
   if (role === 'client') return <Navigate to="/portal" replace />
   return <AppLayout>{children}</AppLayout>
 }
 function ClientRoute({ children }) {
-  const { isAuthenticated, loading, role } = useAuth()
-  if (loading) return <div style={{minHeight:'100vh',backgroundColor:'var(--bg-base)',display:'flex',alignItems:'center',justifyContent:'center'}}><style>{`@keyframes spinY{0%{transform:rotateY(0deg)}100%{transform:rotateY(360deg)}}`}</style><img src="/app-icon-transparent.png" alt="PostCommand" style={{width:'80px',height:'80px',objectFit:'contain',animation:'spinY 1.4s linear infinite',transformStyle:'preserve-3d'}}/></div>
+  const { isAuthenticated, loading, needsPassword } = useAuth()
+  if (loading) return <Spinner />
   if (!isAuthenticated) return <Navigate to="/login" replace />
+  if (needsPassword) return <Navigate to="/set-password" replace />
+  return children
+}
+// Accessible when authenticated but needsPassword === true.
+// Redirects away if the user doesn't actually need password setup.
+function PasswordSetupRoute({ children }) {
+  const { isAuthenticated, loading, needsPassword, role } = useAuth()
+  if (loading) return <Spinner />
+  if (!isAuthenticated) return <Navigate to="/login" replace />
+  if (!needsPassword) return <Navigate to={role === 'client' ? '/portal' : '/dashboard'} replace />
   return children
 }
 // Handles the OAuth deep link redirect on native iOS
@@ -142,8 +158,9 @@ export default function App() {
       <Route path="/reciprocity" element={<CCWMap />} />
       <Route path="/support"     element={<Support />} />
       <Route path="/auth/callback" element={<AuthCallback />} />
-      <Route path="/login"    element={isAuthenticated ? <Navigate to={role === 'client' ? '/portal' : '/dashboard'} replace /> : <Login />} />
-      <Route path="/register" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Register />} />
+      <Route path="/login"         element={isAuthenticated ? <Navigate to={role === 'client' ? '/portal' : '/dashboard'} replace /> : <Login />} />
+      <Route path="/register"      element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Register />} />
+      <Route path="/set-password"  element={<PasswordSetupRoute><SetPassword /></PasswordSetupRoute>} />
       <Route path="/portal" element={<ClientRoute><ClientPortal /></ClientRoute>} />
       <Route path="/dashboard"  element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/personnel"  element={<ProtectedRoute><Personnel /></ProtectedRoute>} />
