@@ -33,7 +33,6 @@ import DAR from './pages/dar/DAR'
 import Inbox from './pages/inbox/Inbox'
 import Archived from './pages/archived/Archived'
 import SuperAdmin from './pages/admin/SuperAdmin'
-import More from './pages/more/More'
 import Help from './pages/help/Help'
 import AuditLog from './pages/audit/AuditLog'
 import Payroll from './pages/payroll/Payroll'
@@ -169,7 +168,6 @@ export default function App() {
       <Route path="/inbox"      element={<ProtectedRoute><Inbox /></ProtectedRoute>} />
       <Route path="/archived"   element={<ProtectedRoute><Archived /></ProtectedRoute>} />
       <Route path="/admin"      element={<ProtectedRoute><SuperAdmin /></ProtectedRoute>} />
-      <Route path="/more"       element={<ProtectedRoute><More /></ProtectedRoute>} />
       <Route path="/reviews"    element={<ProtectedRoute><PerformanceReviews /></ProtectedRoute>} />
       <Route path="/clients"    element={<ProtectedRoute><ClientManagement /></ProtectedRoute>} />
       <Route path="/help"       element={<ProtectedRoute><Help /></ProtectedRoute>} />

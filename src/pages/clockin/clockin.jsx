@@ -202,6 +202,9 @@ export default function ClockIn() {
       const { error: tsErr } = await supabase.from('timesheet').update({ clock_out: now.toISOString(), clock_out_location: loc, clock_out_photo_url: photoUrl, total_hours: Number(totalHours.toFixed(2)), status: 'pending' }).eq('id', timesheet.id)
       if (tsErr) { haptic('error'); setError(tsErr.message); setSaving(false); return }
       haptic('success')
+      supabase.functions.invoke('send-push', {
+        body: { company_id: profile.company_id, type: 'timesheet_pending', title: 'Timesheet Awaiting Approval', body: 'A timesheet has been submitted for approval', target_roles: ['lieutenant', 'chief'] }
+      }).catch(() => {})
       setStep(STEPS.COMPLETE)
     } catch(e) { setError(e.message) }
     setSaving(false)
