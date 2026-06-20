@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
+import { withLoadTimeout } from '../../lib/withLoadTimeout'
 import Icon from '../../components/ui/Icon'
 
 const s = {
@@ -35,7 +36,7 @@ export default function SuperAdmin() {
     }
   }, [profile])
 
-  async function loadPlatformStats() {
+  const loadPlatformStats = withLoadTimeout(async function loadPlatformStats() {
     setLoading(true)
     try {
       const { data, error: fnErr } = await supabase.functions.invoke('platform-stats')
@@ -43,9 +44,10 @@ export default function SuperAdmin() {
       setStats(data)
     } catch (e) {
       setError(e.message)
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
-  }
+  }, { setLoading })
 
   async function loadCompanyStats() {
     const cid = profile?.company_id

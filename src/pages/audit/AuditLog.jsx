@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
+import { withLoadTimeout } from '../../lib/withLoadTimeout'
 import Icon from '../../components/ui/Icon'
 
 const ACTION_COLORS = {
@@ -43,17 +44,20 @@ export default function AuditLog() {
 
   useEffect(() => { if (profile?.company_id) load() }, [profile])
 
-  async function load() {
+  const load = withLoadTimeout(async function load() {
     setLoading(true)
-    const { data } = await supabase
-      .from('audit_log')
-      .select('*')
-      .eq('company_id', profile.company_id)
-      .order('created_at', { ascending: false })
-      .limit(200)
-    setEvents(data || [])
-    setLoading(false)
-  }
+    try {
+      const { data } = await supabase
+        .from('audit_log')
+        .select('*')
+        .eq('company_id', profile.company_id)
+        .order('created_at', { ascending: false })
+        .limit(200)
+      setEvents(data || [])
+    } finally {
+      setLoading(false)
+    }
+  }, { setLoading })
 
   const filtered = useMemo(() => events.filter(e => {
     if (filterAction !== 'all' && e.action !== filterAction) return false

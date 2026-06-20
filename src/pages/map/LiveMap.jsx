@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, Marker, Popup, Circle } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useAuth } from '../../context/AuthContext'
+import { withLoadTimeout } from '../../lib/withLoadTimeout'
 import { supabase } from '../../lib/supabase'
 import Icon from '../../components/ui/Icon'
 
@@ -81,28 +82,29 @@ export default function LiveMap() {
 
   useEffect(() => { if (profile?.company_id) load() }, [profile])
 
-  async function load() {
+  const load = withLoadTimeout(async function load() {
     setLoading(true)
-    const today = new Date().toISOString().slice(0, 10)
-    const since5min = new Date(Date.now() - 5*60000).toISOString()
-    const since30min = new Date(Date.now() - 30*60000).toISOString()
-    const [{ data: siteData }, { data: tsData }, { data: empData }, { data: locData }] = await Promise.all([
-      supabase.from('site').select('id,name,city,state,latitude,longitude,address').eq('company_id', profile.company_id),
-      supabase.from('timesheet').select('id,employee_id,site_id,clock_in').eq('company_id', profile.company_id).is('clock_out', null).eq('date', today),
-      supabase.from('employee').select('id,first_name,last_name,role,position_title').eq('company_id', profile.company_id).eq('status', 'active'),
-      supabase.from('employee_location').select('*').eq('company_id', profile.company_id).gte('recorded_at', since30min).order('recorded_at', {ascending:false}),
-    ])
-    setSites(siteData || [])
-    setActive(tsData || [])
-    setEmployees(empData || [])
-    // Keep only the most recent location per employee
-    const latestByEmp = {}
-    for (const loc of (locData||[])) {
-      if (!latestByEmp[loc.employee_id]) latestByEmp[loc.employee_id] = loc
+    try {
+      const today = new Date().toISOString().slice(0, 10)
+      const since30min = new Date(Date.now() - 30*60000).toISOString()
+      const [{ data: siteData }, { data: tsData }, { data: empData }, { data: locData }] = await Promise.all([
+        supabase.from('site').select('id,name,city,state,latitude,longitude,address').eq('company_id', profile.company_id),
+        supabase.from('timesheet').select('id,employee_id,site_id,clock_in').eq('company_id', profile.company_id).is('clock_out', null).eq('date', today),
+        supabase.from('employee').select('id,first_name,last_name,role,position_title').eq('company_id', profile.company_id).eq('status', 'active'),
+        supabase.from('employee_location').select('*').eq('company_id', profile.company_id).gte('recorded_at', since30min).order('recorded_at', {ascending:false}),
+      ])
+      setSites(siteData || [])
+      setActive(tsData || [])
+      setEmployees(empData || [])
+      const latestByEmp = {}
+      for (const loc of (locData||[])) {
+        if (!latestByEmp[loc.employee_id]) latestByEmp[loc.employee_id] = loc
+      }
+      setEmpLocations(Object.values(latestByEmp))
+    } finally {
+      setLoading(false)
     }
-    setEmpLocations(Object.values(latestByEmp))
-    setLoading(false)
-  }
+  }, { setLoading })
 
   const empMap = Object.fromEntries((employees || []).map(e => [e.id, e]))
 

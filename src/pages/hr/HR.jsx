@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
+import { withLoadTimeout } from '../../lib/withLoadTimeout'
 import { ROLE_LABELS, atLeast } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
 import SignaturePad from '../../components/ui/SignaturePad'
@@ -89,7 +90,7 @@ export default function HR() {
 
   useEffect(() => { if (profile?.company_id) load() }, [profile])
 
-  async function load() {
+  const load = withLoadTimeout(async function load() {
     setLoading(true)
     try {
       const [{ data: eData }, { data: dData }, { data: wData }] = await Promise.all([
@@ -104,7 +105,7 @@ export default function HR() {
     } finally {
       setLoading(false)
     }
-  }
+  }, { setLoading })
 
   const empDocs = (empId) => docs.filter(d => d.employee_id === empId)
 
@@ -775,7 +776,7 @@ function ViolationsTab({ companyId }) {
 
   useEffect(() => { if (companyId) loadV() }, [companyId])
 
-  async function loadV() {
+  const loadV = withLoadTimeout(async function loadV() {
     setLoading(true)
     try {
       const [{ data: vData }, { data: eData }, { data: sData }] = await Promise.all([
@@ -788,7 +789,7 @@ function ViolationsTab({ companyId }) {
     } finally {
       setLoading(false)
     }
-  }
+  }, { setLoading })
 
   const empMap  = Object.fromEntries((employees||[]).map(e=>[e.id,`${e.first_name} ${e.last_name}`]))
   const siteMap = Object.fromEntries((sites||[]).map(sv=>[sv.id,sv.name]))
@@ -862,7 +863,7 @@ function RecognitionTab({ companyId, profile, employees }) {
   const [myEmpId, setMyEmpId] = useState(null)
   const empMap = Object.fromEntries(employees.map(e=>[e.id,`${e.first_name} ${e.last_name}`]))
   useEffect(() => { if (!companyId) return; load(); supabase.from('employee').select('id').eq('user_id',profile.id).single().then(({data})=>setMyEmpId(data?.id)) }, [companyId])
-  async function load() {
+  const load = withLoadTimeout(async function load() {
     setLoading(true)
     try {
       const { data } = await supabase.from('recognition').select('*').eq('company_id',companyId).order('created_at',{ascending:false}).limit(50)
@@ -871,7 +872,7 @@ function RecognitionTab({ companyId, profile, employees }) {
     } finally {
       setLoading(false)
     }
-  }
+  }, { setLoading })
   async function submit() {
     if (!form.employee_id||!form.message.trim()) return
     setSaving(true)
@@ -936,7 +937,7 @@ function CompanyDocsTab({ profile, companyId, canEdit }) {
 
   useEffect(() => { loadDocs() }, [companyId])
 
-  async function loadDocs() {
+  const loadDocs = withLoadTimeout(async function loadDocs() {
     setLoading(true)
     try {
       const { data } = await supabase.from('hr_document').select('*').eq('company_id', companyId).eq('is_active', true).order('created_at', { ascending: false })
@@ -955,7 +956,7 @@ function CompanyDocsTab({ profile, companyId, canEdit }) {
     } finally {
       setLoading(false)
     }
-  }
+  }, { setLoading })
 
   async function acknowledge(doc) {
     const { data: emp } = await supabase.from('employee').select('id').eq('email', profile.email || '').eq('company_id', companyId).maybeSingle()
@@ -1083,7 +1084,7 @@ function PolicyManagementTab({ companyId }) {
 
   useEffect(() => { if (companyId) load() }, [companyId])
 
-  async function load() {
+  const load = withLoadTimeout(async function load() {
     setLoading(true)
     try {
       const { data } = await supabase.from('company_policy').select('*').eq('company_id', companyId).order('category')
@@ -1092,7 +1093,7 @@ function PolicyManagementTab({ companyId }) {
     } finally {
       setLoading(false)
     }
-  }
+  }, { setLoading })
 
   async function save() {
     if (!form.title.trim()) return
@@ -1220,7 +1221,7 @@ function PTOSettingsTab({ companyId }) {
 
   useEffect(() => { load() }, [companyId])
 
-  async function load() {
+  const load = withLoadTimeout(async function load() {
     setLoading(true)
     try {
       const [{ data: cfgData }, { data: balData }, { data: empData }] = await Promise.all([
@@ -1240,7 +1241,7 @@ function PTOSettingsTab({ companyId }) {
     } finally {
       setLoading(false)
     }
-  }
+  }, { setLoading })
 
   function setField(bankType, field, value) {
     setConfigs(prev => ({ ...prev, [bankType]: { ...prev[bankType], [field]: value } }))

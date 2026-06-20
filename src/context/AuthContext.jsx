@@ -12,6 +12,7 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
   const [viewRole, setViewRoleState] = useState(null)
+  const [needsPassword, setNeedsPassword] = useState(false)
   const userRef          = useRef(null)
   const loadingTimeoutRef = useRef(null)
   const loadingProfileRef = useRef(false)                        // concurrency guard
@@ -90,18 +91,23 @@ export function AuthProvider({ children }) {
       if (profile) {
         // Backfill name from employee record if missing
         if (!profile.first_name && user?.email) {
-          const { data: emp } = await supabase
-            .from('employee')
-            .select('first_name, last_name, company_id, role')
-            .eq('email', user.email)
-            .maybeSingle()
+          const { data: emp } = await withTimeout(
+            supabase.from('employee')
+              .select('first_name, last_name, company_id, role')
+              .eq('email', user.email)
+              .maybeSingle(),
+            'employee name-backfill SELECT'
+          )
           if (emp?.first_name) {
-            await supabase.from('user_profile').update({
-              first_name: emp.first_name,
-              last_name:  emp.last_name  || profile.last_name,
-              company_id: emp.company_id || profile.company_id,
-              role:       emp.role       || profile.role,
-            }).eq('id', userId)
+            withTimeout(
+              supabase.from('user_profile').update({
+                first_name: emp.first_name,
+                last_name:  emp.last_name  || profile.last_name,
+                company_id: emp.company_id || profile.company_id,
+                role:       emp.role       || profile.role,
+              }).eq('id', userId),
+              'user_profile name-backfill UPDATE'
+            ).catch(() => {})
             profile.first_name = emp.first_name
             profile.last_name  = emp.last_name  || profile.last_name
             if (emp.company_id && !profile.company_id) profile.company_id = emp.company_id
@@ -111,16 +117,44 @@ export function AuthProvider({ children }) {
         // Guard: if company_id is still null, fetch from employee regardless of first_name
         if (!profile.company_id && user?.email) {
           console.log('[Auth] profile.company_id is null — querying employee for company_id')
-          const { data: emp } = await supabase
-            .from('employee')
-            .select('company_id')
-            .eq('email', user.email)
-            .maybeSingle()
+          const { data: emp } = await withTimeout(
+            supabase.from('employee')
+              .select('company_id')
+              .eq('email', user.email)
+              .maybeSingle(),
+            'employee company_id-backfill SELECT'
+          )
           if (emp?.company_id) {
             console.log('[Auth] backfilling company_id from employee:', emp.company_id)
-            await supabase.from('user_profile').update({ company_id: emp.company_id }).eq('id', userId)
+            withTimeout(
+              supabase.from('user_profile').update({ company_id: emp.company_id }).eq('id', userId),
+              'user_profile company_id-backfill UPDATE'
+            ).catch(() => {})
             profile.company_id = emp.company_id
           }
+        }
+
+        // For returning users: check whether they still need to complete password setup.
+        // Only password_set === false (strict) triggers the redirect — null means legacy
+        // user (column didn't exist when they accepted), true means already completed.
+        if (profile.role !== 'client') {
+          const { data: pwRow } = await withTimeout(
+            supabase.from('employee')
+              .select('password_set')
+              .eq('user_id', userId)
+              .maybeSingle(),
+            'employee password_set SELECT'
+          )
+          if (pwRow?.password_set === false) setNeedsPassword(true)
+        } else {
+          const { data: pwRow } = await withTimeout(
+            supabase.from('client_contact')
+              .select('password_set')
+              .eq('portal_user_id', userId)
+              .maybeSingle(),
+            'client_contact password_set SELECT'
+          )
+          if (pwRow?.password_set === false) setNeedsPassword(true)
         }
       } else {
         // No profile row yet — look up employee by email for reliable data.
@@ -131,7 +165,7 @@ export function AuthProvider({ children }) {
 
         const { data: emp } = await withTimeout(
           supabase.from('employee')
-            .select('id, company_id, role, first_name, last_name')
+            .select('id, company_id, role, first_name, last_name, invitation_status')
             .eq('email', user?.email || '')
             .maybeSingle(),
           'employee SELECT'
@@ -154,13 +188,23 @@ export function AuthProvider({ children }) {
 
           if (created) {
             profile = created
+            // Fresh acceptance: invitation_status was 'sent' before this first login.
+            // Set password_set: false so the app forces /set-password before the dashboard.
+            // Existing employees (invitation_status already 'accepted') are NOT affected.
+            const isFreshAcceptance = emp.invitation_status === 'sent'
             // Fire-and-forget: don't let a slow UPDATE hold up profile resolution
             withTimeout(
               supabase.from('employee')
-                .update({ has_app_access: true, invitation_status: 'accepted', user_id: userId })
+                .update({
+                  has_app_access: true,
+                  invitation_status: 'accepted',
+                  user_id: userId,
+                  ...(isFreshAcceptance ? { password_set: false } : {}),
+                })
                 .eq('id', emp.id),
               'employee UPDATE'
             ).catch(() => {})
+            if (isFreshAcceptance) setNeedsPassword(true)
           } else {
             // INSERT timed out or returned nothing — drop to metadata fallback
             usedMetadataFallback = true
@@ -169,7 +213,7 @@ export function AuthProvider({ children }) {
           // No employee record — check if this is a client contact
           const { data: contact } = await withTimeout(
             supabase.from('client_contact')
-              .select('id, client_id, company_id, full_name')
+              .select('id, client_id, company_id, full_name, invite_status')
               .eq('email', user?.email || '')
               .maybeSingle(),
             'client_contact SELECT'
@@ -195,13 +239,21 @@ export function AuthProvider({ children }) {
 
             if (created) {
               profile = created
+              // Fresh acceptance: invite_status was null (never 'sent' in client flow)
+              // before this first login. Set password_set: false to force /set-password.
+              const isFreshClientAcceptance = contact.invite_status !== 'accepted'
               // Fire-and-forget: don't block on the contact update
               withTimeout(
                 supabase.from('client_contact')
-                  .update({ portal_user_id: userId, invite_status: 'accepted' })
+                  .update({
+                    portal_user_id: userId,
+                    invite_status: 'accepted',
+                    ...(isFreshClientAcceptance ? { password_set: false } : {}),
+                  })
                   .eq('id', contact.id),
                 'client_contact UPDATE'
               ).catch(() => {})
+              if (isFreshClientAcceptance) setNeedsPassword(true)
             } else {
               // INSERT timed out or returned nothing — drop to metadata fallback
               usedMetadataFallback = true
@@ -224,7 +276,10 @@ export function AuthProvider({ children }) {
             role:       meta?.role       || 'officer',
           }
           try {
-            await supabase.from('user_profile').insert(fresh)
+            await withTimeout(
+              supabase.from('user_profile').insert(fresh),
+              'user_profile metadata-fallback INSERT'
+            )
           } catch (e) {
             console.warn('[Auth] fallback profile insert failed (RLS may have blocked it):', e?.message)
           }
@@ -315,13 +370,16 @@ export function AuthProvider({ children }) {
         await loadProfile(session.user.id, session.user)
         console.log('[Auth] SIGNED_IN — loadProfile resolved')
 
-        // On magic link login: mark employee record as having app access
+        // Belt-and-suspenders for magic link: only fires when invitation_status is still
+        // 'sent' (fresh acceptance). The filter prevents this from overwriting password_set
+        // on repeat logins where invitation_status is already 'accepted'.
         const meta = session.user.user_metadata
         if (meta?.company_id && session.user.email) {
           supabase.from('employee')
-            .update({ has_app_access: true, invitation_status: 'accepted' })
+            .update({ has_app_access: true, invitation_status: 'accepted', password_set: false })
             .eq('email', session.user.email)
             .eq('company_id', meta.company_id)
+            .eq('invitation_status', 'sent')
             .then(() => {}).catch(() => {})
         }
       } else if ((event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') && session?.user) {
@@ -390,6 +448,7 @@ export function AuthProvider({ children }) {
     setUser(null)
     setProfile(null)
     setViewRoleState(null)
+    setNeedsPassword(false)
   }
 
   return (
@@ -403,7 +462,9 @@ export function AuthProvider({ children }) {
       exitViewAs,
       companyId: profile?.company_id,
       isNPS,
-      isAuthenticated: !!user
+      isAuthenticated: !!user,
+      needsPassword,
+      onPasswordSet: () => setNeedsPassword(false),
     }}>
       {children}
     </AuthContext.Provider>

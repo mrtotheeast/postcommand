@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
+import { withLoadTimeout } from '../../lib/withLoadTimeout'
 import { atLeast } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
 import { useToast } from '../../components/ui/Toast'
@@ -49,7 +50,7 @@ export default function ClientManagement() {
 
   useEffect(() => { if (profile?.company_id) load() }, [profile])
 
-  async function load() {
+  const load = withLoadTimeout(async function load() {
     setLoading(true)
     try {
       const [{ data:cl }, { data:si }, { data:ct }] = await Promise.all([
@@ -70,7 +71,7 @@ export default function ClientManagement() {
     } finally {
       setLoading(false)
     }
-  }
+  }, { setLoading })
 
   async function handleDelete(client) {
     const linkedSites = sites.filter(s => s.client_id === client.id)
@@ -241,9 +242,11 @@ function ClientOnboarding({ client, companyId }) {
   const [saving,   setSaving]   = useState(false)
   const [saved,    setSaved]    = useState(false)
   useEffect(() => {
+    const _timer = setTimeout(() => setLoading(false), 10_000)
     supabase.from('client_onboarding').select('*').eq('client_id',client.id).single()
       .then(({data}) => { if (data?.steps) setSteps(data.steps) })
-      .finally(() => setLoading(false))
+      .finally(() => { clearTimeout(_timer); setLoading(false) })
+    return () => clearTimeout(_timer)
   }, [client.id])
   async function save() {
     setSaving(true)
@@ -288,8 +291,10 @@ function ClientContracts({ client, companyId }) {
   const [saving,    setSaving]    = useState(false)
 
   useEffect(() => {
+    const _timer = setTimeout(() => setLoading(false), 10_000)
     supabase.from('client_contract').select('*').eq('client_id',client.id).order('created_at',{ascending:false})
-      .then(({data})=>setContracts(data||[])).finally(()=>setLoading(false))
+      .then(({data})=>setContracts(data||[])).finally(()=>{ clearTimeout(_timer); setLoading(false) })
+    return () => clearTimeout(_timer)
   }, [client.id])
 
   async function save() {

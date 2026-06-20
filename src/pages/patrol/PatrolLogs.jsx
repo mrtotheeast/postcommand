@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, Marker, Polyline, Popup } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useAuth } from '../../context/AuthContext'
+import { withLoadTimeout } from '../../lib/withLoadTimeout'
 import { supabase } from '../../lib/supabase'
 import { atLeast } from '../../config/roles'
 import { scopeToOwnEmployee } from '../../lib/scoping'
@@ -109,7 +110,7 @@ export default function PatrolLogs() {
 
   useEffect(() => { if (profile?.company_id) load() }, [profile])
 
-  async function load() {
+  const load = withLoadTimeout(async function load() {
     if (!profile?.company_id) return
     setLoading(true)
     try {
@@ -140,7 +141,7 @@ export default function PatrolLogs() {
     } finally {
       setLoading(false)
     }
-  }
+  }, { setLoading })
 
   async function startPatrol(siteId) {
     if (!employee || !siteId) return

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
+import { withLoadTimeout } from '../../lib/withLoadTimeout'
 import { atLeast } from '../../config/roles'
 import { scopeToOwnEmployee } from '../../lib/scoping'
 import Icon from '../../components/ui/Icon'
@@ -27,7 +28,7 @@ export default function Availability() {
 
   useEffect(() => { if (profile?.company_id) load() }, [profile])
 
-  async function load() {
+  const load = withLoadTimeout(async function load() {
     setLoading(true)
     try {
       const [{ data: empMe }, { data: myData }, { data: teamData }, { data: empAll }] = await Promise.all([
@@ -45,7 +46,7 @@ export default function Availability() {
     } finally {
       setLoading(false)
     }
-  }
+  }, { setLoading })
 
   async function addBlockedDate() {
     if (!newDate || !myEmpId) return

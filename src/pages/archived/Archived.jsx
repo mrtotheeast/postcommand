@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
+import { withLoadTimeout } from '../../lib/withLoadTimeout'
 import { ROLE_LABELS } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
 
@@ -69,16 +70,19 @@ function ArchivedEmployees({ companyId, search, acting, setActing }) {
 
   useEffect(() => { load() }, [companyId])
 
-  async function load() {
+  const load = withLoadTimeout(async function load() {
     setLoading(true)
-    const { data } = await supabase.from('employee')
-      .select('id,first_name,last_name,role,status,position_title,terminated_date,email')
-      .eq('company_id', companyId)
-      .in('status', ['terminated','inactive','suspended'])
-      .order('last_name')
-    setEmployees(data || [])
-    setLoading(false)
-  }
+    try {
+      const { data } = await supabase.from('employee')
+        .select('id,first_name,last_name,role,status,position_title,terminated_date,email')
+        .eq('company_id', companyId)
+        .in('status', ['terminated','inactive','suspended'])
+        .order('last_name')
+      setEmployees(data || [])
+    } finally {
+      setLoading(false)
+    }
+  }, { setLoading })
 
   async function restore(emp) {
     setActing(emp.id)
@@ -145,15 +149,19 @@ function ArchivedSites({ companyId, search, acting, setActing }) {
 
   useEffect(() => { load() }, [companyId])
 
-  async function load() {
+  const load = withLoadTimeout(async function load() {
     setLoading(true)
-    const { data } = await supabase.from('site')
-      .select('id,name,city,state,address')
-      .eq('company_id', companyId)
-      .eq('is_active', false)
-      .order('name')
-    setSites(data || []); setLoading(false)
-  }
+    try {
+      const { data } = await supabase.from('site')
+        .select('id,name,city,state,address')
+        .eq('company_id', companyId)
+        .eq('is_active', false)
+        .order('name')
+      setSites(data || [])
+    } finally {
+      setLoading(false)
+    }
+  }, { setLoading })
 
   async function restore(site) {
     setActing(site.id)
@@ -212,15 +220,19 @@ function ArchivedIncidents({ companyId, search, acting, setActing }) {
 
   useEffect(() => { load() }, [companyId])
 
-  async function load() {
+  const load = withLoadTimeout(async function load() {
     setLoading(true)
-    const { data } = await supabase.from('incident_report')
-      .select('id,cad_number,incident_type,status,created_at,site_id')
-      .eq('company_id', companyId)
-      .eq('status', 'void')
-      .order('created_at', { ascending:false })
-    setIncidents(data || []); setLoading(false)
-  }
+    try {
+      const { data } = await supabase.from('incident_report')
+        .select('id,cad_number,incident_type,status,created_at,site_id')
+        .eq('company_id', companyId)
+        .eq('status', 'void')
+        .order('created_at', { ascending:false })
+      setIncidents(data || [])
+    } finally {
+      setLoading(false)
+    }
+  }, { setLoading })
 
   async function restore(inc) {
     setActing(inc.id)

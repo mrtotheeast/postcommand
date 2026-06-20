@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
+import { withLoadTimeout } from '../../lib/withLoadTimeout'
 import { useToast } from '../../components/ui/Toast'
 import { ROLE_LEVELS, ROLE_LABELS } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
@@ -209,73 +210,75 @@ export default function OpenShifts() {
 
   useEffect(() => { if (profile?.company_id) load() }, [profile])
 
-  async function load() {
+  const load = withLoadTimeout(async function load() {
     if (!profile?.company_id) return
     setLoading(true)
-
-    const { data: empRow } = await supabase
-      .from('employee')
-      .select('id')
-      .eq('company_id', profile.company_id)
-      .eq('user_id', profile.id)
-      .maybeSingle()
-
-    const myEmpId = empRow?.id || null
-    setEmpId(myEmpId)
-
-    const now = new Date().toISOString()
-
-    const [sitesR, openR, csR, myR, empsR] = await Promise.all([
-      supabase.from('site').select('id,name,city,state').eq('company_id', profile.company_id),
-      supabase.from('open_shift').select('*').eq('company_id', profile.company_id).eq('status', 'open').order('created_at', { ascending: false }),
-      supabase.from('company_settings')
-        .select('ot_weekly_hours,ot_week_start,shift_drop_min_hours_before,shift_swap_min_hours_before')
+    try {
+      const { data: empRow } = await supabase
+        .from('employee')
+        .select('id')
         .eq('company_id', profile.company_id)
-        .maybeSingle(),
-      myEmpId
-        ? supabase.from('shift').select('*')
-            .eq('employee_id', myEmpId)
-            .eq('company_id', profile.company_id)
-            .neq('status', 'cancelled')
-            .gte('start_time', now)
-            .order('start_time')
-            .limit(30)
-        : Promise.resolve({ data: [] }),
-      supabase.from('employee')
-        .select('id,first_name,last_name,role,position_title')
-        .eq('company_id', profile.company_id)
-        .eq('status', 'active')
-        .or('invitation_status.eq.accepted,has_app_access.eq.true')
-        .order('last_name'),
-    ])
+        .eq('user_id', profile.id)
+        .maybeSingle()
 
-    const siteList = sitesR.data || []
-    const allOpen  = openR.data  || []
+      const myEmpId = empRow?.id || null
+      setEmpId(myEmpId)
 
-    const shiftIds = [...new Set(allOpen.map(os => os.shift_id).filter(Boolean))]
-    let shiftMap = {}
-    if (shiftIds.length > 0) {
-      const { data: sd } = await supabase.from('shift').select('*').in('id', shiftIds)
-      ;(sd || []).forEach(s => { shiftMap[s.id] = s })
+      const now = new Date().toISOString()
+
+      const [sitesR, openR, csR, myR, empsR] = await Promise.all([
+        supabase.from('site').select('id,name,city,state').eq('company_id', profile.company_id),
+        supabase.from('open_shift').select('*').eq('company_id', profile.company_id).eq('status', 'open').order('created_at', { ascending: false }),
+        supabase.from('company_settings')
+          .select('ot_weekly_hours,ot_week_start,shift_drop_min_hours_before,shift_swap_min_hours_before')
+          .eq('company_id', profile.company_id)
+          .maybeSingle(),
+        myEmpId
+          ? supabase.from('shift').select('*')
+              .eq('employee_id', myEmpId)
+              .eq('company_id', profile.company_id)
+              .neq('status', 'cancelled')
+              .gte('start_time', now)
+              .order('start_time')
+              .limit(30)
+          : Promise.resolve({ data: [] }),
+        supabase.from('employee')
+          .select('id,first_name,last_name,role,position_title')
+          .eq('company_id', profile.company_id)
+          .eq('status', 'active')
+          .or('invitation_status.eq.accepted,has_app_access.eq.true')
+          .order('last_name'),
+      ])
+
+      const siteList = sitesR.data || []
+      const allOpen  = openR.data  || []
+
+      const shiftIds = [...new Set(allOpen.map(os => os.shift_id).filter(Boolean))]
+      let shiftMap = {}
+      if (shiftIds.length > 0) {
+        const { data: sd } = await supabase.from('shift').select('*').in('id', shiftIds)
+        ;(sd || []).forEach(s => { shiftMap[s.id] = s })
+      }
+
+      const merged = allOpen
+        .map(os => ({
+          ...os,
+          shift: os.shift_id ? shiftMap[os.shift_id] || null : null,
+          site:  siteList.find(s => s.id === os.site_id) || null,
+        }))
+        .filter(os => os.shift)
+
+      const availableSources = ['dropped', 'swap_pool']
+      setSites(siteList)
+      setOpenShifts(merged.filter(os => !availableSources.includes(os.source)))
+      setAvailableShifts(merged.filter(os => availableSources.includes(os.source)))
+      setOtSettings(csR.data || null)
+      setMyShifts(myR.data || [])
+      setEmployees((empsR.data || []).filter(e => e.id !== myEmpId))
+    } finally {
+      setLoading(false)
     }
-
-    const merged = allOpen
-      .map(os => ({
-        ...os,
-        shift: os.shift_id ? shiftMap[os.shift_id] || null : null,
-        site:  siteList.find(s => s.id === os.site_id) || null,
-      }))
-      .filter(os => os.shift)
-
-    const availableSources = ['dropped', 'swap_pool']
-    setSites(siteList)
-    setOpenShifts(merged.filter(os => !availableSources.includes(os.source)))
-    setAvailableShifts(merged.filter(os => availableSources.includes(os.source)))
-    setOtSettings(csR.data || null)
-    setMyShifts(myR.data || [])
-    setEmployees((empsR.data || []).filter(e => e.id !== myEmpId))
-    setLoading(false)
-  }
+  }, { setLoading })
 
   function siteName(id) {
     const s = sites.find(s => s.id === id)

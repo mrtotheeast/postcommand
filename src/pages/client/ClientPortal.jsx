@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { useTheme } from '../../context/ThemeContext'
 import { supabase } from '../../lib/supabase'
+import { withLoadTimeout } from '../../lib/withLoadTimeout'
 import Icon from '../../components/ui/Icon'
 import { MapContainer, TileLayer, Marker, Circle, Popup } from 'react-leaflet'
 import L from 'leaflet'
@@ -69,24 +70,27 @@ export default function ClientPortal() {
 
   useEffect(() => { if (profile?.company_id) load() }, [profile])
 
-  async function load() {
+  const load = withLoadTimeout(async function load() {
     setLoading(true)
-    const today = new Date().toISOString().slice(0, 10)
-    const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString()
-    const [{ data: siteData }, { data: tsData }, { data: incData }, { data: shiftData }, { data: empData }] = await Promise.all([
-      supabase.from('site').select('id,name,city,state,latitude,longitude,geofence_radius,is_active').eq('company_id', profile.company_id).eq('is_active', true),
-      supabase.from('timesheet').select('id,employee_id,site_id,clock_in').eq('company_id', profile.company_id).is('clock_out', null).eq('date', today),
-      supabase.from('incident_report').select('id,cad_number,incident_type,status,created_at,site_id,summary').eq('company_id', profile.company_id).in('status', ['approved','reviewed']).gte('created_at', weekAgo).order('created_at', { ascending:false }).limit(20),
-      supabase.from('shift').select('id,employee_id,site_id,start_time,end_time,position_title,status').eq('company_id', profile.company_id).eq('status','published').gte('start_time', today + 'T00:00:00').order('start_time').limit(30),
-      supabase.from('employee').select('id,first_name,last_name,role,position_title').eq('company_id', profile.company_id).eq('status','active'),
-    ])
-    setSites(siteData || [])
-    setActiveTS(tsData || [])
-    setIncidents(incData || [])
-    setShifts(shiftData || [])
-    setEmployees(empData || [])
-    setLoading(false)
-  }
+    try {
+      const today = new Date().toISOString().slice(0, 10)
+      const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString()
+      const [{ data: siteData }, { data: tsData }, { data: incData }, { data: shiftData }, { data: empData }] = await Promise.all([
+        supabase.from('site').select('id,name,city,state,latitude,longitude,geofence_radius,is_active').eq('company_id', profile.company_id).eq('is_active', true),
+        supabase.from('timesheet').select('id,employee_id,site_id,clock_in').eq('company_id', profile.company_id).is('clock_out', null).eq('date', today),
+        supabase.from('incident_report').select('id,cad_number,incident_type,status,created_at,site_id,summary').eq('company_id', profile.company_id).in('status', ['approved','reviewed']).gte('created_at', weekAgo).order('created_at', { ascending:false }).limit(20),
+        supabase.from('shift').select('id,employee_id,site_id,start_time,end_time,position_title,status').eq('company_id', profile.company_id).eq('status','published').gte('start_time', today + 'T00:00:00').order('start_time').limit(30),
+        supabase.from('employee').select('id,first_name,last_name,role,position_title').eq('company_id', profile.company_id).eq('status','active'),
+      ])
+      setSites(siteData || [])
+      setActiveTS(tsData || [])
+      setIncidents(incData || [])
+      setShifts(shiftData || [])
+      setEmployees(empData || [])
+    } finally {
+      setLoading(false)
+    }
+  }, { setLoading })
 
   const empMap    = Object.fromEntries((employees || []).map(e => [e.id, e]))
   const siteMap   = Object.fromEntries((sites || []).map(s => [s.id, s]))
@@ -438,12 +442,15 @@ function ServiceRequestsTab({ companyId, profile, sites }) {
 
   useEffect(() => { if (companyId) load() }, [companyId])
 
-  async function load() {
+  const load = withLoadTimeout(async function load() {
     setLoading(true)
-    const { data } = await supabase.from('service_request').select('*').eq('company_id', companyId).order('created_at', { ascending:false })
-    setRequests(data || [])
-    setLoading(false)
-  }
+    try {
+      const { data } = await supabase.from('service_request').select('*').eq('company_id', companyId).order('created_at', { ascending:false })
+      setRequests(data || [])
+    } finally {
+      setLoading(false)
+    }
+  }, { setLoading })
 
   async function submit() {
     if (!form.description.trim()) return
@@ -658,29 +665,35 @@ function InvoicesTab({ companyId, profile }) {
 
   useEffect(() => {
     if (!companyId || !profile?.email) { setLoading(false); return }
+    const _timer = setTimeout(() => setLoading(false), 10_000)
     async function load() {
-      const { data: contactData } = await supabase
-        .from('client_contact')
-        .select('id,client_id')
-        .eq('email', profile.email)
-        .eq('company_id', companyId)
-        .maybeSingle()
+      try {
+        const { data: contactData } = await supabase
+          .from('client_contact')
+          .select('id,client_id')
+          .eq('email', profile.email)
+          .eq('company_id', companyId)
+          .maybeSingle()
 
-      if (!contactData?.client_id) { setLoading(false); return }
-      setHasClient(true)
-      setContactId(contactData.id || null)
+        if (!contactData?.client_id) { return }
+        setHasClient(true)
+        setContactId(contactData.id || null)
 
-      const { data } = await supabase
-        .from('invoice')
-        .select('id,invoice_number,issue_date,due_date,total,status,pdf_url')
-        .eq('company_id', companyId)
-        .eq('client_id', contactData.client_id)
-        .order('created_at', { ascending: false })
+        const { data } = await supabase
+          .from('invoice')
+          .select('id,invoice_number,issue_date,due_date,total,status,pdf_url')
+          .eq('company_id', companyId)
+          .eq('client_id', contactData.client_id)
+          .order('created_at', { ascending: false })
 
-      setInvoices(data || [])
-      setLoading(false)
+        setInvoices(data || [])
+      } finally {
+        clearTimeout(_timer)
+        setLoading(false)
+      }
     }
     load()
+    return () => clearTimeout(_timer)
   }, [companyId, profile?.email])
 
   // Log a view for each invoice when the client opens the Invoices tab (once per mount)

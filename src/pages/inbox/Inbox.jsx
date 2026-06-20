@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
+import { withLoadTimeout } from '../../lib/withLoadTimeout'
 import Icon from '../../components/ui/Icon'
 
 export default function Inbox() {
@@ -14,16 +15,19 @@ export default function Inbox() {
     if (profile?.id) load()
   }, [profile])
 
-  async function load() {
+  const load = withLoadTimeout(async function load() {
     setLoading(true)
-    const { data } = await supabase
-      .from('dar_recipient')
-      .select('id, dar_id, read_at, created_at, dar:dar_id(id, shift_label, shift_date, status, created_at, site:site_id(name))')
-      .eq('user_id', profile.id)
-      .order('created_at', { ascending: false })
-    setItems(data || [])
-    setLoading(false)
-  }
+    try {
+      const { data } = await supabase
+        .from('dar_recipient')
+        .select('id, dar_id, read_at, created_at, dar:dar_id(id, shift_label, shift_date, status, created_at, site:site_id(name))')
+        .eq('user_id', profile.id)
+        .order('created_at', { ascending: false })
+      setItems(data || [])
+    } finally {
+      setLoading(false)
+    }
+  }, { setLoading })
 
   async function openItem(item) {
     setSelected(item)

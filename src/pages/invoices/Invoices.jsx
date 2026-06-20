@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
+import { withLoadTimeout } from '../../lib/withLoadTimeout'
 import Icon from '../../components/ui/Icon'
 import { exportInvoicePDF } from '../../lib/pdfExport'
 import { useToast } from '../../components/ui/Toast'
@@ -82,7 +83,7 @@ export default function Invoices() {
     }
   }, [profile])
 
-  async function load() {
+  const load = withLoadTimeout(async function load() {
     setLoading(true)
     try {
       const { data } = await supabase.from('invoice').select('*, invoice_item(*), client:client_id(name)').eq('company_id', profile.company_id).order('created_at', { ascending:false })
@@ -102,7 +103,7 @@ export default function Invoices() {
     } finally {
       setLoading(false)
     }
-  }
+  }, { setLoading })
 
   const filtered = useMemo(() => invoices.filter(inv => {
     if (filterStatus !== 'all' && inv.status !== filterStatus) return false

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
+import { withLoadTimeout } from '../../lib/withLoadTimeout'
 import { atLeast, ROLE_LABELS } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
 import { useToast } from '../../components/ui/Toast'
@@ -55,14 +56,18 @@ export default function PerformanceReviews() {
   const [histEmp,   setHistEmp]   = useState(null)  // employee history panel
   const [search,    setSearch]    = useState('')
   useEffect(() => { if (profile?.company_id) load() }, [profile])
-  async function load() {
+  const load = withLoadTimeout(async function load() {
     setLoading(true)
-    const [{ data:emps }, { data:revs }] = await Promise.all([
-      supabase.from('employee').select('id,first_name,last_name,role,position_title,status').eq('company_id',profile.company_id).eq('status','active').order('last_name'),
-      supabase.from('performance_review').select('*').eq('company_id',profile.company_id).order('created_at',{ascending:false}),
-    ])
-    setEmployees(emps||[]); setReviews(revs||[]); setLoading(false)
-  }
+    try {
+      const [{ data:emps }, { data:revs }] = await Promise.all([
+        supabase.from('employee').select('id,first_name,last_name,role,position_title,status').eq('company_id',profile.company_id).eq('status','active').order('last_name'),
+        supabase.from('performance_review').select('*').eq('company_id',profile.company_id).order('created_at',{ascending:false}),
+      ])
+      setEmployees(emps||[]); setReviews(revs||[])
+    } finally {
+      setLoading(false)
+    }
+  }, { setLoading })
   const filtered = useMemo(() => employees.filter(e => !search || `${e.first_name} ${e.last_name}`.toLowerCase().includes(search.toLowerCase())), [employees,search])
   const empReviews = (id) => reviews.filter(r=>r.employee_id===id)
   const lastReview = (id) => { const r=empReviews(id); return r.length ? r[0] : null }

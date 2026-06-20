@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
+import { withLoadTimeout } from '../../lib/withLoadTimeout'
 import { atLeast } from '../../config/roles'
 import { isOwnDataOnly } from '../../lib/scoping'
 import { isNative } from '../../lib/platform'
@@ -56,21 +57,24 @@ export default function Incidents() {
 
   useEffect(() => { loadReports() }, [profile?.company_id, profile?.role])
 
-  async function loadReports() {
+  const loadReports = withLoadTimeout(async function loadReports() {
     if (!profile?.company_id) return
     setLoading(true)
-    let q = supabase.from('incident_report').select('*').eq('company_id', profile.company_id).order('created_at', { ascending: false })
-    if (!atLeast(profile?.role, 'lieutenant')) {
-      q = q.or('is_confidential.is.null,is_confidential.eq.false')
+    try {
+      let q = supabase.from('incident_report').select('*').eq('company_id', profile.company_id).order('created_at', { ascending: false })
+      if (!atLeast(profile?.role, 'lieutenant')) {
+        q = q.or('is_confidential.is.null,is_confidential.eq.false')
+      }
+      const [{ data: reportData }, { data: empData }] = await Promise.all([
+        q,
+        supabase.from('employee').select('id,first_name,last_name').eq('company_id', profile.company_id).eq('status', 'active').order('last_name'),
+      ])
+      setReports(reportData || [])
+      setEmployees(empData || [])
+    } finally {
+      setLoading(false)
     }
-    const [{ data: reportData }, { data: empData }] = await Promise.all([
-      q,
-      supabase.from('employee').select('id,first_name,last_name').eq('company_id', profile.company_id).eq('status', 'active').order('last_name'),
-    ])
-    setReports(reportData || [])
-    setEmployees(empData || [])
-    setLoading(false)
-  }
+  }, { setLoading })
 
   const isViewingOthers = isOfficer && searchEmp !== null && !canApprove
   const filtered = useMemo(() => reports.filter(r => {

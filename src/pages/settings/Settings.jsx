@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useTheme } from '../../context/ThemeContext'
 import { supabase } from '../../lib/supabase'
+import { withLoadTimeout } from '../../lib/withLoadTimeout'
 import { ROLE_LABELS, ROLE_LEVELS, atLeast, ROLE_TITLES } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
 import { useToast } from '../../components/ui/Toast'
@@ -652,22 +653,28 @@ function AuditLogEmbed({ companyId }) {
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
+  const loadEvents = withLoadTimeout(async function loadEvents() {
     if (!companyId) return
-    const since = new Date(Date.now() - 30*86400000).toISOString()
-    Promise.all([
-      supabase.from('timesheet').select('id,employee_id,status,clock_in').eq('company_id',companyId).gte('clock_in',since).order('clock_in',{ascending:false}).limit(15),
-      supabase.from('incident_report').select('id,cad_number,incident_type,status,created_at').eq('company_id',companyId).gte('created_at',since).order('created_at',{ascending:false}).limit(15),
-      supabase.from('sos_alert').select('id,employee_id,status,triggered_at').eq('company_id',companyId).gte('triggered_at',since).order('triggered_at',{ascending:false}).limit(10),
-    ]).then(([{data:ts},{data:inc},{data:sos}]) => {
+    setLoading(true)
+    try {
+      const since = new Date(Date.now() - 30*86400000).toISOString()
+      const [{data:ts},{data:inc},{data:sos}] = await Promise.all([
+        supabase.from('timesheet').select('id,employee_id,status,clock_in').eq('company_id',companyId).gte('clock_in',since).order('clock_in',{ascending:false}).limit(15),
+        supabase.from('incident_report').select('id,cad_number,incident_type,status,created_at').eq('company_id',companyId).gte('created_at',since).order('created_at',{ascending:false}).limit(15),
+        supabase.from('sos_alert').select('id,employee_id,status,triggered_at').eq('company_id',companyId).gte('triggered_at',since).order('triggered_at',{ascending:false}).limit(10),
+      ])
       const all = [
         ...(ts||[]).map(t=>({ id:'ts-'+t.id, icon:'clock', color:'var(--color-info)', label:`Timesheet ${t.status}`, time:t.clock_in })),
         ...(inc||[]).map(i=>({ id:'inc-'+i.id, icon:'file-check', color:'var(--color-danger)', label:`Incident: ${i.incident_type} (${i.cad_number})`, time:i.created_at })),
         ...(sos||[]).map(s=>({ id:'sos-'+s.id, icon:'alert-triangle', color:'#e05555', label:`SOS ${s.status}`, time:s.triggered_at })),
       ].sort((a,b)=>new Date(b.time)-new Date(a.time)).slice(0,20)
-      setEvents(all); setLoading(false)
-    })
-  }, [companyId])
+      setEvents(all)
+    } finally {
+      setLoading(false)
+    }
+  }, { setLoading })
+
+  useEffect(() => { loadEvents() }, [companyId])
 
   function fmtTime(iso) {
     if (!iso) return '—'
@@ -774,8 +781,8 @@ function PositionsSection({ companyId }) {
   const [form,      setForm]      = useState({ title:'', department:'', pay_type:'hourly', pay_rate:'', description:'' })
   const [editId,    setEditId]    = useState(null)
   const [saving,    setSaving]    = useState(false)
+  const load = withLoadTimeout(async function load() { setLoading(true); try { const { data } = await supabase.from('position').select('*').eq('company_id',companyId).order('title'); setPositions(data||[]) } finally { setLoading(false) } }, { setLoading })
   useEffect(() => { if (companyId) load() }, [companyId])
-  async function load() { setLoading(true); const { data } = await supabase.from('position').select('*').eq('company_id',companyId).order('title'); setPositions(data||[]); setLoading(false) }
   async function save() {
     if (!form.title.trim()) return
     setSaving(true)
@@ -994,14 +1001,16 @@ function StateLicensingTab({ companyId }) {
   const foc = e=>{e.target.style.borderColor='var(--border-focus)'}
   const blr = e=>{e.target.style.borderColor='var(--border)'}
 
-  useEffect(() => { if (companyId) load() }, [companyId])
-
-  async function load() {
+  const load = withLoadTimeout(async function load() {
     setLoading(true)
-    const { data } = await supabase.from('state_license').select('*').eq('company_id', companyId).order('state')
-    setLicenses(data||[])
-    setLoading(false)
-  }
+    try {
+      const { data } = await supabase.from('state_license').select('*').eq('company_id', companyId).order('state')
+      setLicenses(data||[])
+    } finally {
+      setLoading(false)
+    }
+  }, { setLoading })
+  useEffect(() => { if (companyId) load() }, [companyId])
 
   async function save() {
     if (!form.state.trim()) return
@@ -1109,16 +1118,18 @@ function SupervisorAssignmentTab({ companyId }) {
 
   const SUP_ROLES = ['sergeant','lieutenant','chief','super_admin','corporal']
 
-  useEffect(() => { if (companyId) load() }, [companyId])
-
-  async function load() {
+  const load = withLoadTimeout(async function load() {
     setLoading(true)
-    const { data } = await supabase.from('employee').select('id,first_name,last_name,role,position_title').eq('company_id', companyId).eq('status','active').order('last_name')
-    const emps = data||[]
-    setEmployees(emps)
-    setSupervisors(emps.filter(e => SUP_ROLES.includes(e.role)))
-    setLoading(false)
-  }
+    try {
+      const { data } = await supabase.from('employee').select('id,first_name,last_name,role,position_title').eq('company_id', companyId).eq('status','active').order('last_name')
+      const emps = data||[]
+      setEmployees(emps)
+      setSupervisors(emps.filter(e => SUP_ROLES.includes(e.role)))
+    } finally {
+      setLoading(false)
+    }
+  }, { setLoading })
+  useEffect(() => { if (companyId) load() }, [companyId])
 
   useEffect(() => {
     if (!selectedSup || !companyId) return

@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useAuth } from '../../context/AuthContext'
+import { withLoadTimeout } from '../../lib/withLoadTimeout'
 import { supabase } from '../../lib/supabase'
 import { atLeast } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
@@ -127,7 +128,7 @@ export default function SiteManagement() {
 
   useEffect(() => { if (profile?.company_id) load() }, [profile])
 
-  async function load() {
+  const load = withLoadTimeout(async function load() {
     setLoading(true)
     try {
       const today = new Date().toISOString().slice(0, 10)
@@ -147,7 +148,7 @@ export default function SiteManagement() {
     } finally {
       setLoading(false)
     }
-  }
+  }, { setLoading })
 
   const filtered = useMemo(() => (sites || []).filter(s => {
     const q = search.toLowerCase()
@@ -769,9 +770,7 @@ function SiteCheckpoints({ siteId, companyId, siteName, canEdit }) {
   const [saving, setSaving]       = useState(false)
   const [viewQr, setViewQr]       = useState(null)
 
-  useEffect(() => { load() }, [siteId])
-
-  async function load() {
+  const load = withLoadTimeout(async function load() {
     setLoading(true)
     try {
       const { data } = await supabase.from('site_checkpoint').select('*').eq('site_id', siteId).order('order_index')
@@ -780,7 +779,8 @@ function SiteCheckpoints({ siteId, companyId, siteName, canEdit }) {
     } finally {
       setLoading(false)
     }
-  }
+  }, { setLoading })
+  useEffect(() => { load() }, [siteId])
 
   async function save() {
     if (!form.name.trim()) return
@@ -900,8 +900,7 @@ function SiteInspections({ siteId, companyId, siteName, canEdit }) {
   const [saving, setSaving]           = useState(false)
   const [expanded, setExpanded]       = useState(null)
 
-  useEffect(() => { load() }, [siteId])
-  async function load() {
+  const load = withLoadTimeout(async function load() {
     setLoading(true)
     try {
       const { data } = await supabase.from('site_inspection').select('*').eq('site_id', siteId).order('inspected_at', { ascending:false }).limit(20)
@@ -910,7 +909,8 @@ function SiteInspections({ siteId, companyId, siteName, canEdit }) {
     } finally {
       setLoading(false)
     }
-  }
+  }, { setLoading })
+  useEffect(() => { load() }, [siteId])
 
   async function save() {
     setSaving(true)

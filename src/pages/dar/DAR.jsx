@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, Fragment } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
+import { withLoadTimeout } from '../../lib/withLoadTimeout'
 import { atLeast } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
 import { useToast } from '../../components/ui/Toast'
@@ -62,16 +63,19 @@ export default function DAR() {
     }
   }, [profile])
 
-  async function load() {
+  const load = withLoadTimeout(async function load() {
     setLoading(true)
-    const { data } = await supabase
-      .from('dar')
-      .select('id, company_id, site_id, shift_label, shift_date, status, created_by, created_at, sent_at, site:site_id(name), creator:created_by(first_name,last_name)')
-      .eq('company_id', profile.company_id)
-      .order('shift_date', { ascending: false })
-    setDars(data || [])
-    setLoading(false)
-  }
+    try {
+      const { data } = await supabase
+        .from('dar')
+        .select('id, company_id, site_id, shift_label, shift_date, status, created_by, created_at, sent_at, site:site_id(name), creator:created_by(first_name,last_name)')
+        .eq('company_id', profile.company_id)
+        .order('shift_date', { ascending: false })
+      setDars(data || [])
+    } finally {
+      setLoading(false)
+    }
+  }, { setLoading })
 
   async function loadSites() {
     const { data } = await supabase

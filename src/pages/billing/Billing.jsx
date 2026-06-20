@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
+import { withLoadTimeout } from '../../lib/withLoadTimeout'
 import Icon from '../../components/ui/Icon'
 import { isNative, isIOS, openBrowser } from '../../lib/platform'
 
@@ -161,19 +162,22 @@ export default function Billing() {
 
   useEffect(() => { if (companyId) load() }, [companyId])
 
-  async function load() {
+  const load = withLoadTimeout(async function load() {
     setLoading(true)
-    const [{ data: sub }, { data: empCount }, { data: siteCount }, { data: invData }] = await Promise.all([
-      supabase.from('company_subscription').select('*').eq('company_id', companyId).single(),
-      supabase.from('employee').select('id', { count:'exact' }).eq('company_id', companyId).eq('status','active'),
-      supabase.from('site').select('id', { count:'exact' }).eq('company_id', companyId),
-      supabase.from('invoice').select('id,invoice_number,client_name,total,status,created_at').eq('company_id', companyId).order('created_at',{ascending:false}).limit(5),
-    ])
-    setSubscription(sub)
-    setUsage({ officers: empCount?.length || 0, sites: siteCount?.length || 0 })
-    setInvoices(invData || [])
-    setLoading(false)
-  }
+    try {
+      const [{ data: sub }, { data: empCount }, { data: siteCount }, { data: invData }] = await Promise.all([
+        supabase.from('company_subscription').select('*').eq('company_id', companyId).single(),
+        supabase.from('employee').select('id', { count:'exact' }).eq('company_id', companyId).eq('status','active'),
+        supabase.from('site').select('id', { count:'exact' }).eq('company_id', companyId),
+        supabase.from('invoice').select('id,invoice_number,client_name,total,status,created_at').eq('company_id', companyId).order('created_at',{ascending:false}).limit(5),
+      ])
+      setSubscription(sub)
+      setUsage({ officers: empCount?.length || 0, sites: siteCount?.length || 0 })
+      setInvoices(invData || [])
+    } finally {
+      setLoading(false)
+    }
+  }, { setLoading })
 
   async function startCheckout(plan) {
     if (isNPS) return

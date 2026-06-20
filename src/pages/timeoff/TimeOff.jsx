@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
+import { withLoadTimeout } from '../../lib/withLoadTimeout'
 import { atLeast } from '../../config/roles'
 import { scopeToOwnEmployee, isOwnDataOnly } from '../../lib/scoping'
 import Icon from '../../components/ui/Icon'
@@ -39,7 +40,7 @@ export default function TimeOff() {
 
   useEffect(() => { if (profile?.company_id) load() }, [profile])
 
-  async function load() {
+  const load = withLoadTimeout(async function load() {
     setLoading(true)
     try {
       const [{ data: empMe }, { data: bankData }, { data: balData }, { data: reqData }, { data: empAll }] = await Promise.all([
@@ -58,7 +59,7 @@ export default function TimeOff() {
     } finally {
       setLoading(false)
     }
-  }
+  }, { setLoading })
 
   function myBalance(bankType) {
     if (!myEmpId) return { balance_hours: 0, used_hours: 0, pending_hours: 0 }

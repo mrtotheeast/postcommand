@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
+import { withLoadTimeout } from '../../lib/withLoadTimeout'
 import Icon from '../../components/ui/Icon'
 import { exportReportPDF } from '../../lib/pdfExport'
 import { exportToSheets } from '../../lib/googleSheets'
@@ -89,7 +90,7 @@ export default function Reports() {
     return new Date(now.getFullYear(), 0, 1).toISOString()
   }
 
-  async function load() {
+  const load = withLoadTimeout(async function load() {
     setLoading(true)
     try {
       const start = periodStart()
@@ -108,7 +109,7 @@ export default function Reports() {
     } finally {
       setLoading(false)
     }
-  }
+  }, { setLoading })
 
   const computed = useMemo(() => {
     if (!data) return null

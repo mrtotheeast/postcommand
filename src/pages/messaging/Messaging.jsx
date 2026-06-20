@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
+import { withLoadTimeout } from '../../lib/withLoadTimeout'
 import { atLeast } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
 
@@ -702,13 +703,17 @@ function DMMonitorPanel({ companyId, employees }) {
   const [viewing, setViewing] = useState(null)
   const [msgs,    setMsgs]    = useState([])
   useEffect(() => { load() }, [companyId])
-  async function load() {
+  const load = withLoadTimeout(async function load() {
     setLoading(true)
-    const { data } = await supabase.from('message').select('channel_id,created_at,content,sender_name').eq('company_id',companyId).like('channel_id','dm_%').order('created_at',{ascending:false}).limit(200)
-    const map = {}
-    for (const m of (data||[])) { if (!map[m.channel_id]) map[m.channel_id]={id:m.channel_id,last:m.created_at,preview:m.content?.slice(0,50),count:0}; map[m.channel_id].count++ }
-    setThreads(Object.values(map).sort((a,b)=>new Date(b.last)-new Date(a.last))); setLoading(false)
-  }
+    try {
+      const { data } = await supabase.from('message').select('channel_id,created_at,content,sender_name').eq('company_id',companyId).like('channel_id','dm_%').order('created_at',{ascending:false}).limit(200)
+      const map = {}
+      for (const m of (data||[])) { if (!map[m.channel_id]) map[m.channel_id]={id:m.channel_id,last:m.created_at,preview:m.content?.slice(0,50),count:0}; map[m.channel_id].count++ }
+      setThreads(Object.values(map).sort((a,b)=>new Date(b.last)-new Date(a.last)))
+    } finally {
+      setLoading(false)
+    }
+  }, { setLoading })
   async function openThread(id) {
     setViewing(id)
     const { data } = await supabase.from('message').select('*').eq('company_id',companyId).eq('channel_id',id).order('created_at')

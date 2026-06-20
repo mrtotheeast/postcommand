@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
+import { withLoadTimeout } from '../../lib/withLoadTimeout'
 import { atLeast, ROLE_LABELS } from '../../config/roles'
 import { scopeToOwnEmployee } from '../../lib/scoping'
 import Icon from '../../components/ui/Icon'
@@ -64,18 +65,21 @@ export default function Uniforms() {
 
   useEffect(() => { if (profile?.company_id) load() }, [profile])
 
-  async function load() {
+  const load = withLoadTimeout(async function load() {
     setLoading(true)
-    const [{ data: empData }, { data: allEmp }, { data: reqData }] = await Promise.all([
-      supabase.from('employee').select('id,first_name,last_name,role').eq('user_id', profile.id).single(),
-      supabase.from('employee').select('id,first_name,last_name,role').eq('company_id', profile.company_id).eq('status','active'),
-      scopeToOwnEmployee(supabase.from('uniform_request').select('*').eq('company_id', profile.company_id).order('created_at', { ascending:false }), profile),
-    ])
-    setEmployee(empData)
-    setEmployees(allEmp || [])
-    setRequests(reqData || [])
-    setLoading(false)
-  }
+    try {
+      const [{ data: empData }, { data: allEmp }, { data: reqData }] = await Promise.all([
+        supabase.from('employee').select('id,first_name,last_name,role').eq('user_id', profile.id).single(),
+        supabase.from('employee').select('id,first_name,last_name,role').eq('company_id', profile.company_id).eq('status','active'),
+        scopeToOwnEmployee(supabase.from('uniform_request').select('*').eq('company_id', profile.company_id).order('created_at', { ascending:false }), profile),
+      ])
+      setEmployee(empData)
+      setEmployees(allEmp || [])
+      setRequests(reqData || [])
+    } finally {
+      setLoading(false)
+    }
+  }, { setLoading })
 
   const empMap = Object.fromEntries((employees||[]).map(e => [e.id,e]))
 
@@ -279,12 +283,15 @@ function InventoryTab({ companyId }) {
 
   useEffect(() => { if (companyId) load() }, [companyId])
 
-  async function load() {
+  const load = withLoadTimeout(async function load() {
     setLoading(true)
-    const { data } = await supabase.from('equipment_item').select('*').eq('company_id', companyId).order('category').order('name')
-    setItems(data||[])
-    setLoading(false)
-  }
+    try {
+      const { data } = await supabase.from('equipment_item').select('*').eq('company_id', companyId).order('category').order('name')
+      setItems(data||[])
+    } finally {
+      setLoading(false)
+    }
+  }, { setLoading })
 
   async function save() {
     if (!form.name.trim()) return

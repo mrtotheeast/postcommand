@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
+import { withLoadTimeout } from '../../lib/withLoadTimeout'
 import { atLeast } from '../../config/roles'
 import { scopeToOwnEmployee } from '../../lib/scoping'
 import Icon from '../../components/ui/Icon'
@@ -66,17 +67,20 @@ export default function Timesheets() {
 
   useEffect(() => { loadAll() }, [profile])
 
-  async function loadAll() {
+  const loadAll = withLoadTimeout(async function loadAll() {
     if (!profile?.company_id) return
     setLoading(true)
-    const [tsRes, empRes, siteRes] = await Promise.all([
-      scopeToOwnEmployee(supabase.from('timesheet').select('*').eq('company_id', profile.company_id).order('date', { ascending: false }).order('clock_in', { ascending: false }), profile),
-      supabase.from('employee').select('id,first_name,last_name,position_title').eq('company_id', profile.company_id).or('invitation_status.eq.accepted,has_app_access.eq.true'),
-      supabase.from('site').select('id,name').eq('company_id', profile.company_id),
-    ])
-    setSheets(tsRes.data || []); setEmployees(empRes.data || []); setSites(siteRes.data || [])
-    setLoading(false)
-  }
+    try {
+      const [tsRes, empRes, siteRes] = await Promise.all([
+        scopeToOwnEmployee(supabase.from('timesheet').select('*').eq('company_id', profile.company_id).order('date', { ascending: false }).order('clock_in', { ascending: false }), profile),
+        supabase.from('employee').select('id,first_name,last_name,position_title').eq('company_id', profile.company_id).or('invitation_status.eq.accepted,has_app_access.eq.true'),
+        supabase.from('site').select('id,name').eq('company_id', profile.company_id),
+      ])
+      setSheets(tsRes.data || []); setEmployees(empRes.data || []); setSites(siteRes.data || [])
+    } finally {
+      setLoading(false)
+    }
+  }, { setLoading })
 
   function empName(id) { const e = employees.find(e => e.id === id); return e ? `${e.first_name} ${e.last_name}` : '—' }
   function siteName(id) { const s = sites.find(s => s.id === id); return s ? s.name : '—' }
@@ -457,16 +461,19 @@ function PTOPanel({ companyId, profile, employees, canReview }) {
 
   useEffect(() => { load() }, [companyId])
 
-  async function load() {
+  const load = withLoadTimeout(async function load() {
     setLoading(true)
-    const [{ data: empData }, { data: ptoData }] = await Promise.all([
-      supabase.from('employee').select('id').eq('user_id', profile.id).single(),
-      supabase.from('pto_request').select('*').eq('company_id', companyId).order('created_at', { ascending:false }),
-    ])
-    setEmployee(empData)
-    setRequests(ptoData || [])
-    setLoading(false)
-  }
+    try {
+      const [{ data: empData }, { data: ptoData }] = await Promise.all([
+        supabase.from('employee').select('id').eq('user_id', profile.id).single(),
+        supabase.from('pto_request').select('*').eq('company_id', companyId).order('created_at', { ascending:false }),
+      ])
+      setEmployee(empData)
+      setRequests(ptoData || [])
+    } finally {
+      setLoading(false)
+    }
+  }, { setLoading })
 
   async function updateStatus(id, status) {
     try {

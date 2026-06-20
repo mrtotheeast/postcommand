@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAuth } from '../../context/AuthContext'
+import { withLoadTimeout } from '../../lib/withLoadTimeout'
 import { useNotifications } from '../../context/NotificationContext'
 import { supabase } from '../../lib/supabase'
 import { atLeast } from '../../config/roles'
@@ -77,22 +78,26 @@ export default function SOS() {
     return () => { supabase.removeChannel(channel) }
   }, [profile])
 
-  async function loadData() {
+  const loadData = withLoadTimeout(async function loadData() {
     if (!profile?.company_id) return
-    const [{ data: empData }, { data: alertData }] = await Promise.all([
-      supabase.from('employee').select('id,first_name,last_name,role,position_title').eq('user_id', profile.id).single(),
-      supabase.from('sos_alert').select('id,employee_id,site_id,latitude,longitude,triggered_at,status,message').eq('company_id', profile.company_id).eq('status', 'active').order('triggered_at', { ascending: false }),
-    ])
-    setEmployee(empData)
-    const all = alertData || []
-    setAlerts(all)
-    const mine = empData ? all.find(a => a.employee_id === empData.id) : null
-    setMyAlert(mine || null)
-    const count = all.length
-    if (count > 0) incrementBadge('active_sos')
-    else clearBadge('active_sos')
-    setLoading(false)
-  }
+    setLoading(true)
+    try {
+      const [{ data: empData }, { data: alertData }] = await Promise.all([
+        supabase.from('employee').select('id,first_name,last_name,role,position_title').eq('user_id', profile.id).single(),
+        supabase.from('sos_alert').select('id,employee_id,site_id,latitude,longitude,triggered_at,status,message').eq('company_id', profile.company_id).eq('status', 'active').order('triggered_at', { ascending: false }),
+      ])
+      setEmployee(empData)
+      const all = alertData || []
+      setAlerts(all)
+      const mine = empData ? all.find(a => a.employee_id === empData.id) : null
+      setMyAlert(mine || null)
+      const count = all.length
+      if (count > 0) incrementBadge('active_sos')
+      else clearBadge('active_sos')
+    } finally {
+      setLoading(false)
+    }
+  }, { setLoading })
 
   function startHold() {
     setHolding(true)

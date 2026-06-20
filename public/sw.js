@@ -16,9 +16,15 @@ self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return
   const url = new URL(e.request.url)
   if (url.origin !== self.location.origin) return
-  // Network first, cache as fallback — never block on cache errors
+  // Network first with 9s timeout, cache as fallback.
+  // The timeout prevents slow-but-not-dead network from hanging the SW fetch
+  // indefinitely after a device resumes from background (Capacitor / iOS).
+  const fetchWithTimeout = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('sw-fetch-timeout')), 9000)
+    fetch(e.request).then(res => { clearTimeout(timer); resolve(res) }, err => { clearTimeout(timer); reject(err) })
+  })
   e.respondWith(
-    fetch(e.request).catch(() => caches.match(e.request))
+    fetchWithTimeout.catch(() => caches.match(e.request))
   )
 })
 

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
+import { withLoadTimeout } from '../../lib/withLoadTimeout'
 import { ROLE_LABELS, atLeast } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
 import { emailSchedulePublished } from '../../lib/email'
@@ -154,7 +155,7 @@ export default function Scheduling() {
 
   useEffect(() => { loadAll() }, [profile, dateRange])
 
-  async function loadAll() {
+  const loadAll = withLoadTimeout(async function loadAll() {
     if (!profile?.company_id) return
     setLoading(true)
     try {
@@ -188,7 +189,7 @@ export default function Scheduling() {
     } finally {
       setLoading(false)
     }
-  }
+  }, { setLoading })
 
   function navigate(dir) {
     const d = new Date(baseDate)
@@ -1036,8 +1037,7 @@ function SwapsPanel({ companyId, profile, employees, shifts, canApprove }) {
   const [employee, setEmployee] = useState(null)
   const [filter, setFilter] = useState('pending')
 
-  useEffect(() => { load() }, [companyId])
-  async function load() {
+  const load = withLoadTimeout(async function load() {
     setLoading(true)
     try {
       const [{ data: myEmp }, { data: swapData }] = await Promise.all([
@@ -1049,7 +1049,8 @@ function SwapsPanel({ companyId, profile, employees, shifts, canApprove }) {
     } finally {
       setLoading(false)
     }
-  }
+  }, { setLoading })
+  useEffect(() => { load() }, [companyId])
   async function updateStatus(id, status) {
     try {
       const { error } = await supabase.from('shift_swap_request').update({ status, reviewed_at:new Date().toISOString() }).eq('id', id).eq('company_id', companyId)
@@ -1387,8 +1388,7 @@ function ShiftBidsPanel({ companyId, profile, employees, sites, canPost, otSetti
   const empMap  = Object.fromEntries(employees.map(e=>[e.id,`${e.first_name} ${e.last_name}`]))
   const siteMap = Object.fromEntries(sites.map(s=>[s.id,s.name]))
   const isOfficer = ['officer','corporal'].includes(profile?.role)
-  useEffect(() => { if (!companyId) return; load(); supabase.from('employee').select('id').eq('user_id',profile.id).single().then(({data})=>setMyEmpId(data?.id)) }, [companyId])
-  async function load() {
+  const load = withLoadTimeout(async function load() {
     setLoading(true)
     try {
       const [{ data:bidData }, { data:appData }] = await Promise.all([
@@ -1400,7 +1400,8 @@ function ShiftBidsPanel({ companyId, profile, employees, sites, canPost, otSetti
     } finally {
       setLoading(false)
     }
-  }
+  }, { setLoading })
+  useEffect(() => { if (!companyId) return; load(); supabase.from('employee').select('id').eq('user_id',profile.id).single().then(({data})=>setMyEmpId(data?.id)) }, [companyId])
   async function postBid() {
     if (!form.site_id||!form.date) return
     setSaving(true)
