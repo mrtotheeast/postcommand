@@ -160,6 +160,9 @@ export default function Personnel() {
                 count={bulkSelected.size}
                 companyId={profile.company_id}
                 selectedIds={[...bulkSelected]}
+                employees={employees}
+                filtered={filtered}
+                setBulkSelected={setBulkSelected}
                 onDone={() => { setBulkSelected(new Set()); setBulkMode(false); loadEmployees() }}
                 onCancel={() => { setBulkSelected(new Set()); setBulkMode(false) }}
               />
@@ -267,10 +270,10 @@ export default function Personnel() {
       {view==='list' && filtered.length>0 && (
         <div style={{overflowX:isMobile?'auto':'visible'}}>
         <div style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',overflow:'hidden',minWidth:isMobile?'580px':'auto'}}>
-          <div style={{display:'grid',gridTemplateColumns:'2fr 1.5fr 1fr 1fr 80px',padding:'10px 16px',borderBottom:'1px solid var(--border)',fontSize:'10px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)'}}>
-            <span>Name</span><span>Position</span><span>Role</span><span>Status</span><span></span>
+          <div style={{display:'grid',gridTemplateColumns:bulkMode?'32px 2fr 1.5fr 1fr 1fr 80px':'2fr 1.5fr 1fr 1fr 80px',padding:'10px 16px',borderBottom:'1px solid var(--border)',fontSize:'10px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)'}}>
+            {bulkMode && <span></span>}<span>Name</span><span>Position</span><span>Role</span><span>Status</span><span></span>
           </div>
-          {filtered.map((emp,i)=><EmpRow key={emp.id} emp={emp} ini={initials(emp)} isLast={i===filtered.length-1} onClick={()=>setSelected(emp)}/>)}
+          {filtered.map((emp,i)=><EmpRow key={emp.id} emp={emp} ini={initials(emp)} isLast={i===filtered.length-1} bulkMode={bulkMode} bulkSelected={bulkSelected} setBulkSelected={setBulkSelected} onClick={()=>setSelected(emp)}/>)}
         </div>
         </div>
       )}
@@ -466,13 +469,29 @@ function EmpCard({emp,ini,canViewSensitive,onClick,onStatusAction}) {
   )
 }
 
-function EmpRow({emp,ini,isLast,onClick}) {
+function EmpRow({emp,ini,isLast,onClick,bulkMode,bulkSelected,setBulkSelected}) {
   const rc=ROLE_COLORS[emp.role]||ROLE_COLORS.officer
   const sc=STATUS_COLORS[emp.status]||STATUS_COLORS.inactive
   const [hover,setHover]=useState(false)
+  const isChecked = !!(bulkMode && bulkSelected?.has(emp.id))
+
+  function handleRowClick() {
+    if (bulkMode) {
+      setBulkSelected(prev=>{ const n=new Set(prev); n.has(emp.id)?n.delete(emp.id):n.add(emp.id); return n })
+    } else {
+      onClick()
+    }
+  }
+
   return (
-    <button onClick={onClick} onMouseEnter={()=>setHover(true)} onMouseLeave={()=>setHover(false)}
-      style={{display:'grid',gridTemplateColumns:'2fr 1.5fr 1fr 1fr 80px',padding:'12px 16px',borderBottom:isLast?'none':'1px solid var(--border)',background:hover?'var(--bg-card-hover)':'transparent',border:'none',width:'100%',cursor:'pointer',textAlign:'left',alignItems:'center',gap:'8px'}}>
+    <button onClick={handleRowClick} onMouseEnter={()=>setHover(true)} onMouseLeave={()=>setHover(false)}
+      style={{display:'grid',gridTemplateColumns:bulkMode?'32px 2fr 1.5fr 1fr 1fr 80px':'2fr 1.5fr 1fr 1fr 80px',padding:'12px 16px',borderBottom:isLast?'none':'1px solid var(--border)',background:hover||isChecked?'var(--bg-card-hover)':'transparent',border:'none',width:'100%',cursor:'pointer',textAlign:'left',alignItems:'center',gap:'8px'}}>
+      {bulkMode && (
+        <div onClick={e=>e.stopPropagation()}>
+          <input type="checkbox" checked={isChecked} onChange={()=>{ setBulkSelected(prev=>{ const n=new Set(prev); n.has(emp.id)?n.delete(emp.id):n.add(emp.id); return n }) }}
+            style={{width:'16px',height:'16px',accentColor:'var(--accent)',cursor:'pointer'}}/>
+        </div>
+      )}
       <div style={{display:'flex',alignItems:'center',gap:'10px',minWidth:0}}>
         <div style={{width:'32px',height:'32px',borderRadius:'50%',background:'var(--accent)',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,color:'var(--text-inverse)',flexShrink:0}}>{ini}</div>
         <div style={{minWidth:0}}>
@@ -486,7 +505,7 @@ function EmpRow({emp,ini,isLast,onClick}) {
       <div style={{display:'flex',alignItems:'center',gap:'6px',justifyContent:'flex-end'}}>
         {emp.is_armed&&<Icon name="shield" size={14} color="var(--accent)"/>}
         {emp.has_app_access&&<Icon name="phone" size={14} color="var(--color-info)"/>}
-        <Icon name="chevron-right" size={14} color="var(--text-muted)"/>
+        {!bulkMode&&<Icon name="chevron-right" size={14} color="var(--text-muted)"/>}
       </div>
     </button>
   )
@@ -725,22 +744,64 @@ function R({label,value,color}) {
 
 // ── Bulk Action Bar ───────────────────────────────────────────────────────────
 
-function BulkActionBar({ count, companyId, selectedIds, onDone, onCancel }) {
+const BULK_ROLES = ['officer','corporal','sergeant','lieutenant','chief','hr','accounting','office_staff']
+
+function BulkConfirmModal({ action, count, companyId, selectedIds, employees, onDone, onClose }) {
   const toast = useToast()
   const [acting, setActing] = useState(false)
-  const [inviting, setInviting] = useState(false)
+  const [reason, setReason] = useState('')
+  const [role, setRole] = useState('officer')
+  const [channels, setChannels] = useState([])
+  const [channelId, setChannelId] = useState(null)
+  const [loadingChannels, setLoadingChannels] = useState(false)
 
-  const btn = (v='accent') => ({ display:'inline-flex', alignItems:'center', gap:'6px', border:'none', borderRadius:'var(--radius-sm)', padding:'0 14px', height:'36px', fontFamily:'var(--font-condensed)', fontSize:'12px', fontWeight:700, letterSpacing:'1px', cursor:'pointer',
-    background: v==='accent'?'var(--accent)':v==='danger'?'var(--color-danger-bg)':v==='ghost'?'var(--bg-card)':'var(--color-info-bg)',
-    color:       v==='accent'?'var(--text-inverse)':v==='danger'?'var(--color-danger)':v==='ghost'?'var(--text-secondary)':'var(--color-info)',
-    border:      v==='ghost'?'1px solid var(--border)':v==='danger'?'1px solid rgba(192,57,43,0.3)':v==='info'?'1px solid rgba(91,159,224,0.3)':'none',
-  })
+  const empMap = useMemo(() => {
+    const m = {}
+    ;(employees||[]).forEach(e => { m[e.id] = e })
+    return m
+  }, [employees])
+  const withEmail = useMemo(() => selectedIds.filter(id => empMap[id]?.email), [selectedIds, empMap])
 
-  async function bulkUpdate(field, value) {
+  useEffect(() => {
+    if (action?.type !== 'add_to_channel') return
+    setLoadingChannels(true)
+    supabase.from('channel').select('id,name').eq('company_id', companyId).order('name')
+      .then(({ data }) => { setChannels(data||[]); if (data?.[0]?.id) setChannelId(data[0].id) })
+      .finally(() => setLoadingChannels(false))
+  }, [action?.type, companyId])
+
+  async function handleConfirm() {
     setActing(true)
     try {
-      await Promise.all(selectedIds.map(id => supabase.from('employee').update({ [field]: value }).eq('id', id).eq('company_id', companyId)))
-      toast('Updated ' + count + ' employees')
+      let results
+      if (action.type === 'set_status') {
+        const updates = { status: action.value }
+        if (action.value === 'suspended') { updates.suspended_reason = reason||null; updates.suspended_at = new Date().toISOString() }
+        else if (action.value === 'terminated') { updates.terminated_reason = reason||null; updates.terminated_at = new Date().toISOString() }
+        results = await Promise.allSettled(selectedIds.map(id => supabase.from('employee').update(updates).eq('id', id).eq('company_id', companyId)))
+      } else if (action.type === 'set_armed') {
+        results = await Promise.allSettled(selectedIds.map(id => supabase.from('employee').update({ is_armed: action.value }).eq('id', id).eq('company_id', companyId)))
+      } else if (action.type === 'set_role') {
+        results = await Promise.allSettled(selectedIds.map(id => supabase.from('employee').update({ role }).eq('id', id).eq('company_id', companyId)))
+      } else if (action.type === 'revoke_access') {
+        results = await Promise.allSettled(selectedIds.map(id => supabase.from('employee').update({ has_app_access: false }).eq('id', id).eq('company_id', companyId)))
+      } else if (action.type === 'invite') {
+        results = await Promise.allSettled(withEmail.map(async id => {
+          const emp = empMap[id]
+          const { error } = await supabase.auth.signInWithOtp({ email: emp.email, options: { shouldCreateUser: true, emailRedirectTo: 'https://postcommand.app', data: { first_name: emp.first_name, last_name: emp.last_name, company_id: emp.company_id, employee_id: emp.id } } })
+          if (error) throw error
+          await supabase.from('employee').update({ invitation_status: 'sent' }).eq('id', id).eq('company_id', companyId)
+        }))
+      } else if (action.type === 'add_to_channel') {
+        if (!channelId) { toast('Select a channel first', 'error'); setActing(false); return }
+        results = await Promise.allSettled(selectedIds.map(id => supabase.from('channel_member').upsert({ channel_id: channelId, employee_id: id }, { ignoreDuplicates: true })))
+      }
+      const ok = results.filter(r => r.status === 'fulfilled').length
+      const fail = results.filter(r => r.status === 'rejected').length
+      const total = results.length
+      if (fail === 0) toast(`Updated ${ok} employee${ok!==1?'s':''}`, 'success')
+      else if (ok === 0) toast('Update failed — no employees were changed', 'error')
+      else toast(`Updated ${ok} of ${total} employees (${fail} failed)`, 'error')
       onDone()
     } catch(e) {
       toast(e.message||'Something went wrong', 'error')
@@ -749,42 +810,182 @@ function BulkActionBar({ count, companyId, selectedIds, onDone, onCancel }) {
     }
   }
 
-  async function bulkInvite() {
-    setInviting(true)
-    try {
-      const { data: emps } = await supabase.from('employee').select('id,first_name,last_name,email,role,company_id').in('id', selectedIds)
-      for (const emp of (emps||[])) {
-        if (!emp.email) continue
-        const { error } = await supabase.auth.signInWithOtp({
-          email: emp.email,
-          options: {
-            shouldCreateUser: true,
-            emailRedirectTo: 'https://postcommand.app',
-            data: { first_name: emp.first_name, last_name: emp.last_name, company_id: emp.company_id, employee_id: emp.id }
-          }
-        })
-        if (!error) {
-          await supabase.from('employee').update({ invitation_status: 'sent' }).eq('id', emp.id).eq('company_id', emp.company_id)
-        }
-      }
-      toast('Invites sent', 'info')
-      onDone()
-    } catch(e) {
-      toast(e.message||'Something went wrong', 'error')
-    } finally {
-      setInviting(false)
+  const inpStyle = {width:'100%',padding:'10px 12px',background:'var(--bg-input)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',color:'var(--text-primary)',fontSize:'13px',outline:'none',cursor:'pointer',boxSizing:'border-box'}
+  const lbl = {fontSize:'11px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',marginBottom:'6px'}
+
+  let title = '', body = null, canConfirm = true
+  if (action.type === 'set_status') {
+    const labels = {active:'Active',inactive:'Inactive',probation:'Probation',on_leave:'On Leave',suspended:'Suspended',terminated:'Terminated'}
+    title = `Set ${count} employee${count!==1?'s':''} to ${labels[action.value]||action.value}`
+    if (action.value === 'suspended' || action.value === 'terminated') {
+      body = (
+        <div>
+          <div style={lbl}>{action.value==='suspended'?'Reason for suspension':'Reason for termination'}</div>
+          <textarea value={reason} onChange={e=>setReason(e.target.value)} placeholder="Required..." rows={3}
+            style={{...inpStyle,cursor:'text',resize:'vertical',lineHeight:1.5,fontFamily:'var(--font-body)'}}/>
+        </div>
+      )
+      canConfirm = reason.trim().length > 0
     }
+  } else if (action.type === 'set_armed') {
+    title = `Set ${count} employee${count!==1?'s':''} to ${action.value?'Armed':'Unarmed'}`
+  } else if (action.type === 'set_role') {
+    title = `Change role for ${count} employee${count!==1?'s':''}`
+    body = (
+      <div>
+        <div style={lbl}>New Role</div>
+        <select value={role} onChange={e=>setRole(e.target.value)} style={inpStyle}>
+          {BULK_ROLES.map(r=><option key={r} value={r}>{ROLE_LABELS[r]||r}</option>)}
+        </select>
+        <div style={{fontSize:'11px',color:'var(--text-muted)',marginTop:'8px',lineHeight:1.5}}>Permission changes take effect at each employee's next login.</div>
+      </div>
+    )
+  } else if (action.type === 'revoke_access') {
+    title = `Revoke app access for ${count} employee${count!==1?'s':''}`
+    body = <div style={{fontSize:'13px',color:'var(--text-secondary)',lineHeight:1.6}}>These employees will no longer be able to log in to the app. Their records will remain intact and access can be re-granted at any time.</div>
+  } else if (action.type === 'invite') {
+    const noEmail = count - withEmail.length
+    title = `Invite ${withEmail.length} employee${withEmail.length!==1?'s':''} to app`
+    body = (
+      <div style={{fontSize:'13px',color:'var(--text-secondary)',lineHeight:1.7}}>
+        {withEmail.length} employee{withEmail.length!==1?'s':''} have email addresses and will receive an invite.
+        {noEmail > 0 && <> <strong style={{color:'var(--color-warning)'}}>{noEmail} employee{noEmail!==1?'s have':' has'} no email address</strong> and will be skipped.</>}
+      </div>
+    )
+    canConfirm = withEmail.length > 0
+  } else if (action.type === 'add_to_channel') {
+    title = `Add ${count} employee${count!==1?'s':''} to channel`
+    body = loadingChannels
+      ? <div style={{fontSize:'12px',color:'var(--text-muted)'}}>Loading channels…</div>
+      : channels.length === 0
+        ? <div style={{fontSize:'13px',color:'var(--text-muted)'}}>No channels found for this company.</div>
+        : <div>
+            <div style={lbl}>Channel</div>
+            <select value={channelId||''} onChange={e=>setChannelId(e.target.value)} style={inpStyle}>
+              {channels.map(ch=><option key={ch.id} value={ch.id}>{ch.name}</option>)}
+            </select>
+          </div>
+    canConfirm = !!channelId && !loadingChannels
   }
 
   return (
-    <div style={{ display:'flex', alignItems:'center', gap:'8px', padding:'8px 14px', background:'var(--accent-bg)', border:'1px solid var(--accent-border)', borderRadius:'var(--radius-md)', flexWrap:'wrap' }}>
-      <span style={{ fontSize:'13px', color:'var(--accent)', fontFamily:'var(--font-condensed)', fontWeight:700, letterSpacing:'0.5px', marginRight:'4px' }}>{count} selected</span>
-      <button style={btn('info')} onClick={() => bulkUpdate('status','active')} disabled={acting}><Icon name="check" size={12}/>SET ACTIVE</button>
-      <button style={btn('info')} onClick={() => bulkUpdate('status','inactive')} disabled={acting}><Icon name="minus-circle" size={12}/>SET INACTIVE</button>
-      <button style={btn('accent')} onClick={bulkInvite} disabled={inviting}><Icon name="mail" size={12}/>{inviting?'INVITING...':'INVITE ALL'}</button>
-      <button style={btn('danger')} onClick={() => { if(window.confirm(`Remove app access for ${count} employees?`)) bulkUpdate('has_app_access',false) }} disabled={acting}><Icon name="lock" size={12}/>REVOKE ACCESS</button>
-      <button style={btn('ghost')} onClick={onCancel}>CANCEL</button>
-    </div>
+    <>
+      <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:600}}/>
+      <div style={{position:'fixed',top:'50%',left:'50%',transform:'translate(-50%,-50%)',width:'min(480px,95vw)',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-lg)',padding:'28px',zIndex:601,boxShadow:'var(--shadow-modal)',maxHeight:'90vh',overflowY:'auto'}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'20px'}}>
+          <div style={{fontFamily:'var(--font-display)',fontSize:'17px',letterSpacing:'2px',color:'var(--text-primary)'}}>{title.toUpperCase()}</div>
+          <button onClick={onClose} style={{background:'transparent',border:'none',color:'var(--text-muted)',cursor:'pointer',padding:'4px',display:'flex'}}><Icon name="x" size={18}/></button>
+        </div>
+        {body && <div style={{marginBottom:'20px'}}>{body}</div>}
+        <div style={{display:'flex',gap:'10px'}}>
+          <button onClick={handleConfirm} disabled={!canConfirm||acting}
+            style={{flex:1,height:'44px',background:'var(--accent)',border:'none',borderRadius:'var(--radius-md)',color:'var(--text-inverse)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',opacity:(!canConfirm||acting)?0.5:1}}>
+            {acting?'WORKING…':'CONFIRM'}
+          </button>
+          <button onClick={onClose} style={{height:'44px',background:'transparent',border:'1px solid var(--border)',borderRadius:'var(--radius-md)',color:'var(--text-secondary)',fontFamily:'var(--font-condensed)',fontSize:'13px',cursor:'pointer',padding:'0 20px'}}>CANCEL</button>
+        </div>
+      </div>
+    </>
+  )
+}
+
+function BulkActionBar({ count, companyId, selectedIds, employees, filtered, setBulkSelected, onDone, onCancel }) {
+  const [open, setOpen] = useState(false)
+  const [modal, setModal] = useState(null)
+  const dropRef = useRef(null)
+
+  useEffect(() => {
+    if (!open) return
+    function handle(e) { if (dropRef.current && !dropRef.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', handle)
+    return () => document.removeEventListener('mousedown', handle)
+  }, [open])
+
+  const filteredIdSet = useMemo(() => new Set(filtered.map(e => e.id)), [filtered])
+  const selectedVisibleCount = selectedIds.filter(id => filteredIdSet.has(id)).length
+  const allVisible = filtered.length > 0 && selectedVisibleCount === filtered.length
+  const someVisible = selectedVisibleCount > 0 && !allVisible
+  const selectAllRef = useRef(null)
+  useEffect(() => { if (selectAllRef.current) selectAllRef.current.indeterminate = someVisible }, [someVisible])
+
+  function toggleSelectAll() {
+    if (allVisible) setBulkSelected(new Set())
+    else setBulkSelected(new Set(filtered.map(e => e.id)))
+  }
+
+  function pick(type, value) { setOpen(false); setModal({ type, value }) }
+
+  const SECTIONS = [
+    { label:'Status', items:[
+      { label:'Set Active',        action:()=>pick('set_status','active') },
+      { label:'Set Inactive',      action:()=>pick('set_status','inactive') },
+      { label:'Set Probation',     action:()=>pick('set_status','probation') },
+      { label:'Place on Leave',    action:()=>pick('set_status','on_leave') },
+      { label:'Suspend…',          action:()=>pick('set_status','suspended') },
+      { label:'Terminate…',        action:()=>pick('set_status','terminated') },
+    ]},
+    { label:'Permissions', items:[
+      { label:'Change Role…',      action:()=>pick('set_role') },
+      { label:'Invite to App',     action:()=>pick('invite') },
+      { label:'Revoke App Access', action:()=>pick('revoke_access') },
+    ]},
+    { label:'Classification', items:[
+      { label:'Set Armed',         action:()=>pick('set_armed', true) },
+      { label:'Set Unarmed',       action:()=>pick('set_armed', false) },
+    ]},
+    { label:'Messaging', items:[
+      { label:'Add to Channel…',   action:()=>pick('add_to_channel') },
+    ]},
+  ]
+
+  return (
+    <>
+      <div style={{display:'flex',alignItems:'center',gap:'8px',padding:'8px 14px',background:'var(--accent-bg)',border:'1px solid var(--accent-border)',borderRadius:'var(--radius-md)',flexWrap:'wrap'}}>
+        <input type="checkbox" ref={selectAllRef} checked={allVisible} onChange={toggleSelectAll}
+          style={{width:'16px',height:'16px',accentColor:'var(--accent)',cursor:'pointer',flexShrink:0}}/>
+        <span style={{fontSize:'13px',color:'var(--accent)',fontFamily:'var(--font-condensed)',fontWeight:700,letterSpacing:'0.5px'}}>{count} selected</span>
+        <div style={{position:'relative'}} ref={dropRef}>
+          <button onClick={()=>setOpen(o=>!o)}
+            style={{display:'inline-flex',alignItems:'center',gap:'6px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-sm)',padding:'0 14px',height:'36px',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,letterSpacing:'1px',cursor:'pointer'}}>
+            ACTIONS <Icon name="chevron-down" size={12}/>
+          </button>
+          {open && (
+            <div style={{position:'absolute',top:'calc(100% + 4px)',left:0,background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',zIndex:300,minWidth:'200px',boxShadow:'var(--shadow-modal)',padding:'6px 0',overflowY:'auto',maxHeight:'420px'}}>
+              {SECTIONS.map((sec,si)=>(
+                <div key={si}>
+                  <div style={{fontSize:'10px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1.5px',fontFamily:'var(--font-condensed)',padding:'8px 14px 4px',borderTop:si>0?'1px solid var(--border-subtle)':undefined,marginTop:si>0?'4px':undefined}}>
+                    {sec.label}
+                  </div>
+                  {sec.items.map((item,ii)=>(
+                    <button key={ii} onClick={item.action}
+                      style={{display:'block',width:'100%',textAlign:'left',padding:'8px 14px',background:'transparent',border:'none',fontSize:'13px',color:'var(--text-primary)',cursor:'pointer',fontFamily:'var(--font-body)'}}
+                      onMouseEnter={e=>e.currentTarget.style.background='var(--bg-card-hover)'}
+                      onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <button onClick={onCancel}
+          style={{display:'inline-flex',alignItems:'center',gap:'6px',background:'transparent',color:'var(--text-secondary)',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',padding:'0 14px',height:'36px',fontFamily:'var(--font-condensed)',fontSize:'12px',letterSpacing:'1px',cursor:'pointer'}}>
+          CANCEL
+        </button>
+      </div>
+      {modal && (
+        <BulkConfirmModal
+          action={modal}
+          count={count}
+          companyId={companyId}
+          selectedIds={selectedIds}
+          employees={employees}
+          onDone={() => { setModal(null); onDone() }}
+          onClose={() => setModal(null)}
+        />
+      )}
+    </>
   )
 }
 
