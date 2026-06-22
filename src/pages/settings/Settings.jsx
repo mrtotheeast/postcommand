@@ -157,6 +157,8 @@ function CompanyTab({ profile, companyId }) {
     if (error) { toast('Logo upload failed: ' + error.message); setUploadingLogo(false); return }
     const { data:{ publicUrl } } = supabase.storage.from('company-assets').getPublicUrl(data.path)
     setF('logo_url', publicUrl)
+    setKey(`pc-company-${companyId}`, { ...getKey(`pc-company-${companyId}`), logoUrl: publicUrl })
+    supabase.from('company').upsert({ id: companyId, logo_url: publicUrl }, { onConflict: 'id' }).then(() => {}, () => {})
     setUploadingLogo(false)
   }
 
@@ -183,6 +185,8 @@ function CompanyTab({ profile, companyId }) {
       if (error) { toast('Logo upload failed: ' + error.message); setUploadingLogo(false); return }
       const { data:{ publicUrl } } = supabase.storage.from('company-assets').getPublicUrl(data.path)
       setF('logo_url', publicUrl)
+      setKey(`pc-company-${companyId}`, { ...getKey(`pc-company-${companyId}`), logoUrl: publicUrl })
+      supabase.from('company').upsert({ id: companyId, logo_url: publicUrl }, { onConflict: 'id' }).then(() => {}, () => {})
     } catch(e) {
       if (e.message !== 'User cancelled photos app') toast('Upload error: ' + e.message)
     }
