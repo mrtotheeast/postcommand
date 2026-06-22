@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useTheme } from '../../context/ThemeContext'
 import { supabase } from '../../lib/supabase'
@@ -8,6 +7,7 @@ import { ROLE_LABELS, ROLE_LEVELS, atLeast, ROLE_TITLES } from '../../config/rol
 import Icon from '../../components/ui/Icon'
 import { useToast } from '../../components/ui/Toast'
 import CompanySettings from './CompanySettings'
+import { isNative } from '../../lib/platform'
 
 // ── Shared primitives ─────────────────────────────────────────────────────────
 
@@ -125,17 +125,19 @@ export default function Settings() {
 
 function CompanyTab({ profile, companyId }) {
   const toast = useToast()
-  const [form, setForm]   = useState({ name:'', logo_url:'', primary_color:'#c8a84b', address:'', phone:'', email:'', license_number:'', role_style:'military' })
+  const [form, setForm]   = useState({ name:'', logo_url:'', primary_color:'#c8a84b', address:'', phone:'', email:'', role_style:'military' })
   const [customRanks, setCustomRanks] = useState([])
   const [newRank, setNewRank]         = useState({ title:'', level:'' })
   const [saving, setSaving] = useState(false)
   const [msg, setMsg]     = useState(null)
+  const [uploadingLogo, setUploadingLogo] = useState(false)
+  const logoFileRef = useRef(null)
 
   useEffect(() => {
     if (!companyId) return
     supabase.from('company').select('*').eq('id', companyId).single().then(({ data }) => {
       if (data) {
-        setForm(f => ({ ...f, name:data.name||'', logo_url:data.logo_url||'', primary_color:data.primary_color||'#c8a84b', address:data.address||'', phone:data.phone||'', email:data.email||'', license_number:data.license_number||'', role_style:data.role_style||'military' }))
+        setForm(f => ({ ...f, name:data.name||'', logo_url:data.logo_url||'', primary_color:data.primary_color||'#c8a84b', address:data.address||'', phone:data.phone||'', email:data.email||'', role_style:data.role_style||'military' }))
         setCustomRanks(data.custom_ranks||[])
       }
     })
@@ -147,13 +149,53 @@ function CompanyTab({ profile, companyId }) {
 
   function setF(k, v) { setForm(p=>({...p,[k]:v})) }
 
+  async function uploadFromFile(file) {
+    setUploadingLogo(true)
+    const ext = file.name.split('.').pop() || 'jpg'
+    const path = `${companyId}/logo.${ext}`
+    const { data, error } = await supabase.storage.from('company-assets').upload(path, file, { upsert:true, contentType:file.type })
+    if (error) { toast('Logo upload failed: ' + error.message); setUploadingLogo(false); return }
+    const { data:{ publicUrl } } = supabase.storage.from('company-assets').getPublicUrl(data.path)
+    setF('logo_url', publicUrl)
+    setUploadingLogo(false)
+  }
+
+  async function handleLogoUpload() {
+    if (!isNative()) { logoFileRef.current?.click(); return }
+    setUploadingLogo(true)
+    try {
+      const { Camera, CameraResultType, CameraSource } = await import('@capacitor/camera')
+      const permission = await Camera.requestPermissions({ permissions: ['photos'] })
+      if (permission.photos !== 'granted') {
+        alert('Photo library access is required. Please enable it in iPhone Settings > PostCommand > Photos.')
+        setUploadingLogo(false); return
+      }
+      const image = await Camera.getPhoto({ quality:90, allowEditing:true, resultType:CameraResultType.DataUrl, source:CameraSource.Photos, correctOrientation:true })
+      if (!image.dataUrl) { setUploadingLogo(false); return }
+      const [meta, b64] = image.dataUrl.split(',')
+      const mime = meta.match(/:(.*?);/)[1]
+      const bytes = atob(b64)
+      const arr = new Uint8Array(bytes.length)
+      for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i)
+      const blob = new Blob([arr], { type:mime })
+      const path = `${companyId}/logo.${mime.split('/')[1] || 'jpg'}`
+      const { data, error } = await supabase.storage.from('company-assets').upload(path, blob, { upsert:true, contentType:mime })
+      if (error) { toast('Logo upload failed: ' + error.message); setUploadingLogo(false); return }
+      const { data:{ publicUrl } } = supabase.storage.from('company-assets').getPublicUrl(data.path)
+      setF('logo_url', publicUrl)
+    } catch(e) {
+      if (e.message !== 'User cancelled photos app') toast('Upload error: ' + e.message)
+    }
+    setUploadingLogo(false)
+  }
+
   async function save() {
     setSaving(true); setMsg(null)
     // Apply color immediately
     document.documentElement.style.setProperty('--accent', form.primary_color)
     setKey(`pc-company-${companyId}`, { primaryColor:form.primary_color, logoUrl:form.logo_url, displayName:form.name })
     // Upsert to company table
-    const { error } = await supabase.from('company').upsert({ id:companyId, name:form.name.trim()||null, logo_url:form.logo_url.trim()||null, primary_color:form.primary_color, address:form.address.trim()||null, phone:form.phone.trim()||null, email:form.email.trim()||null, license_number:form.license_number.trim()||null, role_style:form.role_style, custom_ranks:customRanks }, { onConflict:'id' })
+    const { error } = await supabase.from('company').upsert({ id:companyId, name:form.name.trim()||null, logo_url:form.logo_url.trim()||null, primary_color:form.primary_color, address:form.address.trim()||null, phone:form.phone.trim()||null, email:form.email.trim()||null, role_style:form.role_style, custom_ranks:customRanks }, { onConflict:'id' })
     setSaving(false)
     if (!error) toast('Settings saved')
     setMsg(error ? { type:'err', text:error.message } : { type:'ok', text:'Company profile saved.' })
@@ -165,19 +207,34 @@ function CompanyTab({ profile, companyId }) {
       <div style={s.card}>
         <div style={s.cardTitle}>Company Identity</div>
         <Toast msg={msg?.text} type={msg?.type} />
-        <div style={s.row}>
-          <div style={s.field}><div style={s.lbl}>Company Name</div><Inp value={form.name} onChange={e=>setF('name',e.target.value)} placeholder="Nationwide Police Services" /></div>
-          <div style={s.field}><div style={s.lbl}>License Number</div><Inp value={form.license_number} onChange={e=>setF('license_number',e.target.value)} placeholder="MD-SEC-12345" /></div>
+        <div style={s.fieldFull}>
+          <div style={s.lbl}>Company Name</div>
+          <Inp value={form.name} onChange={e=>setF('name',e.target.value)} placeholder="Nationwide Police Services" />
+        </div>
+        <div style={{ fontSize:'12px', color:'var(--text-muted)', marginBottom:'14px' }}>
+          Manage per-state licenses under the <strong style={{ color:'var(--text-secondary)' }}>State Licensing</strong> tab.
         </div>
         <div style={s.fieldFull}>
-          <div style={s.lbl}>Logo URL</div>
+          <div style={s.lbl}>Company Logo</div>
+          {form.logo_url && (
+            <div style={{ marginBottom:'8px' }}>
+              <img src={form.logo_url} alt="Logo preview" style={{ maxHeight:'56px', maxWidth:'180px', borderRadius:'var(--radius-sm)', border:'1px solid var(--border)', padding:'6px', background:'var(--bg-surface)' }} onError={e=>e.target.style.display='none'} />
+            </div>
+          )}
+          <div style={{ display:'flex', gap:'10px', flexWrap:'wrap', alignItems:'center', marginBottom:'10px' }}>
+            <button style={{ ...s.ghost, height:'38px', padding:'0 14px', fontSize:'11px', opacity:uploadingLogo?0.6:1 }} onClick={handleLogoUpload} disabled={uploadingLogo}>
+              <Icon name={uploadingLogo?'loader':'upload'} size={13}/>{uploadingLogo?'UPLOADING…':'UPLOAD LOGO'}
+            </button>
+            {form.logo_url && (
+              <button style={{ ...s.ghost, height:'38px', padding:'0 14px', fontSize:'11px', color:'var(--color-danger)' }} onClick={()=>setF('logo_url','')} disabled={uploadingLogo}>
+                <Icon name="x" size={13}/>REMOVE
+              </button>
+            )}
+          </div>
+          <input ref={logoFileRef} type="file" accept="image/*" style={{ display:'none' }} onChange={e=>{ if(e.target.files[0]) uploadFromFile(e.target.files[0]); e.target.value='' }} />
+          <div style={{ fontSize:'11px', color:'var(--text-muted)', fontFamily:'var(--font-condensed)', letterSpacing:'0.5px', marginBottom:'5px' }}>OR ENTER URL</div>
           <Inp value={form.logo_url} onChange={e=>setF('logo_url',e.target.value)} placeholder="https://cdn.example.com/logo.png" />
         </div>
-        {form.logo_url && (
-          <div style={{ marginBottom:'12px' }}>
-            <img src={form.logo_url} alt="Logo preview" style={{ maxHeight:'56px', maxWidth:'180px', borderRadius:'var(--radius-sm)', border:'1px solid var(--border)', padding:'6px', background:'var(--bg-surface)' }} onError={e=>e.target.style.display='none'} />
-          </div>
-        )}
         <div style={{ display:'flex', alignItems:'flex-end', gap:'12px', marginBottom:'14px', flexWrap:'wrap' }}>
           <div>
             <div style={s.lbl}>Primary / Accent Color</div>
@@ -249,7 +306,6 @@ function CompanyTab({ profile, companyId }) {
 // ── Tab 2 — Team & Roles ──────────────────────────────────────────────────────
 
 function TeamTab({ profile, companyId, theme, toggleTheme }) {
-  const navigate = useNavigate()
   const [ops, setOps]   = useState({ geofenceRadius:150, requirePhotos:true, requireClockOutPhoto:true, earlyClockIn:15 })
   const [opsSaved, setOpsSaved] = useState(false)
   const [pendingPhotos, setPendingPhotos] = useState([])
@@ -272,24 +328,8 @@ function TeamTab({ profile, companyId, theme, toggleTheme }) {
     setActing(null)
   }
 
-  const QL = [
-    { label:'Employee Directory', icon:'users',   path:'/personnel' },
-    { label:'User Management',    icon:'user-plus',path:'/personnel' },
-    { label:'Roles & Permissions',icon:'shield',  path:'/personnel' },
-    { label:'Position Management',icon:'briefcase',path:'/personnel' },
-  ]
-
   return (
     <>
-      <div style={s.card}>
-        <div style={s.cardTitle}>Quick Links</div>
-        {QL.map(q => (
-          <div key={q.label} className="link-tile" style={s.linkTile} onClick={() => navigate(q.path)}>
-            <Icon name={q.icon} size={16} color="var(--accent)"/><span style={{ fontSize:'13px', color:'var(--text-primary)' }}>{q.label}</span><Icon name="chevron-right" size={14} color="var(--text-muted)" />
-          </div>
-        ))}
-      </div>
-
       <PositionsSection companyId={companyId} />
 
       <div style={s.card}>
