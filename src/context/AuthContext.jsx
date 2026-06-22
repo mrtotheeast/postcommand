@@ -13,10 +13,12 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
   const [viewRole, setViewRoleState] = useState(null)
   const [needsPassword, setNeedsPassword] = useState(false)
-  const userRef          = useRef(null)
-  const loadingTimeoutRef = useRef(null)
-  const loadingProfileRef = useRef(false)                        // concurrency guard
-  const lastSignedInRef   = useRef({ userId: null, at: 0 })     // deduplication
+  const userRef             = useRef(null)
+  const loadingTimeoutRef   = useRef(null)
+  const loadingProfileRef   = useRef(false)                      // concurrency guard
+  const lastSignedInRef     = useRef({ userId: null, at: 0 })   // deduplication
+  const passwordCheckedRef  = useRef(false)                      // skip redundant password_set query on tab-resume SIGNED_IN
+  const profileUserIdRef    = useRef(null)                       // tracks userId of currently loaded profile; blocks redundant loadProfile() calls
 
   function loadViewAs(profileId) {
     const saved = localStorage.getItem(`pc-viewas-${profileId}`)
@@ -137,24 +139,29 @@ export function AuthProvider({ children }) {
         // For returning users: check whether they still need to complete password setup.
         // Only password_set === false (strict) triggers the redirect — null means legacy
         // user (column didn't exist when they accepted), true means already completed.
-        if (profile.role !== 'client') {
-          const { data: pwRow } = await withTimeout(
-            supabase.from('employee')
-              .select('password_set')
-              .eq('user_id', userId)
-              .maybeSingle(),
-            'employee password_set SELECT'
-          )
-          if (pwRow?.password_set === false) setNeedsPassword(true)
-        } else {
-          const { data: pwRow } = await withTimeout(
-            supabase.from('client_contact')
-              .select('password_set')
-              .eq('portal_user_id', userId)
-              .maybeSingle(),
-            'client_contact password_set SELECT'
-          )
-          if (pwRow?.password_set === false) setNeedsPassword(true)
+        // Skipped on subsequent SIGNED_IN events (tab resume) once confirmed this session,
+        // because it holds the Navigator lock for up to 4s on every visibility change.
+        if (!passwordCheckedRef.current) {
+          if (profile.role !== 'client') {
+            const { data: pwRow } = await withTimeout(
+              supabase.from('employee')
+                .select('password_set')
+                .eq('user_id', userId)
+                .maybeSingle(),
+              'employee password_set SELECT'
+            )
+            if (pwRow?.password_set === false) setNeedsPassword(true)
+          } else {
+            const { data: pwRow } = await withTimeout(
+              supabase.from('client_contact')
+                .select('password_set')
+                .eq('portal_user_id', userId)
+                .maybeSingle(),
+              'client_contact password_set SELECT'
+            )
+            if (pwRow?.password_set === false) setNeedsPassword(true)
+          }
+          passwordCheckedRef.current = true
         }
       } else {
         // No profile row yet — look up employee by email for reliable data.
@@ -205,6 +212,7 @@ export function AuthProvider({ children }) {
               'employee UPDATE'
             ).catch(() => {})
             if (isFreshAcceptance) setNeedsPassword(true)
+            passwordCheckedRef.current = true
           } else {
             // INSERT timed out or returned nothing — drop to metadata fallback
             usedMetadataFallback = true
@@ -254,6 +262,7 @@ export function AuthProvider({ children }) {
                 'client_contact UPDATE'
               ).catch(() => {})
               if (isFreshClientAcceptance) setNeedsPassword(true)
+              passwordCheckedRef.current = true
             } else {
               // INSERT timed out or returned nothing — drop to metadata fallback
               usedMetadataFallback = true
@@ -305,6 +314,7 @@ export function AuthProvider({ children }) {
 
       console.log('[Auth] setProfile — id:', profile?.id, 'company_id:', profile?.company_id, 'role:', profile?.role)
       setProfile(profile)
+      if (profile?.id) profileUserIdRef.current = profile.id
       console.log('[Auth] profile set:', profile?.company_id)
       if (profile?.id) loadViewAs(profile.id)
     } catch (err) {
@@ -324,6 +334,7 @@ export function AuthProvider({ children }) {
     // force loading=false so the app falls through to the login screen instead of
     // spinning forever. Cleared in loadProfile's finally block on success.
     loadingTimeoutRef.current = setTimeout(() => {
+      console.log('[Auth] ⚠ HARD TIMEOUT 8s fired — loadProfile did not complete in time, forcing signed-out state')
       setLoading(false)
       setUser(null)
       setProfile(null)
@@ -337,6 +348,7 @@ export function AuthProvider({ children }) {
           setUser(session.user)
           loadProfile(session.user.id, session.user)
         } else {
+          console.log('[Auth] getSession: no active session found — clearing loading state, user lands on login screen')
           clearTimeout(loadingTimeoutRef.current)
           setLoading(false)
         }
@@ -348,10 +360,20 @@ export function AuthProvider({ children }) {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_OUT') {
+        console.log('[Auth] SIGNED_OUT event fired — token refresh likely failed or signOut() called')
         setUser(null)
         setProfile(null)
         setLoading(false)
       } else if (event === 'SIGNED_IN' && session?.user) {
+        // If a valid profile is already loaded for this exact user, skip re-fetching entirely.
+        // Supabase fires SIGNED_IN more than once per page load (stored-session restore +
+        // token refresh); the second call would otherwise run the full query chain and time out.
+        if (profileUserIdRef.current === session.user.id) {
+          console.log('[Auth] SIGNED_IN suppressed — profile already loaded for userId:', session.user.id)
+          setUser(session.user)
+          return
+        }
+
         // Deduplicate: Supabase fires SIGNED_IN both from onAuthStateChange and from
         // signInWithPassword's internal session write. Suppress if same userId fires
         // within 2 seconds of the first — the concurrency guard handles the rest.
@@ -449,6 +471,8 @@ export function AuthProvider({ children }) {
     setProfile(null)
     setViewRoleState(null)
     setNeedsPassword(false)
+    passwordCheckedRef.current = false
+    profileUserIdRef.current = null
   }
 
   return (
