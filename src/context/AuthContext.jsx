@@ -19,6 +19,20 @@ export function AuthProvider({ children }) {
   const lastSignedInRef     = useRef({ userId: null, at: 0 })   // deduplication
   const passwordCheckedRef  = useRef(false)                      // skip redundant password_set query on tab-resume SIGNED_IN
   const profileUserIdRef    = useRef(null)                       // tracks userId of currently loaded profile; blocks redundant loadProfile() calls
+  const [profileConfirmed, setProfileConfirmed] = useState(false) // true once loadProfile() finishes a real DB fetch (not a cache hit)
+
+  function readProfileCache(userId) {
+    try { return JSON.parse(localStorage.getItem(`pc-profile-${userId}`)) } catch { return null }
+  }
+  function writeProfileCache(p) {
+    if (!p?.id) return
+    try {
+      localStorage.setItem(`pc-profile-${p.id}`, JSON.stringify({
+        id: p.id, first_name: p.first_name||'', last_name: p.last_name||'',
+        company_id: p.company_id||null, role: p.role||'officer',
+      }))
+    } catch {}
+  }
 
   function loadViewAs(profileId) {
     const saved = localStorage.getItem(`pc-viewas-${profileId}`)
@@ -74,6 +88,7 @@ export function AuthProvider({ children }) {
       console.log('[Auth] user_profile result — data:', JSON.stringify(profileData), 'error:', profileError?.message ?? null)
 
       let profile = profileData
+      let usedMetadataFallback = false
 
       // Helper: wraps any Supabase promise in a 4-second race identical to the primary
       // user_profile query above. On timeout, resolves to { data: null } so callers can
@@ -168,7 +183,6 @@ export function AuthProvider({ children }) {
         // Each query uses withTimeout so a single hung call can't lock loadingProfileRef
         // forever. On any timeout we short-circuit to the metadata fallback immediately
         // rather than cascading into multiple sequential timeouts.
-        let usedMetadataFallback = false
 
         const { data: emp } = await withTimeout(
           supabase.from('employee')
@@ -315,6 +329,10 @@ export function AuthProvider({ children }) {
       console.log('[Auth] setProfile — id:', profile?.id, 'company_id:', profile?.company_id, 'role:', profile?.role)
       setProfile(profile)
       if (profile?.id) profileUserIdRef.current = profile.id
+      if (profile?.id && !usedMetadataFallback) {
+        writeProfileCache(profile)
+        setProfileConfirmed(true)
+      }
       console.log('[Auth] profile set:', profile?.company_id)
       if (profile?.id) loadViewAs(profile.id)
     } catch (err) {
@@ -346,6 +364,12 @@ export function AuthProvider({ children }) {
         console.log('[Auth] getSession — userId:', session?.user?.id || 'none', 'email:', session?.user?.email || 'none')
         if (session?.user) {
           setUser(session.user)
+          const cached = readProfileCache(session.user.id)
+          if (cached) {
+            setProfile(cached)
+            clearTimeout(loadingTimeoutRef.current)
+            setLoading(false)
+          }
           loadProfile(session.user.id, session.user)
         } else {
           console.log('[Auth] getSession: no active session found — clearing loading state, user lands on login screen')
@@ -465,6 +489,7 @@ export function AuthProvider({ children }) {
   }
 
   async function signOut() {
+    if (profile?.id) localStorage.removeItem(`pc-profile-${profile.id}`)
     if (profile?.id) localStorage.removeItem(`pc-viewas-${profile.id}`)
     await supabase.auth.signOut()
     setUser(null)
@@ -473,11 +498,12 @@ export function AuthProvider({ children }) {
     setNeedsPassword(false)
     passwordCheckedRef.current = false
     profileUserIdRef.current = null
+    setProfileConfirmed(false)
   }
 
   return (
     <AuthContext.Provider value={{
-      user, profile, loading,
+      user, profile, loading, profileConfirmed,
       signIn, signOut,
       role: profile?.role,
       effectiveRole,
