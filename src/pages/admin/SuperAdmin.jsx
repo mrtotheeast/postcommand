@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
 import { withLoadTimeout } from '../../lib/withLoadTimeout'
@@ -23,7 +24,12 @@ const s = {
 function fmtDate(iso) { if(!iso)return'—'; return new Date(iso).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) }
 
 export default function SuperAdmin() {
-  const { profile } = useAuth()
+  const { profile, role, profileConfirmed } = useAuth()
+  const navigate = useNavigate()
+  useEffect(() => {
+    if (!profileConfirmed) return
+    if (role !== 'super_admin') navigate('/dashboard', { replace: true })
+  }, [profileConfirmed, role, navigate])
   const [stats, setStats]   = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError]   = useState(null)
@@ -123,8 +129,7 @@ export default function SuperAdmin() {
         <div style={{ padding:'32px', textAlign:'center', color:'var(--text-muted)', fontFamily:'var(--font-condensed)', letterSpacing:'1px', fontSize:'12px' }}>LOADING PLATFORM STATS...</div>
       ) : error ? (
         <div style={{ padding:'20px', background:'var(--color-danger-bg)', border:'1px solid rgba(192,57,43,0.3)', borderRadius:'var(--radius-md)', color:'var(--color-danger)', fontSize:'13px' }}>
-          Could not load platform stats: {error}
-          <br/><span style={{ fontSize:'11px', color:'var(--text-muted)', marginTop:'6px', display:'block' }}>Deploy the platform-stats edge function and ensure service role key is set.</span>
+          Platform statistics are currently unavailable.
         </div>
       ) : stats && (
         <>
