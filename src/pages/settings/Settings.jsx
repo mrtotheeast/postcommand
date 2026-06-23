@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useTheme } from '../../context/ThemeContext'
 import { supabase } from '../../lib/supabase'
@@ -81,7 +82,12 @@ const TABS = [
 // ── Main export ───────────────────────────────────────────────────────────────
 
 export default function Settings() {
-  const { profile, companyId } = useAuth()
+  const { profile, companyId, role, profileConfirmed } = useAuth()
+  const navigate = useNavigate()
+  useEffect(() => {
+    if (!profileConfirmed) return
+    if (!['super_admin', 'chief'].includes(role)) navigate('/dashboard', { replace: true })
+  }, [profileConfirmed, role, navigate])
   const { theme, toggleTheme }  = useTheme()
   const [tab, setTab]           = useState('company')
 
@@ -158,7 +164,10 @@ function CompanyTab({ profile, companyId }) {
     const { data:{ publicUrl } } = supabase.storage.from('company-assets').getPublicUrl(data.path)
     setF('logo_url', publicUrl)
     setKey(`pc-company-${companyId}`, { ...getKey(`pc-company-${companyId}`), logoUrl: publicUrl })
-    supabase.from('company').upsert({ id: companyId, logo_url: publicUrl }, { onConflict: 'id' }).then(() => {}, () => {})
+    supabase.from('company').update({ logo_url: publicUrl }).eq('id', companyId).then(
+      ({ error }) => { if (error) console.error('[LogoUpload] update error:', error) },
+      (err) => console.error('[LogoUpload] update network FAILED:', err)
+    )
     setUploadingLogo(false)
   }
 
@@ -186,7 +195,10 @@ function CompanyTab({ profile, companyId }) {
       const { data:{ publicUrl } } = supabase.storage.from('company-assets').getPublicUrl(data.path)
       setF('logo_url', publicUrl)
       setKey(`pc-company-${companyId}`, { ...getKey(`pc-company-${companyId}`), logoUrl: publicUrl })
-      supabase.from('company').upsert({ id: companyId, logo_url: publicUrl }, { onConflict: 'id' }).then(() => {}, () => {})
+      supabase.from('company').update({ logo_url: publicUrl }).eq('id', companyId).then(
+        ({ error }) => { if (error) console.error('[LogoUpload] update error:', error) },
+        (err) => console.error('[LogoUpload] update network FAILED:', err)
+      )
     } catch(e) {
       if (e.message !== 'User cancelled photos app') toast('Upload error: ' + e.message)
     }
