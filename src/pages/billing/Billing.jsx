@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
 import { withLoadTimeout } from '../../lib/withLoadTimeout'
@@ -152,7 +153,12 @@ export default function Billing() {
   if (isIOS())    return <BillingIOSView />
   if (isNative()) return <BillingNativeRedirect />
 
-  const { profile, companyId, isNPS } = useAuth()
+  const { profile, companyId, isNPS, role, profileConfirmed } = useAuth()
+  const navigate = useNavigate()
+  useEffect(() => {
+    if (!profileConfirmed) return
+    if (role !== 'super_admin') navigate('/dashboard', { replace: true })
+  }, [profileConfirmed, role, navigate])
   const [subscription, setSubscription] = useState(null)
   const [usage, setUsage]               = useState({})
   const [loading, setLoading]           = useState(true)

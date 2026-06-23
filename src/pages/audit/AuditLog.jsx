@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
 import { withLoadTimeout } from '../../lib/withLoadTimeout'
@@ -34,7 +35,12 @@ function fmtAgo(iso) {
 }
 
 export default function AuditLog() {
-  const { profile } = useAuth()
+  const { profile, role, profileConfirmed } = useAuth()
+  const navigate = useNavigate()
+  useEffect(() => {
+    if (!profileConfirmed) return
+    if (!['super_admin', 'chief'].includes(role)) navigate('/dashboard', { replace: true })
+  }, [profileConfirmed, role, navigate])
   const [events, setEvents]     = useState([])
   const [loading, setLoading]   = useState(true)
   const [search, setSearch]     = useState('')
