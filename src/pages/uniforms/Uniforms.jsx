@@ -377,9 +377,6 @@ function InventoryTab({ companyId }) {
           </div>
         ))
       )}
-      <div style={{ marginTop:'12px', fontSize:'11px', color:'var(--text-muted)' }}>
-        SQL: Create <code>equipment_item</code> table — see commit message for schema.
-      </div>
     </div>
   )
 }
