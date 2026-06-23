@@ -150,7 +150,7 @@ export default function ClockIn() {
         setDistance(Math.round(dist))
         if (dist > radius) {
           setStep(STEPS.GEOFENCE_WARN)
-          supabase.from('clockin_violation').insert({ company_id: profile.company_id, employee_id: employeeId, site_id: site?.id ?? null, latitude: loc.lat, longitude: loc.lng, distance_meters: Math.round(dist), overridden: false }).catch(()=>{})
+          supabase.from('clockin_violation').insert({ company_id: profile.company_id, employee_id: employeeId, site_id: site?.id ?? null, latitude: loc.lat, longitude: loc.lng, distance_meters: Math.round(dist), overridden: false }).then(()=>{},()=>{})
           return
         }
       }
@@ -183,8 +183,8 @@ export default function ClockIn() {
       haptic('success')
       setTimesheet(ts)
       if (override) {
-        await supabase.from('notifications').insert({ company_id: profile.company_id, type: 'geofence_override', title: 'Geofence Override', message: `${profile.first_name} ${profile.last_name} clocked in ${distance}m outside geofence at ${site?.name}. Reason: ${reason}`, badge_key: 'open_incidents' }).catch(()=>{})
-        await supabase.from('clockin_violation').insert({ company_id: profile.company_id, employee_id: empData.id, site_id: shift.site_id, shift_id: shift.id, latitude: loc.lat, longitude: loc.lng, distance_meters: distance, override_reason: reason, overridden: true }).catch(()=>{})
+        await supabase.from('notifications').insert({ company_id: profile.company_id, type: 'geofence_override', title: 'Geofence Override', message: `${profile.first_name} ${profile.last_name} clocked in ${distance}m outside geofence at ${site?.name}. Reason: ${reason}`, badge_key: 'open_incidents' }).then(()=>{},()=>{})
+        await supabase.from('clockin_violation').insert({ company_id: profile.company_id, employee_id: empData.id, site_id: shift.site_id, shift_id: shift.id, latitude: loc.lat, longitude: loc.lng, distance_meters: distance, override_reason: reason, overridden: true }).then(()=>{},()=>{})
       }
       setStep(STEPS.CLOCKED_IN)
     } catch(e) { setError(e.message) }

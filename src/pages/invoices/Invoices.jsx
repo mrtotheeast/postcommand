@@ -166,7 +166,7 @@ export default function Invoices() {
     } catch(e) {
       // Mark draft as send_failed so admin knows the attempt was made but failed
       if (inv.status === 'draft' || inv.status === INVOICE_STATUSES.SEND_FAILED) {
-        await supabase.from('invoice').update({ status: INVOICE_STATUSES.SEND_FAILED }).eq('id', inv.id).eq('company_id', profile.company_id).catch(() => {})
+        await supabase.from('invoice').update({ status: INVOICE_STATUSES.SEND_FAILED }).eq('id', inv.id).eq('company_id', profile.company_id).then(() => {}, () => {})
         load()
       }
       toast(e?.message || 'Failed to send invoice', 'error')

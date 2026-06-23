@@ -351,7 +351,7 @@ function CSVImportModal({ companyId, onClose, onImported }) {
       if (error) failed++; else success++
       if (!error && newEmp?.id) {
         supabase.from('channel').select('id').eq('company_id', companyId).eq('is_general', true).maybeSingle()
-          .then(({ data: ch }) => { if (ch?.id) supabase.from('channel_member').insert({ channel_id: ch.id, employee_id: newEmp.id }).catch(() => {}) })
+          .then(({ data: ch }) => { if (ch?.id) supabase.from('channel_member').insert({ channel_id: ch.id, employee_id: newEmp.id }).then(() => {}, () => {}) })
           .catch(() => {})
       }
     }
@@ -1104,7 +1104,7 @@ function AddEmployeeModal({ companyId, onClose, onSaved }) {
       }).select().single()
       if (err) throw err
       supabase.from('channel').select('id').eq('company_id', companyId).eq('is_general', true).maybeSingle()
-        .then(({ data: ch }) => { if (ch?.id) supabase.from('channel_member').insert({ channel_id: ch.id, employee_id: data.id }).catch(() => {}) })
+        .then(({ data: ch }) => { if (ch?.id) supabase.from('channel_member').insert({ channel_id: ch.id, employee_id: data.id }).then(() => {}, () => {}) })
         .catch(() => {})
       setSavedEmp(data)
       setSuccess(true)
