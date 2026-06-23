@@ -121,9 +121,9 @@ export default function AppLayout({ children }) {
             {profile.company_slug.toUpperCase()}
           </div>
         )}
-        {profile?.company_id && (
-          <div style={{marginTop:'4px',fontSize:'10px',color:'var(--text-muted)',fontFamily:'var(--font-condensed)',letterSpacing:'0.5px'}}>
-            Company ID: {profile.company_id}
+        {profile?.company_id && role === 'super_admin' && (
+          <div style={{marginTop:'4px',fontSize:'10px',color:'var(--text-muted)',fontFamily:'var(--font-condensed)',letterSpacing:'0.5px',userSelect:'all',cursor:'text'}}>
+            {profile.company_id}
           </div>
         )}
       </div>
