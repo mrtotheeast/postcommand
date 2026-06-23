@@ -420,7 +420,7 @@ function ScanTab({ companyId, employee }) {
           <input value={manualId} onChange={e=>setManualId(e.target.value)} placeholder="Paste equipment item ID..." style={{ flex:1, background:'var(--bg-input)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', padding:'9px 12px', fontSize:'13px', color:'var(--text-primary)', outline:'none', fontFamily:'var(--font-body)' }} onKeyDown={e=>e.key==='Enter'&&manualId.trim()&&lookupItem(manualId.trim())}/>
           <button onClick={()=>manualId.trim()&&lookupItem(manualId.trim())} style={{ display:'inline-flex', alignItems:'center', gap:'6px', background:'var(--accent)', color:'var(--text-inverse)', border:'none', borderRadius:'var(--radius-sm)', padding:'0 16px', height:'42px', fontFamily:'var(--font-condensed)', fontSize:'12px', fontWeight:700, cursor:'pointer' }}>LOOK UP</button>
         </div>
-        <div style={{ fontSize:'11px', color:'var(--text-muted)', marginTop:'8px' }}>On mobile with Capacitor, scanning via camera requires the native app build with @capacitor/camera.</div>
+        <div style={{ fontSize:'11px', color:'var(--text-muted)', marginTop:'8px' }}>Enter an equipment item ID above to look up and check in or check out an item.</div>
       </div>
 
       {scannedItem && (
