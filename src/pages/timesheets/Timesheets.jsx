@@ -48,6 +48,7 @@ export default function Timesheets() {
   const [sheets, setSheets]       = useState([])
   const [employees, setEmployees] = useState([])
   const [sites, setSites]         = useState([])
+  const [company, setCompany]     = useState(null)
   const [loading, setLoading]     = useState(true)
   const [selected, setSelected]   = useState(null)
   const [filterStatus, setFilterStatus] = useState('all')
@@ -71,12 +72,13 @@ export default function Timesheets() {
     if (!profile?.company_id) return
     setLoading(true)
     try {
-      const [tsRes, empRes, siteRes] = await Promise.all([
+      const [tsRes, empRes, siteRes, compRes] = await Promise.all([
         scopeToOwnEmployee(supabase.from('timesheet').select('*').eq('company_id', profile.company_id).order('date', { ascending: false }).order('clock_in', { ascending: false }), profile),
         supabase.from('employee').select('id,first_name,last_name,position_title').eq('company_id', profile.company_id).or('invitation_status.eq.accepted,has_app_access.eq.true'),
         supabase.from('site').select('id,name').eq('company_id', profile.company_id),
+        supabase.from('company').select('name,logo_url').eq('id', profile.company_id).single(),
       ])
-      setSheets(tsRes.data || []); setEmployees(empRes.data || []); setSites(siteRes.data || [])
+      setSheets(tsRes.data || []); setEmployees(empRes.data || []); setSites(siteRes.data || []); setCompany(compRes.data || null)
     } finally {
       setLoading(false)
     }
@@ -187,7 +189,7 @@ export default function Timesheets() {
             ))}
           </div>
           {canExport&&<button onClick={exportCSV} style={{display:'flex',alignItems:'center',gap:'6px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'0 14px',height:'40px',color:'var(--text-secondary)',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,cursor:'pointer'}}><Icon name="download" size={14}/>CSV</button>}
-          {canExport&&<button onClick={()=>exportTimesheetPDF(filtered,employees,sites,'All timesheets')} style={{display:'flex',alignItems:'center',gap:'6px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'0 14px',height:'40px',color:'var(--text-secondary)',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,cursor:'pointer'}}><Icon name="file-text" size={14}/>PDF</button>}
+          {canExport&&<button onClick={()=>exportTimesheetPDF(filtered,employees,sites,'All timesheets',company)} style={{display:'flex',alignItems:'center',gap:'6px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'0 14px',height:'40px',color:'var(--text-secondary)',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,cursor:'pointer'}}><Icon name="file-text" size={14}/>PDF</button>}
           {canExport&&<button onClick={()=>exportToSheets('Timesheets','timesheets',[['Date','Employee','Site','Clock In','Clock Out','Hours','Status'],...filtered.map(t=>[t.date,empName(t.employee_id),siteName(t.site_id),fmt12(t.clock_in),fmt12(t.clock_out),fmtHours(t.total_hours),t.status])]).catch(()=>{})} style={{display:'flex',alignItems:'center',gap:'6px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'0 14px',height:'40px',color:'var(--text-secondary)',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,cursor:'pointer'}} title="Export to Google Sheets"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>SHEETS</button>}
         </div>
       </div>

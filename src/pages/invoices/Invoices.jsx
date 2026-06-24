@@ -800,7 +800,7 @@ function InvoiceDetailModal({ invoice, company, onClose, onEdit, onDelete, onSta
           </div>
           <div style={{ display:'flex', gap:'6px', alignItems:'center' }}>
             <button style={{ ...s.ghostBtn, height:'36px', padding:'0 12px', fontSize:'12px' }} onClick={() => setShowPdfPreview(true)}><Icon name="eye" size={14} />PREVIEW</button>
-            <button style={{ ...s.ghostBtn, height:'36px', padding:'0 12px', fontSize:'12px' }} onClick={() => exportInvoicePDF(invoice, items)}><Icon name="download" size={14} />PDF</button>
+            <button style={{ ...s.ghostBtn, height:'36px', padding:'0 12px', fontSize:'12px' }} onClick={() => exportInvoicePDF(invoice, items, company)}><Icon name="download" size={14} />PDF</button>
             <button style={{ ...s.ghostBtn, height:'36px', padding:'0 12px', fontSize:'12px' }} onClick={print}><Icon name="printer" size={14} />PRINT</button>
             <button style={s.closeBtn} onClick={onClose}><Icon name="x" size={18} /></button>
           </div>

@@ -4,17 +4,49 @@ import autoTable from 'jspdf-autotable'
 
 const BRAND = { primary: [200, 168, 75], dark: [13, 15, 20], gray: [122, 130, 153], lightGray: [240, 242, 248] }
 
-function addHeader(doc, title, subtitle) {
-  doc.setFillColor(...BRAND.dark)
-  doc.rect(0, 0, 210, 24, 'F')
+// Fetches a logo URL and returns { dataUrl, aspectRatio } for jsPDF, or null on failure.
+async function fetchLogoForPDF(url) {
+  if (!url) return null
+  try {
+    const res = await fetch(url)
+    if (!res.ok) return null
+    const blob = await res.blob()
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result)
+      reader.onerror = reject
+      reader.readAsDataURL(blob)
+    })
+    const img = new Image()
+    await new Promise((resolve) => { img.onload = resolve; img.onerror = resolve; img.src = dataUrl })
+    const aspectRatio = img.naturalWidth && img.naturalHeight ? img.naturalWidth / img.naturalHeight : 1
+    return { dataUrl, aspectRatio }
+  } catch { return null }
+}
+
+function renderNameText(doc, company) {
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(18)
   doc.setTextColor(...BRAND.primary)
-  doc.text('POSTCOMMAND', 14, 10)
+  doc.text((company?.name || 'POSTCOMMAND').toUpperCase(), 14, 10)
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(8)
   doc.setTextColor(...BRAND.lightGray)
   doc.text('Security Workforce Management', 14, 15)
+}
+
+// company: optional { name, ... }; logo: optional { dataUrl, aspectRatio } from fetchLogoForPDF.
+// Fallback chain: logo image → company name text → "POSTCOMMAND" text.
+function addHeader(doc, title, subtitle, company, logo) {
+  doc.setFillColor(...BRAND.dark)
+  doc.rect(0, 0, 210, 24, 'F')
+  if (logo) {
+    const h = 16
+    const w = Math.min(h * logo.aspectRatio, 60)
+    try { doc.addImage(logo.dataUrl, 'PNG', 14, 4, w, h) } catch { renderNameText(doc, company) }
+  } else {
+    renderNameText(doc, company)
+  }
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(14)
   doc.setTextColor(...BRAND.lightGray)
@@ -47,9 +79,10 @@ function fmtDate(d) { if (!d) return '—'; return new Date(d+'T12:00:00').toLoc
 
 // ── Invoice PDF ───────────────────────────────────────────────────────────────
 
-export function exportInvoicePDF(invoice, items) {
+export async function exportInvoicePDF(invoice, items, company) {
+  const logo = await fetchLogoForPDF(company?.logo_url)
   const doc = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' })
-  let y = addHeader(doc, `Invoice ${invoice.invoice_number}`, invoice.client_name)
+  let y = addHeader(doc, `Invoice ${invoice.invoice_number}`, invoice.client_name, company, logo)
 
   // Status badge
   const statusColors = { draft:[60,60,60], sent:[42,114,184], paid:[26,122,74], overdue:[176,48,48], void:[100,100,100] }
@@ -128,9 +161,10 @@ export function exportInvoicePDF(invoice, items) {
 
 // ── Timesheet / Report PDF ────────────────────────────────────────────────────
 
-export function exportTimesheetPDF(timesheets, employees, sites, periodLabel) {
+export async function exportTimesheetPDF(timesheets, employees, sites, periodLabel, company) {
+  const logo = await fetchLogoForPDF(company?.logo_url)
   const doc = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' })
-  let y = addHeader(doc, 'Timesheet Report', periodLabel)
+  let y = addHeader(doc, 'Timesheet Report', periodLabel, company, logo)
   const empMap  = Object.fromEntries(employees.map(e=>[e.id,`${e.first_name} ${e.last_name}`]))
   const siteMap = Object.fromEntries(sites.map(s=>[s.id,s.name]))
 
@@ -185,10 +219,11 @@ export function exportTimesheetPDF(timesheets, employees, sites, periodLabel) {
 
 // ── Analytics Report PDF ──────────────────────────────────────────────────────
 
-export function exportReportPDF(computed, periodLabel) {
+export async function exportReportPDF(computed, periodLabel, company) {
+  const logo = await fetchLogoForPDF(company?.logo_url)
   const { incTypeChart, incSiteChart, topHours, siteHoursChart, totalHours, incidents, patrols, activeEmployees } = computed
   const doc = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' })
-  let y = addHeader(doc, 'Operations Report', periodLabel)
+  let y = addHeader(doc, 'Operations Report', periodLabel, company, logo)
 
   // KPI row
   const kpis = [
