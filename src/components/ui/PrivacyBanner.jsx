@@ -1,18 +1,22 @@
 import { useState, useEffect } from 'react'
 import { openBrowser } from '../../lib/platform'
+import { useAuth } from '../../context/AuthContext'
 
-const STORAGE_KEY = 'pc-privacy-dismissed'
 const PRIVACY_URL = 'https://www.nationwidepolice.com/post-command'
 
 export default function PrivacyBanner() {
+  const { profile } = useAuth()
   const [visible, setVisible] = useState(false)
 
   useEffect(() => {
-    if (!localStorage.getItem(STORAGE_KEY)) setVisible(true)
-  }, [])
+    if (!profile?.id) return
+    const key = `pc-privacy-dismissed-${profile.id}`
+    if (!localStorage.getItem(key)) setVisible(true)
+  }, [profile?.id])
 
   function accept() {
-    localStorage.setItem(STORAGE_KEY, 'true')
+    if (!profile?.id) return
+    localStorage.setItem(`pc-privacy-dismissed-${profile.id}`, 'true')
     setVisible(false)
   }
 
