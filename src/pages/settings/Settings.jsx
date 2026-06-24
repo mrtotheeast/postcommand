@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useTheme } from '../../context/ThemeContext'
@@ -89,7 +89,17 @@ export default function Settings() {
     if (!['super_admin', 'chief'].includes(role)) navigate('/dashboard', { replace: true })
   }, [profileConfirmed, role, navigate])
   const { theme, toggleTheme }  = useTheme()
+  const toast                   = useToast()
   const [tab, setTab]           = useState('company')
+  const dirtyRef                = useRef(false)
+
+  const handleTabChange = useCallback((id) => {
+    if (dirtyRef.current && tab === 'company') {
+      toast('Unsaved changes were discarded', 'warning')
+      dirtyRef.current = false
+    }
+    setTab(id)
+  }, [tab, toast])
 
   return (
     <div style={s.page}>
@@ -104,7 +114,7 @@ export default function Settings() {
         {/* Left tab list */}
         <div style={s.tabList}>
           {TABS.map(t => (
-            <button key={t.id} style={{ ...s.tabBtn, ...(tab===t.id?s.tabBtnAct:{}) }} onClick={() => setTab(t.id)}>
+            <button key={t.id} style={{ ...s.tabBtn, ...(tab===t.id?s.tabBtnAct:{}) }} onClick={() => handleTabChange(t.id)}>
               <Icon name={t.icon} size={15} />{t.label}
             </button>
           ))}
@@ -112,7 +122,7 @@ export default function Settings() {
 
         {/* Right panel */}
         <div style={s.panel}>
-          {tab === 'company'       && <CompanyTab       profile={profile} companyId={companyId} />}
+          {tab === 'company'       && <CompanyTab       profile={profile} companyId={companyId} dirtyRef={dirtyRef} />}
           {tab === 'team'          && <TeamTab          profile={profile} companyId={companyId} theme={theme} toggleTheme={toggleTheme} />}
           {tab === 'ops'           && <CompanySettings  embedded />}
           {tab === 'notifications' && <NotificationsTab profile={profile} companyId={companyId} />}
@@ -129,7 +139,7 @@ export default function Settings() {
 
 // ── Tab 1 — Company Profile ───────────────────────────────────────────────────
 
-function CompanyTab({ profile, companyId }) {
+function CompanyTab({ profile, companyId, dirtyRef }) {
   const toast = useToast()
   const [form, setForm]   = useState({ name:'', logo_url:'', primary_color:'#c8a84b', address:'', phone:'', email:'', role_style:'military' })
   const [customRanks, setCustomRanks] = useState([])
@@ -153,7 +163,7 @@ function CompanyTab({ profile, companyId }) {
     if (saved.logoUrl)      setForm(f=>({...f, logo_url:saved.logoUrl}))
   }, [companyId])
 
-  function setF(k, v) { setForm(p=>({...p,[k]:v})) }
+  function setF(k, v) { if (dirtyRef) dirtyRef.current = true; setForm(p=>({...p,[k]:v})) }
 
   async function uploadFromFile(file) {
     setUploadingLogo(true)
@@ -213,7 +223,7 @@ function CompanyTab({ profile, companyId }) {
     // Upsert to company table
     const { error } = await supabase.from('company').update({ name:form.name.trim()||null, logo_url:form.logo_url.trim()||null, primary_color:form.primary_color, address:form.address.trim()||null, phone:form.phone.trim()||null, email:form.email.trim()||null, role_style:form.role_style, custom_ranks:customRanks }).eq('id', companyId)
     setSaving(false)
-    if (!error) toast('Settings saved')
+    if (!error) { if (dirtyRef) dirtyRef.current = false; toast('Settings saved') }
     setMsg(error ? { type:'err', text:error.message } : { type:'ok', text:'Company profile saved.' })
     setTimeout(() => setMsg(null), 3000)
   }
@@ -282,7 +292,7 @@ function CompanyTab({ profile, companyId }) {
         <div style={{ display:'flex', gap:'12px', flexWrap:'wrap' }}>
           {[['military','Military — Officer, Corporal, Sergeant, Lieutenant, Chief'],['standard','Standard — Employee, Lead, Supervisor, Manager, Admin']].map(([v,l])=>(
             <label key={v} style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer',padding:'12px 16px',border:`2px solid ${form.role_style===v?'var(--accent)':'var(--border-subtle)'}`,borderRadius:'var(--radius-md)',background:form.role_style===v?'var(--accent-bg)':'transparent',flex:1,minWidth:'220px',transition:'all 150ms ease'}}>
-              <input type="radio" value={v} checked={form.role_style===v} onChange={()=>setForm(p=>({...p,role_style:v}))} style={{accentColor:'var(--accent)'}}/>
+              <input type="radio" value={v} checked={form.role_style===v} onChange={()=>{ if(dirtyRef) dirtyRef.current=true; setForm(p=>({...p,role_style:v})) }} style={{accentColor:'var(--accent)'}}/>
               <span style={{fontSize:'13px',color:form.role_style===v?'var(--accent)':'var(--text-primary)',fontWeight:form.role_style===v?600:400}}>{l}</span>
             </label>
           ))}
@@ -302,13 +312,13 @@ function CompanyTab({ profile, companyId }) {
           <div key={i} style={{display:'flex',alignItems:'center',gap:'12px',padding:'8px 0',borderBottom:'1px solid var(--border)'}}>
             <span style={{fontSize:'13px',fontWeight:600,color:'var(--text-primary)',flex:1}}>{r.title}</span>
             <span style={{fontSize:'11px',color:'var(--text-muted)',fontFamily:'var(--font-condensed)'}}>Level {r.level}</span>
-            <button onClick={()=>setCustomRanks(prev=>prev.filter((_,j)=>j!==i))} style={{background:'transparent',border:'none',color:'var(--text-muted)',cursor:'pointer',padding:'2px',display:'flex'}}><Icon name="x" size={13}/></button>
+            <button onClick={()=>{ if(dirtyRef) dirtyRef.current=true; setCustomRanks(prev=>prev.filter((_,j)=>j!==i)) }} style={{background:'transparent',border:'none',color:'var(--text-muted)',cursor:'pointer',padding:'2px',display:'flex'}}><Icon name="x" size={13}/></button>
           </div>
         ))}
         <div style={{display:'flex',gap:'8px',marginTop:'12px'}}>
           <input placeholder="Rank title (e.g. Captain)" value={newRank.title} onChange={e=>setNewRank(p=>({...p,title:e.target.value}))} style={{...s.inp,flex:1}}/>
           <input type="number" min="1" max="5.9" step="0.1" placeholder="Level (1-5.9)" value={newRank.level} onChange={e=>setNewRank(p=>({...p,level:e.target.value}))} style={{...s.inp,width:'130px'}}/>
-          <button onClick={()=>{ if(!newRank.title||!newRank.level)return; setCustomRanks(p=>[...p,{title:newRank.title.trim(),level:parseFloat(newRank.level)}]); setNewRank({title:'',level:''}) }} style={{...s.ghost,height:'44px',padding:'0 14px',flexShrink:0}}>ADD</button>
+          <button onClick={()=>{ if(!newRank.title||!newRank.level)return; if(dirtyRef) dirtyRef.current=true; setCustomRanks(p=>[...p,{title:newRank.title.trim(),level:parseFloat(newRank.level)}]); setNewRank({title:'',level:''}) }} style={{...s.ghost,height:'44px',padding:'0 14px',flexShrink:0}}>ADD</button>
         </div>
         <div style={{marginTop:'10px',fontSize:'11px',color:'var(--text-muted)'}}>Custom ranks are saved when you click Save Changes.</div>
       </div>
