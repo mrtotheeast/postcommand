@@ -35,17 +35,26 @@ function renderNameText(doc, company) {
   doc.text('Security Workforce Management', 14, 15)
 }
 
-// company: optional { name, ... }; logo: optional { dataUrl, aspectRatio } from fetchLogoForPDF.
+// company: optional { name, phone, email, ... }; logo: optional { dataUrl, aspectRatio } from fetchLogoForPDF.
 // Fallback chain: logo image → company name text → "POSTCOMMAND" text.
 function addHeader(doc, title, subtitle, company, logo) {
+  const hasContact = company?.phone || company?.email
+  const headerH = hasContact ? 28 : 24
   doc.setFillColor(...BRAND.dark)
-  doc.rect(0, 0, 210, 24, 'F')
+  doc.rect(0, 0, 210, headerH, 'F')
   if (logo) {
     const h = 16
     const w = Math.min(h * logo.aspectRatio, 60)
     try { doc.addImage(logo.dataUrl, 'PNG', 14, 4, w, h) } catch { renderNameText(doc, company) }
   } else {
     renderNameText(doc, company)
+  }
+  if (hasContact) {
+    const contact = [company.phone, company.email].filter(Boolean).join('  •  ')
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(7)
+    doc.setTextColor(...BRAND.gray)
+    doc.text(contact, 14, 22)
   }
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(14)
@@ -57,7 +66,7 @@ function addHeader(doc, title, subtitle, company, logo) {
     doc.setTextColor(...BRAND.gray)
     doc.text(subtitle, 210 - 14, 16, { align:'right' })
   }
-  return 30
+  return headerH + 6
 }
 
 function addFooter(doc) {

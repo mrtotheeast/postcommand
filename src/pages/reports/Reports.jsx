@@ -77,7 +77,6 @@ export default function Reports() {
   const isMobile = window.innerWidth < 640
   const [period, setPeriod]       = useState('30d')
   const [data, setData]           = useState(null)
-  const [company, setCompany]     = useState(null)
   const [loading, setLoading]     = useState(true)
   const [mainSection, setMainSection] = useState('ops')
 
@@ -97,16 +96,14 @@ export default function Reports() {
       const start = periodStart()
       const cid = profile.company_id
 
-      const [{ data: incidents }, { data: timesheets }, { data: employees }, { data: patrols }, { data: sites }, { data: companyData }] = await Promise.all([
+      const [{ data: incidents }, { data: timesheets }, { data: employees }, { data: patrols }, { data: sites }] = await Promise.all([
         supabase.from('incident_report').select('id,incident_type,status,created_at,site_id').eq('company_id', cid).gte('created_at', start),
         supabase.from('timesheet').select('id,employee_id,site_id,clock_in,clock_out,date,status').eq('company_id', cid).gte('date', start.slice(0,10)),
         supabase.from('employee').select('id,first_name,last_name,role,status').eq('company_id', cid),
         supabase.from('patrol_log').select('id,employee_id,site_id,started_at,ended_at,status').eq('company_id', cid).gte('started_at', start),
         supabase.from('site').select('id,name').eq('company_id', cid),
-        supabase.from('company').select('name,logo_url').eq('id', cid).single(),
       ])
 
-      setCompany(companyData || null)
       setData({ incidents: incidents||[], timesheets: timesheets||[], employees: employees||[], patrols: patrols||[], sites: sites||[] })
     } catch(e) {
     } finally {
@@ -173,8 +170,10 @@ export default function Reports() {
     URL.revokeObjectURL(url)
   }
 
-  function printPDF() {
+  async function printPDF() {
     if (!computed) return
+    const { data: freshCompany } = await supabase.from('company').select('name,logo_url,phone,email').eq('id', profile.company_id).single()
+    const company = freshCompany || null
     const { incTypeChart, incSiteChart, topHours, siteHoursChart, totalHours, approvedTS, pendingTS, totalPatrolHours, activeEmployees, incidents, patrols, timesheets } = computed
     const pl = PERIODS.find(p=>p.id===period)?.label || period
     const tableRows = (data, c1='Item', c2='Value') =>
@@ -200,6 +199,7 @@ export default function Reports() {
       @media print{body{padding:24px}}
     </style></head><body>
     ${company?.logo_url ? `<img src="${company.logo_url}" style="max-height:56px;max-width:200px;margin-bottom:8px;display:block" />` : `<h1>${company?.name ? company.name.toUpperCase() : 'POST<span>COMMAND</span>'}</h1>`}
+    ${(company?.phone || company?.email) ? `<div style="font-size:11px;color:#888;margin-bottom:4px">${[company.phone, company.email].filter(Boolean).join('  •  ')}</div>` : ''}
     <div class="period">Operational Report · ${pl}</div>
     <div class="kpis">
       <div class="kpi"><div class="kpi-val">${incidents.length}</div><div class="kpi-lbl">Incidents</div></div>
@@ -240,7 +240,7 @@ export default function Reports() {
           {PERIODS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
         </select>
         <button style={s.exportBtn} onClick={exportCSV}><Icon name="download" size={14} />CSV</button>
-        <button style={s.exportBtn} onClick={() => exportReportPDF(computed, periodLabel, company)}><Icon name="download" size={14} />PDF</button>
+        <button style={s.exportBtn} onClick={async () => { const { data: c } = await supabase.from('company').select('name,logo_url,phone,email').eq('id', profile.company_id).single(); exportReportPDF(computed, periodLabel, c || null) }}><Icon name="download" size={14} />PDF</button>
         <button style={s.exportBtn} onClick={printPDF}><Icon name="printer" size={14} />PRINT</button>
         <SheetsBtn rows={computed ? [
           ['Type','Count'],
