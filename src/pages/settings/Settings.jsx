@@ -211,7 +211,7 @@ function CompanyTab({ profile, companyId }) {
     document.documentElement.style.setProperty('--accent', form.primary_color)
     setKey(`pc-company-${companyId}`, { primaryColor:form.primary_color, logoUrl:form.logo_url, displayName:form.name })
     // Upsert to company table
-    const { error } = await supabase.from('company').upsert({ id:companyId, name:form.name.trim()||null, logo_url:form.logo_url.trim()||null, primary_color:form.primary_color, address:form.address.trim()||null, phone:form.phone.trim()||null, email:form.email.trim()||null, role_style:form.role_style, custom_ranks:customRanks }, { onConflict:'id' })
+    const { error } = await supabase.from('company').update({ name:form.name.trim()||null, logo_url:form.logo_url.trim()||null, primary_color:form.primary_color, address:form.address.trim()||null, phone:form.phone.trim()||null, email:form.email.trim()||null, role_style:form.role_style, custom_ranks:customRanks }).eq('id', companyId)
     setSaving(false)
     if (!error) toast('Settings saved')
     setMsg(error ? { type:'err', text:error.message } : { type:'ok', text:'Company profile saved.' })
