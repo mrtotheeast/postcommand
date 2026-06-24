@@ -273,9 +273,6 @@ function CompanyTab({ profile, companyId }) {
           <div style={s.lbl}>Company Email</div>
           <Inp value={form.email} onChange={e=>setF('email',e.target.value)} placeholder="admin@company.com" type="email" />
         </div>
-        <button style={{ ...s.btn, opacity:saving?0.6:1 }} onClick={save} disabled={saving}>
-          <Icon name="save" size={14}/>{saving?'SAVING...':'SAVE CHANGES'}
-        </button>
       </div>
 
       {/* Role Style */}
@@ -313,7 +310,13 @@ function CompanyTab({ profile, companyId }) {
           <input type="number" min="1" max="5.9" step="0.1" placeholder="Level (1-5.9)" value={newRank.level} onChange={e=>setNewRank(p=>({...p,level:e.target.value}))} style={{...s.inp,width:'130px'}}/>
           <button onClick={()=>{ if(!newRank.title||!newRank.level)return; setCustomRanks(p=>[...p,{title:newRank.title.trim(),level:parseFloat(newRank.level)}]); setNewRank({title:'',level:''}) }} style={{...s.ghost,height:'44px',padding:'0 14px',flexShrink:0}}>ADD</button>
         </div>
-        <div style={{marginTop:'10px',fontSize:'11px',color:'var(--text-muted)'}}>Custom ranks are saved when you click Save Changes above.</div>
+        <div style={{marginTop:'10px',fontSize:'11px',color:'var(--text-muted)'}}>Custom ranks are saved when you click Save Changes.</div>
+      </div>
+
+      <div style={{ display:'flex', justifyContent:'flex-end', paddingTop:'4px' }}>
+        <button style={{ ...s.btn, opacity:saving?0.6:1 }} onClick={save} disabled={saving}>
+          <Icon name="save" size={14}/>{saving?'SAVING...':'SAVE CHANGES'}
+        </button>
       </div>
     </>
   )
