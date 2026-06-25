@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useTheme } from '../../context/ThemeContext'
@@ -137,6 +137,53 @@ export default function Settings() {
   )
 }
 
+// ── Permission constants — used by CompanyTab (default seeding) and RolePermissionsMatrix ──
+
+const PERM_GROUPS = [
+  { group:'Operations', perms:[
+    { id:'view_dashboard',     label:'View Dashboard' },
+    { id:'manage_schedule',    label:'Manage Schedule' },
+    { id:'approve_timesheets', label:'Approve Timesheets' },
+    { id:'view_timesheets',    label:'View Timesheets' },
+    { id:'clock_in_out',       label:'Clock In / Out' },
+    { id:'view_incidents',     label:'View Incidents' },
+    { id:'create_incidents',   label:'Create Incidents' },
+    { id:'approve_incidents',  label:'Approve Incidents' },
+    { id:'view_patrol',        label:'View Patrol' },
+    { id:'create_patrol',      label:'Create Patrol' },
+  ]},
+  { group:'Personnel', perms:[
+    { id:'view_personnel',        label:'View Personnel' },
+    { id:'edit_personnel',        label:'Edit Personnel' },
+    { id:'invite_employees',      label:'Invite Employees' },
+    { id:'view_employee_profiles',label:'View Full Profiles' },
+  ]},
+  { group:'Admin', perms:[
+    { id:'view_invoices',    label:'View Invoices' },
+    { id:'create_invoices',  label:'Create Invoices' },
+    { id:'view_reports',     label:'View Reports' },
+    { id:'manage_sites',     label:'Manage Sites' },
+    { id:'manage_clients',   label:'Manage Clients' },
+    { id:'view_hr',          label:'View HR Docs' },
+    { id:'manage_hr',        label:'Manage HR' },
+    { id:'manage_settings',  label:'Manage Settings' },
+    { id:'manage_billing',   label:'Manage Billing' },
+  ]},
+  { group:'Field', perms:[
+    { id:'use_live_map', label:'Use Live Map' },
+    { id:'use_sos',      label:'Use SOS' },
+    { id:'view_ccw_map', label:'View CCW Map' },
+  ]},
+]
+const PERM_ROLES = ['officer','corporal','sergeant','lieutenant','chief']
+const DEFAULT_PERMS = {
+  officer:    new Set(['view_dashboard','clock_in_out','view_timesheets','create_incidents','view_patrol','use_sos','view_ccw_map']),
+  corporal:   new Set(['view_dashboard','clock_in_out','view_timesheets','approve_timesheets','create_incidents','view_incidents','view_patrol','use_sos','view_personnel','view_ccw_map']),
+  sergeant:   new Set(['view_dashboard','clock_in_out','view_timesheets','approve_timesheets','manage_schedule','create_incidents','view_incidents','approve_incidents','view_patrol','create_patrol','use_sos','use_live_map','view_personnel','edit_personnel','invite_employees','view_employee_profiles','view_ccw_map']),
+  lieutenant: new Set(['view_dashboard','view_timesheets','approve_timesheets','manage_schedule','view_incidents','approve_incidents','view_patrol','create_patrol','use_sos','use_live_map','view_personnel','edit_personnel','invite_employees','view_employee_profiles','view_invoices','view_reports','manage_sites','manage_clients','view_hr','view_ccw_map']),
+  chief:      new Set(['view_dashboard','clock_in_out','view_timesheets','approve_timesheets','manage_schedule','view_incidents','create_incidents','approve_incidents','view_patrol','create_patrol','view_personnel','edit_personnel','invite_employees','view_employee_profiles','view_invoices','create_invoices','view_reports','manage_sites','manage_clients','view_hr','manage_hr','manage_settings','manage_billing','use_live_map','use_sos','view_ccw_map']),
+}
+
 // ── Tab 1 — Company Profile ───────────────────────────────────────────────────
 
 function CompanyTab({ profile, companyId, dirtyRef }) {
@@ -144,6 +191,7 @@ function CompanyTab({ profile, companyId, dirtyRef }) {
   const [form, setForm]   = useState({ name:'', logo_url:'', primary_color:'#c8a84b', address:'', phone:'', email:'', role_style:'military' })
   const [customRanks, setCustomRanks] = useState([])
   const [newRank, setNewRank]         = useState({ title:'', level:'' })
+  const [newRankError, setNewRankError] = useState(null)
   const [saving, setSaving] = useState(false)
   const [msg, setMsg]     = useState(null)
   const [uploadingLogo, setUploadingLogo] = useState(false)
@@ -164,6 +212,16 @@ function CompanyTab({ profile, companyId, dirtyRef }) {
   }, [companyId])
 
   function setF(k, v) { if (dirtyRef) dirtyRef.current = true; setForm(p=>({...p,[k]:v})) }
+
+  function makeSlug(title) {
+    const RESERVED = new Set(['officer','corporal','sergeant','lieutenant','chief','super_admin','hr','accounting','office_staff','client'])
+    const base = title.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').replace(/_+/g,'_')
+    if (!base) return null
+    const taken = new Set([...RESERVED, ...customRanks.map(r=>r.slug).filter(Boolean)])
+    if (!taken.has(base)) return base
+    for (let i = 2; i <= 10; i++) { const c = `${base}_${i}`; if (!taken.has(c)) return c }
+    return null
+  }
 
   async function uploadFromFile(file) {
     setUploadingLogo(true)
@@ -217,10 +275,36 @@ function CompanyTab({ profile, companyId, dirtyRef }) {
 
   async function save() {
     setSaving(true); setMsg(null)
-    // Apply color immediately
     document.documentElement.style.setProperty('--accent', form.primary_color)
     setKey(`pc-company-${companyId}`, { primaryColor:form.primary_color, logoUrl:form.logo_url, displayName:form.name })
-    // Upsert to company table
+
+    // Seed default permissions for any new custom ranks (slugs not yet in role_permission)
+    const sluggedRanks = customRanks.filter(r => r.slug)
+    if (sluggedRanks.length > 0) {
+      const { data: existingPerms } = await supabase.from('role_permission').select('role').eq('company_id', companyId)
+      const existingRoles = new Set((existingPerms || []).map(r => r.role))
+      const newRanks = sluggedRanks.filter(r => !existingRoles.has(r.slug))
+      if (newRanks.length > 0) {
+        const builtinLevels = PERM_ROLES.map(r => ({ slug: r, level: ROLE_LEVELS[r] }))
+        const allPerms = PERM_GROUPS.flatMap(g => g.perms.map(p => p.id))
+        const seedRows = []
+        for (const rank of newRanks) {
+          const nearest = builtinLevels.reduce((best, b) => {
+            const d = Math.abs(b.level - rank.level), bd = Math.abs(best.level - rank.level)
+            return (d < bd || (d === bd && b.level <= rank.level)) ? b : best
+          })
+          const { data: srcPerms } = await supabase.from('role_permission').select('permission,enabled').eq('company_id', companyId).eq('role', nearest.slug)
+          for (const perm of allPerms) {
+            const enabled = srcPerms?.length
+              ? (srcPerms.find(p => p.permission === perm)?.enabled ?? DEFAULT_PERMS[nearest.slug]?.has(perm) ?? false)
+              : (DEFAULT_PERMS[nearest.slug]?.has(perm) ?? false)
+            seedRows.push({ company_id: companyId, role: rank.slug, permission: perm, enabled, updated_at: new Date().toISOString() })
+          }
+        }
+        await supabase.from('role_permission').upsert(seedRows, { onConflict: 'company_id,role,permission' })
+      }
+    }
+
     const { error } = await supabase.from('company').update({ name:form.name.trim()||null, logo_url:form.logo_url.trim()||null, primary_color:form.primary_color, address:form.address.trim()||null, phone:form.phone.trim()||null, email:form.email.trim()||null, role_style:form.role_style, custom_ranks:customRanks }).eq('id', companyId)
     setSaving(false)
     if (!error) { if (dirtyRef) dirtyRef.current = false; toast('Settings saved') }
@@ -316,10 +400,19 @@ function CompanyTab({ profile, companyId, dirtyRef }) {
           </div>
         ))}
         <div style={{display:'flex',gap:'8px',marginTop:'12px'}}>
-          <input placeholder="Rank title (e.g. Captain)" value={newRank.title} onChange={e=>setNewRank(p=>({...p,title:e.target.value}))} style={{...s.inp,flex:1}}/>
+          <input placeholder="Rank title (e.g. Captain)" value={newRank.title} onChange={e=>{setNewRank(p=>({...p,title:e.target.value}));setNewRankError(null)}} style={{...s.inp,flex:1}}/>
           <input type="number" min="1" max="5.9" step="0.1" placeholder="Level (1-5.9)" value={newRank.level} onChange={e=>setNewRank(p=>({...p,level:e.target.value}))} style={{...s.inp,width:'130px'}}/>
-          <button onClick={()=>{ if(!newRank.title||!newRank.level)return; if(dirtyRef) dirtyRef.current=true; setCustomRanks(p=>[...p,{title:newRank.title.trim(),level:parseFloat(newRank.level)}]); setNewRank({title:'',level:''}) }} style={{...s.ghost,height:'44px',padding:'0 14px',flexShrink:0}}>ADD</button>
+          <button onClick={()=>{
+            if(!newRank.title||!newRank.level)return
+            const slug = makeSlug(newRank.title.trim())
+            if (!slug) { setNewRankError('Title produces an invalid or duplicate slug.'); return }
+            if(dirtyRef) dirtyRef.current=true
+            setCustomRanks(p=>[...p,{title:newRank.title.trim(),level:parseFloat(newRank.level),slug}])
+            setNewRank({title:'',level:''})
+            setNewRankError(null)
+          }} style={{...s.ghost,height:'44px',padding:'0 14px',flexShrink:0}}>ADD</button>
         </div>
+        {newRankError && <div style={{marginTop:'6px',fontSize:'11px',color:'var(--color-danger)'}}>{newRankError}</div>}
         <div style={{marginTop:'10px',fontSize:'11px',color:'var(--text-muted)'}}>Custom ranks are saved when you click Save Changes.</div>
       </div>
 
@@ -900,58 +993,26 @@ function PositionsSection({ companyId }) {
 
 // ── Role Permissions Matrix ───────────────────────────────────────────────────
 
-const PERM_GROUPS = [
-  { group:'Operations', perms:[
-    { id:'view_dashboard',     label:'View Dashboard' },
-    { id:'manage_schedule',    label:'Manage Schedule' },
-    { id:'approve_timesheets', label:'Approve Timesheets' },
-    { id:'view_timesheets',    label:'View Timesheets' },
-    { id:'clock_in_out',       label:'Clock In / Out' },
-    { id:'view_incidents',     label:'View Incidents' },
-    { id:'create_incidents',   label:'Create Incidents' },
-    { id:'approve_incidents',  label:'Approve Incidents' },
-    { id:'view_patrol',        label:'View Patrol' },
-    { id:'create_patrol',      label:'Create Patrol' },
-  ]},
-  { group:'Personnel', perms:[
-    { id:'view_personnel',        label:'View Personnel' },
-    { id:'edit_personnel',        label:'Edit Personnel' },
-    { id:'invite_employees',      label:'Invite Employees' },
-    { id:'view_employee_profiles',label:'View Full Profiles' },
-  ]},
-  { group:'Admin', perms:[
-    { id:'view_invoices',    label:'View Invoices' },
-    { id:'create_invoices',  label:'Create Invoices' },
-    { id:'view_reports',     label:'View Reports' },
-    { id:'manage_sites',     label:'Manage Sites' },
-    { id:'manage_clients',   label:'Manage Clients' },
-    { id:'view_hr',          label:'View HR Docs' },
-    { id:'manage_hr',        label:'Manage HR' },
-    { id:'manage_settings',  label:'Manage Settings' },
-    { id:'manage_billing',   label:'Manage Billing' },
-  ]},
-  { group:'Field', perms:[
-    { id:'use_live_map', label:'Use Live Map' },
-    { id:'use_sos',      label:'Use SOS' },
-    { id:'view_ccw_map', label:'View CCW Map' },
-  ]},
-]
-const PERM_ROLES = ['officer','corporal','sergeant','lieutenant','chief']
-const PERM_ROLE_LABELS = { officer:'Officer', corporal:'Corporal', sergeant:'Sergeant', lieutenant:'Lieutenant', chief:'Chief' }
-
-const DEFAULT_PERMS = {
-  officer:    new Set(['view_dashboard','clock_in_out','view_timesheets','create_incidents','view_patrol','use_sos','view_ccw_map']),
-  corporal:   new Set(['view_dashboard','clock_in_out','view_timesheets','approve_timesheets','create_incidents','view_incidents','view_patrol','use_sos','view_personnel','view_ccw_map']),
-  sergeant:   new Set(['view_dashboard','clock_in_out','view_timesheets','approve_timesheets','manage_schedule','create_incidents','view_incidents','approve_incidents','view_patrol','create_patrol','use_sos','use_live_map','view_personnel','edit_personnel','invite_employees','view_employee_profiles','view_ccw_map']),
-  lieutenant: new Set(['view_dashboard','view_timesheets','approve_timesheets','manage_schedule','view_incidents','approve_incidents','view_patrol','create_patrol','use_sos','use_live_map','view_personnel','edit_personnel','invite_employees','view_employee_profiles','view_invoices','view_reports','manage_sites','manage_clients','view_hr','view_ccw_map']),
-  chief:      new Set(['view_dashboard','clock_in_out','view_timesheets','approve_timesheets','manage_schedule','view_incidents','create_incidents','approve_incidents','view_patrol','create_patrol','view_personnel','edit_personnel','invite_employees','view_employee_profiles','view_invoices','create_invoices','view_reports','manage_sites','manage_clients','view_hr','manage_hr','manage_settings','manage_billing','use_live_map','use_sos','view_ccw_map']),
-}
-
 function RolePermissionsMatrix({ companyId, profile }) {
   const toast = useToast()
+  const roleStyle   = profile?.company?.role_style || 'military'
+  const customRanks = profile?.company?.custom_ranks || []
+  const allRoles = useMemo(() => {
+    const builtins = PERM_ROLES.map(r => ({
+      slug: r,
+      label: ROLE_TITLES[roleStyle]?.[ROLE_LEVELS[r]] ?? ROLE_LABELS[r],
+      level: ROLE_LEVELS[r],
+    }))
+    const customs = customRanks
+      .filter(r => r.slug && r.title)
+      .map(r => ({ slug: r.slug, label: r.title, level: r.level }))
+    return [...builtins, ...customs].sort((a, b) => a.level - b.level)
+  }, [roleStyle, customRanks])
+
   const [matrix, setMatrix] = useState(() => {
     const m = {}
     PERM_ROLES.forEach(r => { m[r] = new Set(DEFAULT_PERMS[r]) })
+    customRanks.filter(r => r.slug).forEach(r => { m[r.slug] = new Set() })
     return m
   })
   const [saving, setSaving] = useState(false)
@@ -960,17 +1021,19 @@ function RolePermissionsMatrix({ companyId, profile }) {
   useEffect(() => {
     if (!companyId) return
     supabase.from('role_permission').select('role,permission,enabled').eq('company_id', companyId).then(({ data }) => {
-      if (!data?.length) return
       const m = {}
       PERM_ROLES.forEach(r => { m[r] = new Set(DEFAULT_PERMS[r]) })
-      for (const row of data) {
-        if (!m[row.role]) m[row.role] = new Set()
-        if (row.enabled) m[row.role].add(row.permission)
-        else m[row.role].delete(row.permission)
+      allRoles.filter(r => !PERM_ROLES.includes(r.slug)).forEach(r => { m[r.slug] = new Set() })
+      if (data?.length) {
+        for (const row of data) {
+          if (!m[row.role]) m[row.role] = new Set()
+          if (row.enabled) m[row.role].add(row.permission)
+          else m[row.role].delete(row.permission)
+        }
       }
       setMatrix(m)
     })
-  }, [companyId])
+  }, [companyId]) // allRoles intentionally omitted — profile doesn't change without reload
 
   function toggle(role, perm) {
     setMatrix(prev => {
@@ -983,11 +1046,11 @@ function RolePermissionsMatrix({ companyId, profile }) {
 
   async function save() {
     setSaving(true); setMsg(null)
+    const allPerms = PERM_GROUPS.flatMap(g => g.perms.map(p => p.id))
     const rows = []
-    for (const role of PERM_ROLES) {
-      const allPerms = PERM_GROUPS.flatMap(g => g.perms.map(p => p.id))
+    for (const { slug: role } of allRoles) {
       for (const perm of allPerms) {
-        rows.push({ company_id:companyId, role, permission:perm, enabled:matrix[role].has(perm), updated_at:new Date().toISOString() })
+        rows.push({ company_id:companyId, role, permission:perm, enabled:(matrix[role]||new Set()).has(perm), updated_at:new Date().toISOString() })
       }
     }
     const { error } = await supabase.from('role_permission').upsert(rows, { onConflict:'company_id,role,permission' })
@@ -1000,6 +1063,7 @@ function RolePermissionsMatrix({ companyId, profile }) {
   function reset() {
     const m = {}
     PERM_ROLES.forEach(r => { m[r] = new Set(DEFAULT_PERMS[r]) })
+    allRoles.filter(r => !PERM_ROLES.includes(r.slug)).forEach(r => { m[r.slug] = new Set() })
     setMatrix(m)
     setMsg({ type:'ok', text:'Reset to defaults. Click SAVE to persist.' })
     setTimeout(() => setMsg(null), 3000)
@@ -1025,8 +1089,8 @@ function RolePermissionsMatrix({ companyId, profile }) {
           <thead>
             <tr style={{ borderBottom:'2px solid var(--border)' }}>
               <th style={{ textAlign:'left', padding:'8px 10px', fontSize:'10px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', minWidth:'160px' }}>Permission</th>
-              {PERM_ROLES.map(r => (
-                <th key={r} style={{ textAlign:'center', padding:'8px 10px', fontSize:'10px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', minWidth:'76px' }}>{PERM_ROLE_LABELS[r]}</th>
+              {allRoles.map(r => (
+                <th key={r.slug} style={{ textAlign:'center', padding:'8px 10px', fontSize:'10px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', minWidth:'76px' }}>{r.label}</th>
               ))}
             </tr>
           </thead>
@@ -1034,12 +1098,12 @@ function RolePermissionsMatrix({ companyId, profile }) {
             {PERM_GROUPS.map(group => (
               <>
                 <tr key={`g-${group.group}`}>
-                  <td colSpan={PERM_ROLES.length+1} style={{ padding:'10px 10px 4px', fontSize:'9px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'2px', fontFamily:'var(--font-condensed)', fontWeight:700, background:'var(--bg-surface)' }}>{group.group}</td>
+                  <td colSpan={allRoles.length+1} style={{ padding:'10px 10px 4px', fontSize:'9px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'2px', fontFamily:'var(--font-condensed)', fontWeight:700, background:'var(--bg-surface)' }}>{group.group}</td>
                 </tr>
                 {group.perms.map(perm => (
                   <tr key={perm.id} style={{ borderBottom:'1px solid var(--border)' }}>
                     <td style={{ padding:'7px 10px', color:'var(--text-secondary)', fontSize:'12px' }}>{perm.label}</td>
-                    {PERM_ROLES.map(role => (
+                    {allRoles.map(({ slug: role }) => (
                       <td key={role} style={{ textAlign:'center', padding:'7px 10px' }}>
                         <input type="checkbox" checked={matrix[role]?.has(perm.id)||false} onChange={() => toggle(role, perm.id)}
                           style={{ width:'15px', height:'15px', accentColor:'var(--accent)', cursor:'pointer' }} />
