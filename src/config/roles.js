@@ -46,6 +46,22 @@ export function atLeast(role, minRole) {
   return (ROLE_LEVELS[role] ?? 0) >= min
 }
 
+// Returns every role string (built-in + custom) whose level is >= the given minRole's level.
+// Used to build target_roles arrays for push notifications so custom ranks at qualifying
+// levels receive the same notifications as their built-in equivalents.
+// Edge cases: minRole not in ROLE_LEVELS → Infinity (nobody qualifies, returns []).
+// Custom rank level above all built-ins (e.g. level 8) → included whenever 8 >= minLevel.
+export function rolesAtOrAbove(minRole, customRanks = []) {
+  const minLevel = ROLE_LEVELS[minRole] ?? Infinity
+  const builtins = Object.entries(ROLE_LEVELS)
+    .filter(([, v]) => v >= minLevel)
+    .map(([k]) => k)
+  const customs = (customRanks || [])
+    .filter(r => r.slug && typeof r.level === 'number' && r.level >= minLevel)
+    .map(r => r.slug)
+  return [...new Set([...builtins, ...customs])]
+}
+
 // Get display title for a role given company style and optional overrides
 export function getRoleTitle(role, style = 'military', customTitles = {}) {
   const level = getRoleLevel(role)

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
 import { withLoadTimeout } from '../../lib/withLoadTimeout'
-import { atLeast } from '../../config/roles'
+import { atLeast, rolesAtOrAbove } from '../../config/roles'
 import { isOwnDataOnly } from '../../lib/scoping'
 import { isNative } from '../../lib/platform'
 import Icon from '../../components/ui/Icon'
@@ -304,7 +304,7 @@ function IncidentForm({profile,onClose,onSaved}) {
       toast('Incident report saved')
       if (!asDraft) {
         supabase.functions.invoke('send-push', {
-          body: { company_id: profile.company_id, type: 'incident_submitted', title: 'New Incident Report', body: `${form.incident_type} submitted`, target_roles: ['lieutenant', 'chief', 'super_admin'] }
+          body: { company_id: profile.company_id, type: 'incident_submitted', title: 'New Incident Report', body: `${form.incident_type} submitted`, target_roles: rolesAtOrAbove('lieutenant', profile.company?.custom_ranks) }
         }).catch(() => {})
       }
       ok = true

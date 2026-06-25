@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
 import Icon from '../../components/ui/Icon'
 import { requestLocationPermission, getCurrentPosition } from '../../lib/locationPermission'
+import { rolesAtOrAbove } from '../../config/roles'
 import { isNative } from '../../lib/platform'
 import { takePhoto } from '../../lib/cameraPermission'
 
@@ -203,7 +204,7 @@ export default function ClockIn() {
       if (tsErr) { haptic('error'); setError(tsErr.message); setSaving(false); return }
       haptic('success')
       supabase.functions.invoke('send-push', {
-        body: { company_id: profile.company_id, type: 'timesheet_pending', title: 'Timesheet Awaiting Approval', body: 'A timesheet has been submitted for approval', target_roles: ['lieutenant', 'chief'] }
+        body: { company_id: profile.company_id, type: 'timesheet_pending', title: 'Timesheet Awaiting Approval', body: 'A timesheet has been submitted for approval', target_roles: rolesAtOrAbove('lieutenant', profile.company?.custom_ranks) }
       }).catch(() => {})
       setStep(STEPS.COMPLETE)
     } catch(e) { setError(e.message) }

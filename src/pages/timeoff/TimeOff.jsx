@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
 import { withLoadTimeout } from '../../lib/withLoadTimeout'
-import { atLeast } from '../../config/roles'
+import { atLeast, rolesAtOrAbove } from '../../config/roles'
 import { scopeToOwnEmployee, isOwnDataOnly } from '../../lib/scoping'
 import Icon from '../../components/ui/Icon'
 import { useToast } from '../../components/ui/Toast'
@@ -338,7 +338,7 @@ function TimeOffRequestModal({ banks, balances, myEmpId, companyId, onClose, onS
       toast('Request submitted')
       const empName = submitterProfile ? `${submitterProfile.first_name || ''} ${submitterProfile.last_name || ''}`.trim() : 'An employee'
       supabase.functions.invoke('send-push', {
-        body: { company_id: companyId, type: 'time_off_request', title: 'Time Off Request', body: `${empName} requested ${form.bank_type} time off`, target_roles: ['sergeant', 'lieutenant', 'chief'] }
+        body: { company_id: companyId, type: 'time_off_request', title: 'Time Off Request', body: `${empName} requested ${form.bank_type} time off`, target_roles: rolesAtOrAbove('sergeant', profile.company?.custom_ranks) }
       }).catch(() => {})
       onSaved()
     } catch(e) {
