@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useTheme } from '../../context/ThemeContext'
 import { useNotifications } from '../../context/NotificationContext'
-import { NAV_ITEMS, ROLE_LABELS, atLeast } from '../../config/roles'
+import { NAV_ITEMS, ROLE_LABELS, ROLE_LEVELS, atLeast } from '../../config/roles'
 import { isNative } from '../../lib/platform'
 import Icon from '../ui/Icon'
 import Badge from '../ui/Badge'
@@ -91,9 +91,26 @@ export default function AppLayout({ children }) {
   }, [])
 
   const native = isNative()
-  const visibleSections = useMemo(() => NAV_ITEMS
-    .map(sec => ({ ...sec, items: sec.items.filter(item => item.roles.includes(role) && !(native && item.hideOnNative) && !item.hideInSidebar) }))
-    .filter(sec => sec.items.length > 0), [role, native])
+  const visibleSections = useMemo(() => {
+    const MILITARY = new Set(['officer','corporal','sergeant','lieutenant','chief'])
+    return NAV_ITEMS
+      .map(sec => ({
+        ...sec,
+        items: sec.items.filter(item => {
+          if (native && item.hideOnNative) return false
+          if (item.hideInSidebar) return false
+          if (item.roles.includes(role)) return true
+          // Custom role slugs: level-based fallback against the military ranks in this item's
+          // roles array. Items with no military ranks (super_admin-only, client-only) are
+          // excluded — their page guards use string checks, not level gates.
+          const roleLevel = ROLE_LEVELS[role] ?? -1
+          if (roleLevel < 1) return false
+          const militaryLevels = item.roles.filter(r => MILITARY.has(r)).map(r => ROLE_LEVELS[r])
+          return militaryLevels.length > 0 && roleLevel >= Math.min(...militaryLevels)
+        }),
+      }))
+      .filter(sec => sec.items.length > 0)
+  }, [role, native])
 
   const initials = profile ? `${profile.first_name?.[0]??''}${profile.last_name?.[0]??''}`.toUpperCase() || 'U' : 'U'
   const pageTitle = visibleSections.flatMap(s => s.items).find(item => location.pathname.startsWith(item.path))?.label ?? 'Command Center'
