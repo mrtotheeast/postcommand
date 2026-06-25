@@ -192,10 +192,19 @@ export default function AppLayout({ children }) {
               onChange={e => e.target.value ? switchViewAs(e.target.value) : exitViewAs()}
               style={{ flex:1, background:'var(--bg-input)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', padding:'4px 6px', fontSize:'11px', color: viewRole ? 'var(--accent)' : 'var(--text-muted)', fontFamily:'var(--font-condensed)', cursor:'pointer', outline:'none' }}
             >
-              <option value="">— Self ({ROLE_LABELS[actualRole]}) —</option>
-              {['officer','corporal','sergeant','lieutenant','client'].filter(r => r !== actualRole).map(r => (
-                <option key={r} value={r}>{ROLE_LABELS[r]}</option>
-              ))}
+              <option value="">— Self ({ROLE_LABELS[actualRole] ?? actualRole}) —</option>
+              {[
+                { value:'officer',    label: ROLE_LABELS['officer'],    level: 1 },
+                { value:'corporal',   label: ROLE_LABELS['corporal'],   level: 2 },
+                { value:'sergeant',   label: ROLE_LABELS['sergeant'],   level: 3 },
+                { value:'lieutenant', label: ROLE_LABELS['lieutenant'], level: 4 },
+                ...(profile?.company?.custom_ranks || []).filter(r => r.slug && r.title).map(r => ({ value: r.slug, label: r.title, level: r.level })),
+                { value:'client', label: ROLE_LABELS['client'], level: -1 },
+              ]
+                .sort((a, b) => a.level === -1 ? 1 : b.level === -1 ? -1 : a.level - b.level)
+                .filter(o => o.value !== actualRole)
+                .map(o => <option key={o.value} value={o.value}>{o.label}</option>)
+              }
             </select>
           </div>
         )}
