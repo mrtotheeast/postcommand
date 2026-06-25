@@ -62,9 +62,13 @@ export function rolesAtOrAbove(minRole, customRanks = []) {
   return [...new Set([...builtins, ...customs])]
 }
 
+// Chief and super_admin are always pinned as the last entries regardless of numeric level,
+// so custom ranks above chief (e.g. level 8) still appear before chief in the list.
+const ROLE_PIN = { super_admin: 1e10, chief: 1e9 }
+
 // Builds sorted role option list for assignment dropdowns.
 // Military built-ins respect role_style; non-military built-ins keep their fixed label;
-// custom ranks use rank.title. Sorted by level ascending.
+// custom ranks use rank.title. Chief always last among built-ins; super_admin after that.
 export function buildRoleOptions(company) {
   const roleStyle = company?.role_style || 'military'
   const customRanks = company?.custom_ranks || []
@@ -78,7 +82,7 @@ export function buildRoleOptions(company) {
   const customOpts = (customRanks || [])
     .filter(r => r.slug && r.title)
     .map(r => ({ value: r.slug, label: r.title, level: r.level }))
-  return [...builtinOpts, ...customOpts].sort((a, b) => a.level - b.level)
+  return [...builtinOpts, ...customOpts].sort((a, b) => (ROLE_PIN[a.value] ?? a.level) - (ROLE_PIN[b.value] ?? b.level))
 }
 
 // Get display title for a role given company style and optional overrides

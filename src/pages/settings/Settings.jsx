@@ -1006,7 +1006,8 @@ function RolePermissionsMatrix({ companyId, profile }) {
     const customs = customRanks
       .filter(r => r.slug && r.title)
       .map(r => ({ slug: r.slug, label: r.title, level: r.level }))
-    return [...builtins, ...customs].sort((a, b) => a.level - b.level)
+    const ROLE_PIN = { super_admin: 1e10, chief: 1e9 }
+    return [...builtins, ...customs].sort((a, b) => (ROLE_PIN[a.slug] ?? a.level) - (ROLE_PIN[b.slug] ?? b.level))
   }, [roleStyle, customRanks])
 
   const [matrix, setMatrix] = useState(() => {

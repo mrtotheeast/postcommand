@@ -201,7 +201,13 @@ export default function AppLayout({ children }) {
                 ...(profile?.company?.custom_ranks || []).filter(r => r.slug && r.title).map(r => ({ value: r.slug, label: r.title, level: r.level })),
                 { value:'client', label: ROLE_LABELS['client'], level: -1 },
               ]
-                .sort((a, b) => a.level === -1 ? 1 : b.level === -1 ? -1 : a.level - b.level)
+                .sort((a, b) => {
+                  // client pinned last; chief/super_admin pinned before client but after customs
+                  if (a.level === -1) return 1
+                  if (b.level === -1) return -1
+                  const ROLE_PIN = { super_admin: 1e10, chief: 1e9 }
+                  return (ROLE_PIN[a.value] ?? a.level) - (ROLE_PIN[b.value] ?? b.level)
+                })
                 .filter(o => o.value !== actualRole)
                 .map(o => <option key={o.value} value={o.value}>{o.label}</option>)
               }
