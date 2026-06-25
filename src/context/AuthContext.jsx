@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { ROLE_LEVELS } from '../config/roles'
 import { subscribeToPush, requestNotificationPermission } from '../lib/pushNotifications'
 import { requestPushPermission } from '../lib/pushPermission'
 import { registerPushNotifications } from '../lib/notifications'
@@ -324,6 +325,19 @@ export function AuthProvider({ children }) {
             console.warn('[Auth] profile upsert failed:', e?.message)
           }
         })()
+      }
+
+      // Merge custom ranks into ROLE_LEVELS so atLeast() and all level-based
+      // checks work transparently for custom role slugs throughout the app.
+      // Level 8 and other out-of-range values are handled correctly — the merge
+      // is purely numeric and imposes no upper or lower bound on custom levels.
+      const customRanks = profile?.company?.custom_ranks
+      if (Array.isArray(customRanks)) {
+        for (const rank of customRanks) {
+          if (rank.slug && typeof rank.level === 'number') {
+            ROLE_LEVELS[rank.slug] = rank.level
+          }
+        }
       }
 
       console.log('[Auth] setProfile — id:', profile?.id, 'company_id:', profile?.company_id, 'role:', profile?.role)
