@@ -62,6 +62,25 @@ export function rolesAtOrAbove(minRole, customRanks = []) {
   return [...new Set([...builtins, ...customs])]
 }
 
+// Builds sorted role option list for assignment dropdowns.
+// Military built-ins respect role_style; non-military built-ins keep their fixed label;
+// custom ranks use rank.title. Sorted by level ascending.
+export function buildRoleOptions(company) {
+  const roleStyle = company?.role_style || 'military'
+  const customRanks = company?.custom_ranks || []
+  const MILITARY = new Set(['officer','corporal','sergeant','lieutenant','chief'])
+  const builtins = ['officer','corporal','sergeant','lieutenant','chief','hr','accounting','office_staff']
+  const builtinOpts = builtins.map(r => ({
+    value: r,
+    label: MILITARY.has(r) ? (ROLE_TITLES[roleStyle]?.[ROLE_LEVELS[r]] ?? ROLE_LABELS[r] ?? r) : (ROLE_LABELS[r] ?? r),
+    level: ROLE_LEVELS[r] ?? 1,
+  }))
+  const customOpts = (customRanks || [])
+    .filter(r => r.slug && r.title)
+    .map(r => ({ value: r.slug, label: r.title, level: r.level }))
+  return [...builtinOpts, ...customOpts].sort((a, b) => a.level - b.level)
+}
+
 // Get display title for a role given company style and optional overrides
 export function getRoleTitle(role, style = 'military', customTitles = {}) {
   const level = getRoleLevel(role)

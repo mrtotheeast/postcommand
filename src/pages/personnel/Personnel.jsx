@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
-import { ROLE_LABELS, atLeast } from '../../config/roles'
+import { ROLE_LABELS, ROLE_LEVELS, buildRoleOptions, atLeast } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
 import EmployeeProfile from './EmployeeProfile'
 import { useToast } from '../../components/ui/Toast'
@@ -220,7 +220,7 @@ export default function Personnel() {
         </div>
         <select value={filterRole} onChange={e=>setFilterRole(e.target.value)} style={{padding:'0 12px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:'var(--text-primary)',fontSize:'13px',height:'44px',cursor:'pointer',minWidth:'140px'}}>
           <option value="all">All Roles</option>
-          {Object.entries(ROLE_LABELS).filter(([k])=>k!=='client').map(([k,v])=><option key={k} value={k}>{v}</option>)}
+          {buildRoleOptions(profile?.company).map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
         <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value)} style={{padding:'0 12px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:'var(--text-primary)',fontSize:'13px',height:'44px',cursor:'pointer',minWidth:'130px'}}>
           <option value="all">All Status</option>
@@ -292,7 +292,7 @@ export default function Personnel() {
 // ── CSV Import Modal ──────────────────────────────────────────────────────────
 
 const CSV_FIELDS = ['first_name','last_name','email','phone_number','role','position_title','status','employment_type']
-const VALID_ROLES = ['officer','corporal','sergeant','lieutenant','chief','hr','accounting','office_staff','client']
+// VALID_ROLES is computed dynamically inside CSVImportModal from company.custom_ranks
 
 function parseCSV(text) {
   const lines = text.trim().split('\n').map(l => l.trim()).filter(Boolean)
@@ -309,6 +309,8 @@ function parseCSV(text) {
 }
 
 function CSVImportModal({ companyId, onClose, onImported }) {
+  const { profile } = useAuth()
+  const validRoles = useMemo(() => buildRoleOptions(profile?.company).map(o => o.value), [profile?.company])
   const fileRef   = useRef(null)
   const [preview, setPreview] = useState(null)
   const [error, setError]     = useState(null)
@@ -334,7 +336,7 @@ function CSVImportModal({ companyId, onClose, onImported }) {
     let success = 0, failed = 0
     for (const row of preview.rows) {
       if (!row.first_name || !row.last_name) { failed++; continue }
-      const role = VALID_ROLES.includes(row.role) ? row.role : 'officer'
+      const role = validRoles.includes(row.role) ? row.role : 'officer'
       const { data: newEmp, error } = await supabase.from('employee').insert({
         company_id: companyId,
         first_name: row.first_name,
@@ -383,7 +385,7 @@ function CSVImportModal({ companyId, onClose, onImported }) {
         ) : (
           <>
             <div style={{ background:'var(--bg-surface)', borderRadius:'var(--radius-sm)', padding:'14px 16px', marginBottom:'18px', fontSize:'12px', color:'var(--text-muted)', lineHeight:1.6 }}>
-              CSV must have a header row. Recognized columns: <strong style={{ color:'var(--text-secondary)' }}>{CSV_FIELDS.join(', ')}</strong>. First/last name required. Role must be one of: {VALID_ROLES.join(', ')}.
+              CSV must have a header row. Recognized columns: <strong style={{ color:'var(--text-secondary)' }}>{CSV_FIELDS.join(', ')}</strong>. First/last name required. Role must be one of: {validRoles.join(', ')}.
             </div>
 
             <div style={{ marginBottom:'16px' }}>
@@ -612,7 +614,8 @@ function EmpDetail({emp,canViewSensitive,canEdit,onClose,onRefresh}) {
 
 function EmpEditModal({ emp, onClose, onSaved }) {
   const toast = useToast()
-  const ROLES_LIST = ['officer','corporal','sergeant','lieutenant','chief','hr','accounting','office_staff']
+  const { profile } = useAuth()
+  const roleOptions = buildRoleOptions(profile?.company)
   const STATUS_LIST = ['active','inactive','probation','suspended','terminated']
   const EMP_TYPES  = ['full_time','part_time','contract','1099']
   const [form, setForm] = useState({
@@ -683,7 +686,7 @@ function EmpEditModal({ emp, onClose, onSaved }) {
             <div><div style={lbl}>Phone</div><input style={inp} value={form.phone_number} onChange={e=>setF('phone_number',e.target.value)} onFocus={inpF} onBlur={inpB}/></div>
             <div><div style={lbl}>Position Title</div><input style={inp} value={form.position_title} onChange={e=>setF('position_title',e.target.value)} onFocus={inpF} onBlur={inpB}/></div>
             <div><div style={lbl}>Employee ID</div><input style={inp} value={form.employee_id_number} onChange={e=>setF('employee_id_number',e.target.value)} onFocus={inpF} onBlur={inpB}/></div>
-            <div><div style={lbl}>Role</div><select style={{...inp,cursor:'pointer'}} value={form.role} onChange={e=>setF('role',e.target.value)}>{ROLES_LIST.map(r=><option key={r} value={r}>{ROLE_LABELS[r]||r}</option>)}</select></div>
+            <div><div style={lbl}>Role</div><select style={{...inp,cursor:'pointer'}} value={form.role} onChange={e=>setF('role',e.target.value)}>{roleOptions.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
             <div><div style={lbl}>Status</div><select style={{...inp,cursor:'pointer'}} value={form.status} onChange={e=>setF('status',e.target.value)}>{STATUS_LIST.map(s=><option key={s} value={s}>{s}</option>)}</select></div>
             <div><div style={lbl}>Employment Type</div><select style={{...inp,cursor:'pointer'}} value={form.employment_type} onChange={e=>setF('employment_type',e.target.value)}>{EMP_TYPES.map(t=><option key={t} value={t}>{t.replace('_',' ')}</option>)}</select></div>
             <div><div style={lbl}>Hire Date</div><input style={inp} type="date" value={form.hire_date} onChange={e=>setF('hire_date',e.target.value)} onFocus={inpF} onBlur={inpB}/></div>
@@ -744,10 +747,10 @@ function R({label,value,color}) {
 
 // ── Bulk Action Bar ───────────────────────────────────────────────────────────
 
-const BULK_ROLES = ['officer','corporal','sergeant','lieutenant','chief','hr','accounting','office_staff']
-
 function BulkConfirmModal({ action, count, companyId, selectedIds, employees, onDone, onClose }) {
   const toast = useToast()
+  const { profile } = useAuth()
+  const roleOptions = buildRoleOptions(profile?.company)
   const [acting, setActing] = useState(false)
   const [reason, setReason] = useState('')
   const [role, setRole] = useState('officer')
@@ -835,7 +838,7 @@ function BulkConfirmModal({ action, count, companyId, selectedIds, employees, on
       <div>
         <div style={lbl}>New Role</div>
         <select value={role} onChange={e=>setRole(e.target.value)} style={inpStyle}>
-          {BULK_ROLES.map(r=><option key={r} value={r}>{ROLE_LABELS[r]||r}</option>)}
+          {roleOptions.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
         <div style={{fontSize:'11px',color:'var(--text-muted)',marginTop:'8px',lineHeight:1.5}}>Permission changes take effect at each employee's next login.</div>
       </div>
@@ -1060,7 +1063,8 @@ function PhotoApprovalsTab({ companyId }) {
 
 function AddEmployeeModal({ companyId, onClose, onSaved }) {
   const toast = useToast()
-  const ROLES_LIST = ['officer','corporal','sergeant','lieutenant','chief','hr','accounting','office_staff']
+  const { profile } = useAuth()
+  const roleOptions = buildRoleOptions(profile?.company)
   const [form, setForm] = useState({
     first_name:'', last_name:'', email:'', phone_number:'',
     role:'officer', position_title:'', status:'active',
@@ -1162,7 +1166,7 @@ function AddEmployeeModal({ companyId, onClose, onSaved }) {
               <div><div style={lbl}>Last Name *</div><input style={inp} value={form.last_name} onChange={e=>setF('last_name',e.target.value)} onFocus={foc} onBlur={blr} placeholder="Smith"/></div>
               <div><div style={lbl}>Email *</div><input style={inp} type="email" value={form.email} onChange={e=>setF('email',e.target.value)} onFocus={foc} onBlur={blr} placeholder="jane@company.com"/></div>
               <div><div style={lbl}>Phone</div><input style={inp} value={form.phone_number} onChange={e=>setF('phone_number',e.target.value)} onFocus={foc} onBlur={blr} placeholder="(555) 000-0000"/></div>
-              <div><div style={lbl}>Role *</div><select style={{...inp,cursor:'pointer'}} value={form.role} onChange={e=>setF('role',e.target.value)} onFocus={foc} onBlur={blr}>{ROLES_LIST.map(r=><option key={r} value={r}>{ROLE_LABELS[r]||r}</option>)}</select></div>
+              <div><div style={lbl}>Role *</div><select style={{...inp,cursor:'pointer'}} value={form.role} onChange={e=>setF('role',e.target.value)} onFocus={foc} onBlur={blr}>{roleOptions.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
               <div><div style={lbl}>Position Title</div><input style={inp} value={form.position_title} onChange={e=>setF('position_title',e.target.value)} onFocus={foc} onBlur={blr} placeholder="Security Officer"/></div>
               <div><div style={lbl}>Status</div><select style={{...inp,cursor:'pointer'}} value={form.status} onChange={e=>setF('status',e.target.value)}><option value="active">Active</option><option value="probation">Probation</option><option value="inactive">Inactive</option></select></div>
               <div><div style={lbl}>Employment Type</div><select style={{...inp,cursor:'pointer'}} value={form.employment_type} onChange={e=>setF('employment_type',e.target.value)}><option value="full_time">Full Time</option><option value="part_time">Part Time</option><option value="contract">Contract</option></select></div>

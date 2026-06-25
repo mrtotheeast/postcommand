@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
-import { ROLE_LABELS, atLeast } from '../../config/roles'
+import { useAuth } from '../../context/AuthContext'
+import { ROLE_LABELS, buildRoleOptions, atLeast } from '../../config/roles'
 import { logChange, logFieldChanges } from '../../lib/changeLog'
 import { meetsLevel, PERMISSION_KEYS } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
@@ -385,7 +386,8 @@ function NotesTab({emp, canEdit, authorId}) {
 
 function EmpEditModal({ emp, onClose, onSaved }) {
   const toast = useToast()
-  const ROLES_LIST = ['officer','corporal','sergeant','lieutenant','chief','hr','accounting','office_staff']
+  const { profile } = useAuth()
+  const roleOptions = buildRoleOptions(profile?.company)
   const STATUS_LIST = ['active','inactive','probation','suspended','terminated']
   const EMP_TYPES  = ['full_time','part_time','contract','1099']
   const [form, setForm] = useState({
@@ -448,7 +450,7 @@ function EmpEditModal({ emp, onClose, onSaved }) {
             <div><div style={lbl}>Phone</div><input style={inp} value={form.phone_number} onChange={e=>setF('phone_number',e.target.value)}/></div>
             <div><div style={lbl}>Position Title</div><input style={inp} value={form.position_title} onChange={e=>setF('position_title',e.target.value)}/></div>
             <div><div style={lbl}>Employee ID</div><input style={inp} value={form.employee_id_number} onChange={e=>setF('employee_id_number',e.target.value)}/></div>
-            <div><div style={lbl}>Role</div><select style={{...inp,cursor:'pointer'}} value={form.role} onChange={e=>setF('role',e.target.value)}>{ROLES_LIST.map(r=><option key={r} value={r}>{ROLE_LABELS[r]||r}</option>)}</select></div>
+            <div><div style={lbl}>Role</div><select style={{...inp,cursor:'pointer'}} value={form.role} onChange={e=>setF('role',e.target.value)}>{roleOptions.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
             <div><div style={lbl}>Status</div><select style={{...inp,cursor:'pointer'}} value={form.status} onChange={e=>setF('status',e.target.value)}>{STATUS_LIST.map(s=><option key={s} value={s}>{s}</option>)}</select></div>
             <div><div style={lbl}>Employment Type</div><select style={{...inp,cursor:'pointer'}} value={form.employment_type} onChange={e=>setF('employment_type',e.target.value)}>{EMP_TYPES.map(t=><option key={t} value={t}>{t.replace('_',' ')}</option>)}</select></div>
             <div><div style={lbl}>Hire Date</div><input style={inp} type="date" value={form.hire_date} onChange={e=>setF('hire_date',e.target.value)}/></div>
