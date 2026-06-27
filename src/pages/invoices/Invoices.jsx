@@ -364,10 +364,18 @@ function InvoiceFormModal({ invoices, mode, invoice, companyId, onClose, onSaved
   const [error, setError] = useState(null)
   const [clients, setClients] = useState([])
   const [selectedClientId, setSelectedClientId] = useState('')
+  const [sites, setSites] = useState([])
+  const [pullOpen, setPullOpen] = useState(false)
+  const [pullForm, setPullForm] = useState({ site_id:'', date_from:'', date_to:'' })
+  const [pullResult, setPullResult] = useState(null)
+  const [pullLoading, setPullLoading] = useState(false)
+  const [pendingTimesheetIds, setPendingTimesheetIds] = useState(new Set())
 
   useEffect(() => {
     supabase.from('client').select('id,name,billing_address').eq('company_id', companyId).order('name')
       .then(({ data }) => setClients(data || []))
+    supabase.from('site').select('id,name').eq('company_id', companyId).order('name')
+      .then(({ data }) => setSites(data || []))
   }, [companyId])
 
   function setF(k,v) { setForm(prev => ({...prev,[k]:v})) }
@@ -396,6 +404,34 @@ function InvoiceFormModal({ invoices, mode, invoice, companyId, onClose, onSaved
   function addItem() { setItems(prev => [...prev, { ...EMPTY_ITEM, id: Date.now() }]) }
   function removeItem(idx) { setItems(prev => prev.filter((_,i) => i !== idx)) }
 
+  async function pullHours() {
+    if (!pullForm.site_id || !pullForm.date_from || !pullForm.date_to) return
+    setPullLoading(true)
+    setPullResult(null)
+    const { data } = await supabase.from('timesheet')
+      .select('id, total_hours, invoiced_at, date')
+      .eq('company_id', companyId)
+      .eq('site_id', pullForm.site_id)
+      .gte('date', pullForm.date_from)
+      .lte('date', pullForm.date_to)
+      .in('status', ['approved', 'closed'])
+    setPullLoading(false)
+    const rows = data || []
+    const alreadyInvoiced = rows.filter(r => r.invoiced_at)
+    setPullResult({ rows, alreadyInvoiced })
+  }
+
+  function confirmPull() {
+    const site = sites.find(s => s.id === pullForm.site_id)
+    const totalHours = pullResult.rows.reduce((a, r) => a + (Number(r.total_hours) || 0), 0)
+    const desc = `${site?.name || 'Site'} – Security Services (${pullForm.date_from} to ${pullForm.date_to})`
+    setItems(prev => [...prev, { id:Date.now(), description:desc, quantity:parseFloat(totalHours.toFixed(2)), unit_price:0, amount:0 }])
+    setPendingTimesheetIds(prev => new Set([...prev, ...pullResult.rows.map(r => r.id)]))
+    setPullOpen(false)
+    setPullResult(null)
+    setPullForm({ site_id:'', date_from:'', date_to:'' })
+  }
+
   const subtotal  = items.reduce((a,it) => a + (parseFloat(it.amount)||0), 0)
   const taxAmount = subtotal * (parseFloat(form.tax_rate)||0) / 100
   const total     = subtotal + taxAmount
@@ -418,6 +454,12 @@ function InvoiceFormModal({ invoices, mode, invoice, companyId, onClose, onSaved
       }
       if (invId) {
         await supabase.from('invoice_item').insert(items.filter(it => it.description.trim()).map(it => ({ invoice_id:invId, description:it.description.trim(), quantity:parseFloat(it.quantity)||1, unit_price:parseFloat(it.unit_price)||0, amount:parseFloat(it.amount)||0 })))
+        if (pendingTimesheetIds.size > 0) {
+          await supabase.from('timesheet')
+            .update({ invoiced_at: new Date().toISOString() })
+            .in('id', [...pendingTimesheetIds])
+            .eq('company_id', companyId)
+        }
         supabase.functions.invoke('generate-invoice-pdf', { body: { invoice_id:invId, company_id:companyId } }).catch(() => {})
       }
       toast('Invoice saved')
@@ -490,7 +532,63 @@ function InvoiceFormModal({ invoices, mode, invoice, companyId, onClose, onSaved
               <button style={{ background:'transparent', border:'none', color:'var(--text-muted)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', minHeight:'44px', borderRadius:'var(--radius-sm)' }} onClick={() => removeItem(idx)}><Icon name="x" size={14} /></button>
             </div>
           ))}
-          <button style={{ ...s.ghostBtn, height:'36px', fontSize:'12px', marginTop:'4px' }} onClick={addItem}><Icon name="plus" size={13} />ADD LINE</button>
+          <div style={{ display:'flex', gap:'8px', marginTop:'4px', flexWrap:'wrap' }}>
+            <button style={{ ...s.ghostBtn, height:'36px', fontSize:'12px' }} onClick={addItem}><Icon name="plus" size={13} />ADD LINE</button>
+            <button style={{ ...s.ghostBtn, height:'36px', fontSize:'12px' }} onClick={() => { setPullOpen(p => !p); setPullResult(null) }}><Icon name="clock" size={13} />PULL HOURS FROM TIMESHEETS</button>
+          </div>
+          {pullOpen && (
+            <div style={{ marginTop:'10px', padding:'14px', background:'var(--bg-surface)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)' }}>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 130px 130px auto', gap:'8px', alignItems:'flex-end', marginBottom:'10px' }}>
+                <div>
+                  <div style={{ fontSize:'10px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', marginBottom:'4px' }}>Site</div>
+                  <select style={{ ...s.inp, cursor:'pointer' }} value={pullForm.site_id} onChange={e => setPullForm(p => ({ ...p, site_id:e.target.value }))} onFocus={inputF} onBlur={inputB}>
+                    <option value="">Select site...</option>
+                    {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <div style={{ fontSize:'10px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', marginBottom:'4px' }}>From</div>
+                  <input style={s.inp} type="date" value={pullForm.date_from} onChange={e => setPullForm(p => ({ ...p, date_from:e.target.value }))} onFocus={inputF} onBlur={inputB} />
+                </div>
+                <div>
+                  <div style={{ fontSize:'10px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', marginBottom:'4px' }}>To</div>
+                  <input style={s.inp} type="date" value={pullForm.date_to} onChange={e => setPullForm(p => ({ ...p, date_to:e.target.value }))} onFocus={inputF} onBlur={inputB} />
+                </div>
+                <button
+                  style={{ ...s.ghostBtn, height:'36px', fontSize:'12px', opacity:(!pullForm.site_id||!pullForm.date_from||!pullForm.date_to||pullLoading)?0.5:1 }}
+                  onClick={pullHours}
+                  disabled={!pullForm.site_id || !pullForm.date_from || !pullForm.date_to || pullLoading}
+                >
+                  {pullLoading ? 'QUERYING...' : 'PULL HOURS'}
+                </button>
+              </div>
+              {pullResult && pullResult.rows.length === 0 && (
+                <div style={{ fontSize:'12px', color:'var(--text-muted)', padding:'6px 0' }}>No approved or closed timesheets found for this site and date range.</div>
+              )}
+              {pullResult && pullResult.rows.length > 0 && (
+                <>
+                  {pullResult.alreadyInvoiced.length > 0 && (
+                    <div style={{ marginBottom:'10px', padding:'10px 12px', background:'rgba(224,175,55,0.1)', border:'1px solid rgba(224,175,55,0.3)', borderRadius:'var(--radius-sm)', fontSize:'12px', color:'var(--color-warning, #e0af37)' }}>
+                      {pullResult.alreadyInvoiced.length} of {pullResult.rows.length} timesheets in this range were already invoiced
+                      {' '}(last stamped {new Date(Math.max(...pullResult.alreadyInvoiced.map(r => new Date(r.invoiced_at)))).toLocaleDateString()}).
+                      {' '}Confirming will include them again.
+                    </div>
+                  )}
+                  <div style={{ fontSize:'12px', color:'var(--text-secondary)', marginBottom:'10px' }}>
+                    Found <strong style={{ color:'var(--text-primary)' }}>{pullResult.rows.reduce((a,r) => a+(Number(r.total_hours)||0), 0).toFixed(2)} hrs</strong> across {pullResult.rows.length} timesheet{pullResult.rows.length !== 1 ? 's' : ''}.
+                  </div>
+                  <div style={{ display:'flex', gap:'8px' }}>
+                    <button style={{ ...s.ghostBtn, height:'34px', fontSize:'12px' }} onClick={confirmPull}>
+                      {pullResult.alreadyInvoiced.length > 0 ? 'CONFIRM ANYWAY' : 'ADD TO INVOICE'}
+                    </button>
+                    <button style={{ ...s.ghostBtn, height:'34px', fontSize:'12px' }} onClick={() => { setPullOpen(false); setPullResult(null); setPullForm({ site_id:'', date_from:'', date_to:'' }) }}>
+                      CANCEL
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         <div style={{ display:'flex', justifyContent:'flex-end', gap:'16px', marginBottom:'16px', padding:'12px 16px', background:'var(--bg-surface)', borderRadius:'var(--radius-sm)', flexWrap:'wrap' }}>
