@@ -48,7 +48,6 @@ export default function Timesheets() {
   const [sheets, setSheets]       = useState([])
   const [employees, setEmployees] = useState([])
   const [sites, setSites]         = useState([])
-  const [company, setCompany]     = useState(null)
   const [loading, setLoading]     = useState(true)
   const [selected, setSelected]   = useState(null)
   const [filterStatus, setFilterStatus] = useState('all')
@@ -60,6 +59,7 @@ export default function Timesheets() {
   const [closingPeriod, setClosingPeriod] = useState(false)
   const [noShowing, setNoShowing]         = useState(false)
   const [periodMsg, setPeriodMsg]         = useState(null)
+  const [manualOpen, setManualOpen]       = useState(false)
   const payPeriod = getCurrentPayPeriod()
 
   const canReview = atLeast(profile?.role, 'sergeant')
@@ -72,13 +72,12 @@ export default function Timesheets() {
     if (!profile?.company_id) return
     setLoading(true)
     try {
-      const [tsRes, empRes, siteRes, compRes] = await Promise.all([
+      const [tsRes, empRes, siteRes] = await Promise.all([
         scopeToOwnEmployee(supabase.from('timesheet').select('*').eq('company_id', profile.company_id).order('date', { ascending: false }).order('clock_in', { ascending: false }), profile),
         supabase.from('employee').select('id,first_name,last_name,position_title').eq('company_id', profile.company_id).or('invitation_status.eq.accepted,has_app_access.eq.true'),
         supabase.from('site').select('id,name').eq('company_id', profile.company_id),
-        supabase.from('company').select('name,logo_url').eq('id', profile.company_id).single(),
       ])
-      setSheets(tsRes.data || []); setEmployees(empRes.data || []); setSites(siteRes.data || []); setCompany(compRes.data || null)
+      setSheets(tsRes.data || []); setEmployees(empRes.data || []); setSites(siteRes.data || [])
     } finally {
       setLoading(false)
     }
@@ -188,8 +187,9 @@ export default function Timesheets() {
               <button key={v} onClick={()=>setView(v)} style={{padding:'0 12px',height:'32px',border:'none',borderRadius:'4px',background:view===v?'var(--accent-bg)':'transparent',color:view===v?'var(--accent)':'var(--text-muted)',cursor:'pointer',fontSize:'11px',fontFamily:'var(--font-condensed)',fontWeight:600}}>{l}</button>
             ))}
           </div>
+          {canReview&&<button onClick={()=>setManualOpen(true)} style={{display:'flex',alignItems:'center',gap:'6px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-md)',padding:'0 14px',height:'40px',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,cursor:'pointer',letterSpacing:'0.5px'}}><Icon name="plus" size={14}/>LOG MANUAL ENTRY</button>}
           {canExport&&<button onClick={exportCSV} style={{display:'flex',alignItems:'center',gap:'6px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'0 14px',height:'40px',color:'var(--text-secondary)',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,cursor:'pointer'}}><Icon name="download" size={14}/>CSV</button>}
-          {canExport&&<button onClick={()=>exportTimesheetPDF(filtered,employees,sites,'All timesheets',company)} style={{display:'flex',alignItems:'center',gap:'6px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'0 14px',height:'40px',color:'var(--text-secondary)',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,cursor:'pointer'}}><Icon name="file-text" size={14}/>PDF</button>}
+          {canExport&&<button onClick={async()=>{ const{data:c}=await supabase.from('company').select('name,logo_url').eq('id',profile.company_id).single(); exportTimesheetPDF(filtered,employees,sites,'All timesheets',c||null) }} style={{display:'flex',alignItems:'center',gap:'6px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'0 14px',height:'40px',color:'var(--text-secondary)',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,cursor:'pointer'}}><Icon name="file-text" size={14}/>PDF</button>}
           {canExport&&<button onClick={()=>exportToSheets('Timesheets','timesheets',[['Date','Employee','Site','Clock In','Clock Out','Hours','Status'],...filtered.map(t=>[t.date,empName(t.employee_id),siteName(t.site_id),fmt12(t.clock_in),fmt12(t.clock_out),fmtHours(t.total_hours),t.status])]).catch(()=>{})} style={{display:'flex',alignItems:'center',gap:'6px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'0 14px',height:'40px',color:'var(--text-secondary)',fontFamily:'var(--font-condensed)',fontSize:'12px',fontWeight:700,cursor:'pointer'}} title="Export to Google Sheets"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>SHEETS</button>}
         </div>
       </div>
@@ -262,6 +262,7 @@ export default function Timesheets() {
       )}
 
       {selected&&<TimesheetDetail ts={selected} empName={empName} siteName={siteName} canReview={canReview} onClose={()=>setSelected(null)} onUpdated={()=>{setSelected(null);loadAll()}} profile={profile}/>}
+      {manualOpen&&<ManualEntryModal employees={employees} sites={sites} companyId={profile.company_id} profile={profile} empName={empName} onClose={()=>setManualOpen(false)} onSaved={()=>{setManualOpen(false);loadAll()}}/>}
     </div>
   )
 }
@@ -280,7 +281,8 @@ function TimesheetRow({ts,isLast,empName,siteName,onClick}) {
       <div>
         <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-primary)'}}>{empName(ts.employee_id)}</div>
         <div style={{fontSize:'11px',color:'var(--text-muted)'}}>{siteName(ts.site_id)}</div>
-        {ts.reviewed_by && <div style={{fontSize:'10px',color:'var(--text-muted)',marginTop:'2px'}}>Edited by {empName(ts.reviewed_by)}{ts.reviewed_at ? ' · '+new Date(ts.reviewed_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : ''}</div>}
+        {ts.is_manual_entry && <div style={{fontSize:'10px',color:'var(--color-warning, #e8943a)',marginTop:'2px',display:'flex',alignItems:'center',gap:'3px'}}><Icon name="edit-2" size={9} color="var(--color-warning, #e8943a)"/>Manager entered</div>}
+        {ts.reviewed_by && !ts.is_manual_entry && <div style={{fontSize:'10px',color:'var(--text-muted)',marginTop:'2px'}}>Edited by {empName(ts.reviewed_by)}{ts.reviewed_at ? ' · '+new Date(ts.reviewed_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : ''}</div>}
       </div>
       <div style={{fontSize:'12px',color:'var(--text-secondary)'}}>
         <div>{fmt12(ts.clock_in)} → {fmt12(ts.clock_out)}</div>
@@ -392,10 +394,11 @@ function TimesheetDetail({ts,empName,siteName,canReview,onClose,onUpdated,profil
           <button onClick={onClose} style={{background:'transparent',border:'none',color:'var(--text-muted)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',minHeight:'44px',minWidth:'44px'}}><Icon name="x" size={18}/></button>
         </div>
         <div style={{flex:1,overflowY:'auto',padding:'20px'}}>
-          <div style={{display:'flex',gap:'8px',marginBottom:'20px'}}>
+          <div style={{display:'flex',gap:'8px',marginBottom:'20px',flexWrap:'wrap'}}>
             <span style={{fontSize:'12px',fontWeight:700,padding:'4px 12px',borderRadius:'10px',background:ss.bg,color:ss.color}}>{ss.label.toUpperCase()}</span>
+            {ts.is_manual_entry&&<span style={{fontSize:'12px',fontWeight:700,padding:'4px 12px',borderRadius:'10px',background:'rgba(232,148,58,0.15)',color:'#e8943a',display:'flex',alignItems:'center',gap:'4px'}}><Icon name="edit-2" size={11} color="#e8943a"/>MANAGER ENTERED</span>}
           </div>
-          <DSec title="Assignment"><DR l="Employee" v={empName(ts.employee_id)}/><DR l="Site" v={siteName(ts.site_id)}/></DSec>
+          <DSec title="Assignment"><DR l="Employee" v={empName(ts.employee_id)}/><DR l="Site" v={siteName(ts.site_id)}/>{ts.entered_by&&<DR l="Entered by" v={empName(ts.entered_by)}/>}</DSec>
           <DSec title="Time">
             <DR l="Date" v={fmtDate(ts.date)}/>
             <DR l="Clock In" v={fmt12(ts.clock_in)}/>
@@ -788,5 +791,129 @@ h1{font-size:20px;font-weight:900;color:#0d1f35;margin-bottom:4px}
         </table>
       </div>
     </div>
+  )
+}
+
+function ManualEntryModal({ employees, sites, companyId, profile, empName, onClose, onSaved }) {
+  const toast = useToast()
+  const [form, setForm] = useState({
+    employee_id: '', site_id: '',
+    date: new Date().toISOString().slice(0, 10),
+    time_in: '', time_out: '', notes: '',
+  })
+  const [saving, setSaving] = useState(false)
+  const [error, setError]   = useState(null)
+
+  const set = (k, v) => setForm(p => ({ ...p, [k]: v }))
+  const inputF = e => { e.target.style.borderColor = 'var(--border-focus)' }
+  const inputB = e => { e.target.style.borderColor = 'var(--border)' }
+
+  const totalHours = useMemo(() => {
+    if (!form.date || !form.time_in || !form.time_out) return null
+    const inDt  = new Date(`${form.date}T${form.time_in}:00`)
+    const outDt = new Date(`${form.date}T${form.time_out}:00`)
+    if (outDt <= inDt) outDt.setDate(outDt.getDate() + 1) // overnight shift
+    const ms = outDt - inDt
+    return ms > 0 ? parseFloat((ms / 3_600_000).toFixed(2)) : null
+  }, [form.date, form.time_in, form.time_out])
+
+  async function save() {
+    if (!form.employee_id || !form.site_id || !form.date || !form.time_in || !form.time_out || !totalHours) return
+    setSaving(true); setError(null)
+    try {
+      const { data: mgr } = await supabase.from('employee').select('id').eq('user_id', profile.id).eq('company_id', companyId).maybeSingle()
+      const clockIn  = new Date(`${form.date}T${form.time_in}:00`)
+      const clockOut = new Date(`${form.date}T${form.time_out}:00`)
+      if (clockOut <= clockIn) clockOut.setDate(clockOut.getDate() + 1)
+      const { error: insErr } = await supabase.from('timesheet').insert({
+        company_id:      companyId,
+        employee_id:     form.employee_id,
+        site_id:         form.site_id,
+        date:            form.date,
+        clock_in:        clockIn.toISOString(),
+        clock_out:       clockOut.toISOString(),
+        total_hours:     totalHours,
+        status:          'approved',
+        is_manual_entry: true,
+        entered_by:      mgr?.id || null,
+        device_type:     'manual',
+        notes:           form.notes.trim() || null,
+      })
+      if (insErr) throw insErr
+      toast('Manual entry saved')
+      onSaved()
+    } catch(e) {
+      setError(e.message || 'Failed to save entry')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const inp = { background:'var(--bg-input)', border:'1px solid var(--border)', borderRadius:'var(--radius-sm)', padding:'9px 12px', fontSize:'13px', color:'var(--text-primary)', outline:'none', width:'100%', fontFamily:'var(--font-body)', transition:'border-color 150ms ease' }
+  const lbl = { fontSize:'11px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1px', fontFamily:'var(--font-condensed)', marginBottom:'4px' }
+  const canSave = form.employee_id && form.site_id && form.date && form.time_in && form.time_out && totalHours
+
+  return (
+    <>
+      <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:100,backdropFilter:'blur(2px)'}}/>
+      <div style={{position:'fixed',top:0,right:0,bottom:0,width:'min(440px,100vw)',background:'var(--bg-surface)',borderLeft:'1px solid var(--border)',zIndex:101,display:'flex',flexDirection:'column'}}>
+        <div style={{padding:'18px 20px',borderBottom:'1px solid var(--border)',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
+          <div>
+            <div style={{fontFamily:'var(--font-display)',fontSize:'18px',letterSpacing:'2px',color:'var(--text-primary)'}}>LOG MANUAL ENTRY</div>
+            <div style={{fontSize:'12px',color:'var(--color-warning, #e8943a)',marginTop:'3px',display:'flex',alignItems:'center',gap:'4px'}}><Icon name="edit-2" size={11} color="var(--color-warning, #e8943a)"/>Saves as approved — no review step</div>
+          </div>
+          <button onClick={onClose} style={{background:'transparent',border:'none',color:'var(--text-muted)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',minHeight:'44px',minWidth:'44px'}}><Icon name="x" size={18}/></button>
+        </div>
+        <div style={{flex:1,overflowY:'auto',padding:'20px',display:'flex',flexDirection:'column',gap:'14px'}}>
+          <div>
+            <div style={lbl}>Employee *</div>
+            <select style={{...inp,cursor:'pointer'}} value={form.employee_id} onChange={e=>set('employee_id',e.target.value)} onFocus={inputF} onBlur={inputB}>
+              <option value="">Select employee...</option>
+              {employees.map(e=><option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>)}
+            </select>
+          </div>
+          <div>
+            <div style={lbl}>Site *</div>
+            <select style={{...inp,cursor:'pointer'}} value={form.site_id} onChange={e=>set('site_id',e.target.value)} onFocus={inputF} onBlur={inputB}>
+              <option value="">Select site...</option>
+              {sites.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <div style={lbl}>Date *</div>
+            <input style={inp} type="date" value={form.date} onChange={e=>set('date',e.target.value)} onFocus={inputF} onBlur={inputB}/>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px'}}>
+            <div>
+              <div style={lbl}>Clock In *</div>
+              <input style={inp} type="time" value={form.time_in} onChange={e=>set('time_in',e.target.value)} onFocus={inputF} onBlur={inputB}/>
+            </div>
+            <div>
+              <div style={lbl}>Clock Out *</div>
+              <input style={inp} type="time" value={form.time_out} onChange={e=>set('time_out',e.target.value)} onFocus={inputF} onBlur={inputB}/>
+            </div>
+          </div>
+          {totalHours !== null && totalHours > 0 && (
+            <div style={{padding:'10px 14px',background:'var(--accent-bg)',border:'1px solid var(--accent-border)',borderRadius:'var(--radius-sm)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <span style={{fontSize:'12px',color:'var(--text-muted)',fontFamily:'var(--font-condensed)',letterSpacing:'0.5px'}}>TOTAL HOURS</span>
+              <span style={{fontFamily:'var(--font-display)',fontSize:'22px',color:'var(--accent)',letterSpacing:'1px'}}>{totalHours.toFixed(2)}</span>
+            </div>
+          )}
+          {form.time_in && form.time_out && (!totalHours || totalHours <= 0) && (
+            <div style={{fontSize:'12px',color:'var(--color-danger)',padding:'6px 0'}}>Clock-out must be after clock-in.</div>
+          )}
+          <div>
+            <div style={lbl}>Notes</div>
+            <textarea value={form.notes} onChange={e=>set('notes',e.target.value)} placeholder="Reason for manual entry (e.g. broken phone, no app access)..." rows={3} style={{...inp,resize:'vertical',lineHeight:1.5,boxSizing:'border-box'}}/>
+          </div>
+          {error&&<div style={{padding:'8px 12px',borderRadius:'var(--radius-sm)',background:'var(--color-danger-bg)',color:'var(--color-danger)',border:'1px solid rgba(192,57,43,0.3)',fontSize:'12px'}}>{error}</div>}
+        </div>
+        <div style={{padding:'16px 20px',borderTop:'1px solid var(--border)',flexShrink:0}}>
+          <button onClick={save} disabled={!canSave||saving} style={{width:'100%',height:'44px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-md)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,cursor:'pointer',opacity:(!canSave||saving)?0.6:1,display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}>
+            <Icon name="check" size={15}/>{saving?'SAVING...':'SAVE APPROVED ENTRY'}
+          </button>
+        </div>
+      </div>
+    </>
   )
 }
