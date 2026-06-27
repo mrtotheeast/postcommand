@@ -188,9 +188,9 @@ export default function AppLayout({ children }) {
         <img src="/app-icon-transparent.png" alt="" style={{width:'36px',height:'36px',objectFit:'contain',marginBottom:'6px',display:'block'}}/>
         <div style={s.logo}>POST<span style={{color:'var(--text-primary)'}}>COMMAND</span></div>
         <div style={s.logoSub}>Security Workforce Management</div>
-        {profile?.company_slug && (
+        {profile?.company?.short_code && (
           <div style={{display:'inline-block',marginTop:'6px',fontSize:'10px',fontFamily:'var(--font-condensed)',letterSpacing:'1.5px',color:'var(--accent)',background:'var(--accent-bg)',border:'1px solid var(--accent-border)',borderRadius:'var(--radius-sm)',padding:'2px 8px'}}>
-            {profile.company_slug.toUpperCase()}
+            {profile.company.short_code}
           </div>
         )}
         {profile?.company_id && role === 'super_admin' && (

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
+import { uniqueCode } from '../../lib/shortCode'
 
 const US_STATES = [
   'Alabama','Alaska','Arizona','Arkansas','California','Colorado','Connecticut',
@@ -139,11 +140,14 @@ export default function Register() {
       const baseSlug    = form.companyName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').slice(0, 40)
       const companySlug = baseSlug + '-' + Date.now().toString(36)
 
+      const short_code = await uniqueCode()
+
       const { data: company, error: compErr } = await supabase
         .from('company')
         .insert({
           name:            form.companyName,
           slug:            companySlug,
+          short_code,
           plan:            planId,
           billing_status:  'pending_payment',
           trial_ends_at:   new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),

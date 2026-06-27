@@ -82,7 +82,7 @@ export default function SuperAdmin() {
       {companyStats && (
         <>
           <div style={{ fontSize:'11px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1.5px', fontFamily:'var(--font-condensed)', marginBottom:'10px' }}>
-            {profile?.company_slug?.toUpperCase()} — Your Company
+            {profile?.company?.short_code} — Your Company
           </div>
           <div style={s.kpiGrid}>
             {[

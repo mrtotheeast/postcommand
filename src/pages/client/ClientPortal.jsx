@@ -109,7 +109,7 @@ export default function ClientPortal() {
       <header style={s.topbar}>
         <div>
           <div style={s.logo}>POST<span style={{ color:'var(--text-primary)' }}>COMMAND</span></div>
-          <div style={s.logoSub}>Client Portal · {profile?.company_slug?.toUpperCase()}</div>
+          <div style={s.logoSub}>Client Portal · {profile?.company?.short_code}</div>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
           <button style={s.iconBtn} onClick={toggleTheme}>

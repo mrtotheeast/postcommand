@@ -76,7 +76,7 @@ export function AuthProvider({ children }) {
       const { data: profileData, error: profileError } = await Promise.race([
         supabase
           .from('user_profile')
-          .select('*, company(role_style, custom_titles, custom_ranks, name)')
+          .select('*, company(role_style, custom_titles, custom_ranks, name, short_code)')
           .eq('id', userId)
           .maybeSingle(),
         new Promise((_, reject) =>
@@ -203,7 +203,7 @@ export function AuthProvider({ children }) {
                 first_name: emp.first_name || '',
                 last_name:  emp.last_name  || '',
               })
-              .select('*, company(role_style, custom_titles, custom_ranks, name)')
+              .select('*, company(role_style, custom_titles, custom_ranks, name, short_code)')
               .single(),
             'user_profile INSERT (employee)'
           )
@@ -255,7 +255,7 @@ export function AuthProvider({ children }) {
                   first_name: firstName,
                   last_name:  lastName,
                 })
-                .select('*, company(role_style, custom_titles, custom_ranks, name)')
+                .select('*, company(role_style, custom_titles, custom_ranks, name, short_code)')
                 .single(),
               'user_profile INSERT (client)'
             )
