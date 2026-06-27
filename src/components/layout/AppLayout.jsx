@@ -190,12 +190,7 @@ export default function AppLayout({ children }) {
         <div style={s.logoSub}>Security Workforce Management</div>
         {profile?.company?.short_code && (
           <div style={{display:'inline-block',marginTop:'6px',fontSize:'10px',fontFamily:'var(--font-condensed)',letterSpacing:'1.5px',color:'var(--accent)',background:'var(--accent-bg)',border:'1px solid var(--accent-border)',borderRadius:'var(--radius-sm)',padding:'2px 8px'}}>
-            {profile.company.short_code}
-          </div>
-        )}
-        {profile?.company_id && role === 'super_admin' && (
-          <div style={{marginTop:'4px',fontSize:'10px',color:'var(--text-muted)',fontFamily:'var(--font-condensed)',letterSpacing:'0.5px',userSelect:'all',cursor:'text'}}>
-            {profile.company_id}
+            Client ID: {profile.company.short_code}
           </div>
         )}
       </div>
