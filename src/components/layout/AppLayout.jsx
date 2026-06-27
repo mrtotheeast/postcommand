@@ -34,7 +34,7 @@ const NAV_BUILTIN_ROLES = new Set(['officer','corporal','sergeant','lieutenant',
 const s = {
   shell:{display:'flex',height:'100vh',overflow:'hidden',background:'var(--bg-base)'},
   sidebar:{width:'var(--sidebar-width)',minWidth:'var(--sidebar-width)',background:'var(--bg-sidebar)',borderRight:'1px solid var(--border)',display:'flex',flexDirection:'column',height:'100%',overflow:'hidden'},
-  logoBar:{padding:'20px 18px 16px',borderBottom:'1px solid var(--border)',flexShrink:0},
+  logoBar:{padding:'20px 18px 16px',borderBottom:'1px solid var(--border)',flexShrink:0,cursor:'pointer'},
   logo:{fontFamily:'var(--font-display)',fontSize:'22px',letterSpacing:'3px',color:'var(--accent)',lineHeight:1},
   logoSub:{fontSize:'10px',color:'var(--text-muted)',letterSpacing:'1px',textTransform:'uppercase',marginTop:'4px'},
   nav:{flex:1,padding:'10px 0',overflowY:'auto'},
@@ -184,7 +184,7 @@ export default function AppLayout({ children }) {
     }, [])
     return (
     <>
-      <div style={s.logoBar}>
+      <div style={s.logoBar} onClick={() => navigate('/dashboard')}>
         <img src="/app-icon-transparent.png" alt="" style={{width:'36px',height:'36px',objectFit:'contain',marginBottom:'6px',display:'block'}}/>
         <div style={s.logo}>POST<span style={{color:'var(--text-primary)'}}>COMMAND</span></div>
         <div style={s.logoSub}>Security Workforce Management</div>
