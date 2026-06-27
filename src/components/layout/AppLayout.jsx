@@ -5,8 +5,31 @@ import { useTheme } from '../../context/ThemeContext'
 import { useNotifications } from '../../context/NotificationContext'
 import { NAV_ITEMS, ROLE_LABELS, ROLE_LEVELS, atLeast } from '../../config/roles'
 import { isNative } from '../../lib/platform'
+import { supabase } from '../../lib/supabase'
 import Icon from '../ui/Icon'
 import Badge from '../ui/Badge'
+
+// NAV_ITEMS ids that map 1:1 to a role_permission key for the custom-role veto.
+// The other 15 nav items (training, personnel, open-shifts, etc.) have no
+// mapping and are intentionally excluded — their gating is roles-array only.
+const NAV_PERMISSION_MAP = {
+  dashboard:  'view_dashboard',
+  scheduling: 'manage_schedule',
+  timesheets: 'view_timesheets',
+  incidents:  'view_incidents',
+  patrol:     'view_patrol',
+  map:        'use_live_map',
+  invoices:   'view_invoices',
+  reports:    'view_reports',
+  sites:      'manage_sites',
+  clients:    'manage_clients',
+  hr:         'view_hr',
+  settings:   'manage_settings',
+  clockin:    'clock_in_out',
+  sos:        'use_sos',
+  billing:    'manage_billing',
+}
+const NAV_BUILTIN_ROLES = new Set(['officer','corporal','sergeant','lieutenant','chief','super_admin','hr','accounting','office_staff','client'])
 
 const s = {
   shell:{display:'flex',height:'100vh',overflow:'hidden',background:'var(--bg-base)'},
@@ -67,6 +90,27 @@ export default function AppLayout({ children }) {
   const actualRole = profile?.role
   const role = effectiveRole   // used everywhere below for nav filtering
 
+  // Permissions veto for custom role slugs. Watches `role` (effectiveRole) so
+  // View As simulation sees the same veto a real user in that role would see.
+  // Built-in roles clear perms immediately — null = not applicable (fail-open).
+  const [customRolePerms, setCustomRolePerms] = useState(null)
+  useEffect(() => {
+    if (!role || !profile?.company_id || NAV_BUILTIN_ROLES.has(role)) {
+      setCustomRolePerms(null)
+      return
+    }
+    supabase.from('role_permission')
+      .select('permission,enabled')
+      .eq('company_id', profile.company_id)
+      .eq('role', role)
+      .then(({ data }) => {
+        if (!data?.length) { setCustomRolePerms(null); return }
+        const perms = {}
+        for (const row of data) perms[row.permission] = row.enabled
+        setCustomRolePerms(perms)
+      })
+  }, [role, profile?.company_id])
+
   const canViewAs = atLeast(actualRole, 'sergeant')
 
   useEffect(() => {
@@ -93,6 +137,9 @@ export default function AppLayout({ children }) {
   const native = isNative()
   const visibleSections = useMemo(() => {
     const MILITARY = new Set(['officer','corporal','sergeant','lieutenant','chief'])
+    // Veto applies whenever the EFFECTIVE role being evaluated is a custom slug.
+    // Works for both real custom-rank users and View As simulation.
+    const isCustomRole = !NAV_BUILTIN_ROLES.has(role)
     return NAV_ITEMS
       .map(sec => ({
         ...sec,
@@ -106,11 +153,19 @@ export default function AppLayout({ children }) {
           const roleLevel = ROLE_LEVELS[role] ?? -1
           if (roleLevel < 1) return false
           const militaryLevels = item.roles.filter(r => MILITARY.has(r)).map(r => ROLE_LEVELS[r])
-          return militaryLevels.length > 0 && roleLevel >= Math.min(...militaryLevels)
+          if (!(militaryLevels.length > 0 && roleLevel >= Math.min(...militaryLevels))) return false
+          // Level check passed. For any custom slug (real user or View As simulation),
+          // apply the role_permission veto if an explicit enabled:false row exists.
+          // Built-in roles and unmapped nav items are unaffected.
+          if (isCustomRole && customRolePerms) {
+            const permKey = NAV_PERMISSION_MAP[item.id]
+            if (permKey !== undefined && customRolePerms[permKey] === false) return false
+          }
+          return true
         }),
       }))
       .filter(sec => sec.items.length > 0)
-  }, [role, native])
+  }, [role, native, customRolePerms])
 
   const initials = profile ? `${profile.first_name?.[0]??''}${profile.last_name?.[0]??''}`.toUpperCase() || 'U' : 'U'
   const pageTitle = visibleSections.flatMap(s => s.items).find(item => location.pathname.startsWith(item.path))?.label ?? 'Command Center'
