@@ -1,18 +1,16 @@
 import { isNative } from './platform'
 
 export async function takePhoto() {
-  if (!isNative()) {
-    // Web — caller handles via file input; signal to use web path
-    return null
-  }
+  if (!isNative()) return null
 
   try {
     const { Camera, CameraResultType, CameraSource } = await import('@capacitor/camera')
     const permission = await Camera.requestPermissions()
 
     if (permission.camera !== 'granted') {
-      alert('Camera permission is required. Please enable it in iPhone Settings > PostCommand > Camera.')
-      return null
+      const err = new Error('CAMERA_PERMISSION_DENIED')
+      err.code = 'CAMERA_PERMISSION_DENIED'
+      throw err
     }
 
     const image = await Camera.getPhoto({
@@ -23,11 +21,13 @@ export async function takePhoto() {
       correctOrientation: true,
     })
 
-    return image.dataUrl // base64 data URL ready for Supabase upload
+    return image.dataUrl
   } catch (e) {
-    if (e.message !== 'User cancelled photos app') {
-      console.error('[PostCommand] Camera error:', e.message)
-    }
-    return null
+    if (e.code === 'CAMERA_PERMISSION_DENIED') throw e
+    if (e.message === 'User cancelled photos app') return null
+    console.error('[PostCommand] Camera error:', e.message)
+    const err = new Error('CAMERA_ERROR')
+    err.code = 'CAMERA_ERROR'
+    throw err
   }
 }

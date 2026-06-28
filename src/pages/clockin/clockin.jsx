@@ -41,7 +41,7 @@ function fmtDuration(start, end) {
   return `${hrs}h ${mins}m`
 }
 
-const STEPS = { IDLE:'idle', LOADING:'loading', NO_SHIFT:'no_shift', READY_IN:'ready_in', PHOTO_IN:'photo_in', GPS_IN:'gps_in', GEOFENCE_WARN:'geofence_warn', CLOCKED_IN:'clocked_in', READY_OUT:'ready_out', PHOTO_OUT:'photo_out', GPS_OUT:'gps_out', COMPLETE:'complete' }
+const STEPS = { IDLE:'idle', LOADING:'loading', NO_SHIFT:'no_shift', READY_IN:'ready_in', PHOTO_IN:'photo_in', GPS_IN:'gps_in', GPS_FAIL:'gps_fail', GEOFENCE_WARN:'geofence_warn', CLOCKED_IN:'clocked_in', READY_OUT:'ready_out', PHOTO_OUT:'photo_out', GPS_OUT:'gps_out', COMPLETE:'complete' }
 
 export default function ClockIn() {
   const { profile } = useAuth()
@@ -54,6 +54,8 @@ export default function ClockIn() {
   const [location, setLocation]   = useState(null)
   const [distance, setDistance]   = useState(null)
   const [error, setError]         = useState(null)
+  const [gpsFailDir, setGpsFailDir] = useState(null)
+  const [gpsFailLoc, setGpsFailLoc] = useState(null)
   const [saving, setSaving]       = useState(false)
   const [overrideReason, setOverrideReason] = useState('')
   const [employeeId, setEmployeeId] = useState(null)
@@ -120,10 +122,18 @@ export default function ClockIn() {
 
   // Native iOS camera path — calls Capacitor Camera plugin
   async function handleNativeCamera(type) {
-    const dataUrl = await takePhoto()
-    if (!dataUrl) return // user cancelled or permission denied
-    if (type === 'in') { setPhotoIn(dataUrl); setStep(STEPS.GPS_IN); getGPS('in') }
-    else { setPhotoOut(dataUrl); setStep(STEPS.GPS_OUT); getGPS('out') }
+    try {
+      const dataUrl = await takePhoto()
+      if (!dataUrl) return // user cancelled
+      if (type === 'in') { setPhotoIn(dataUrl); setStep(STEPS.GPS_IN); getGPS('in') }
+      else { setPhotoOut(dataUrl); setStep(STEPS.GPS_OUT); getGPS('out') }
+    } catch (e) {
+      if (e.code === 'CAMERA_PERMISSION_DENIED') {
+        setError('Camera access denied. Go to iPhone Settings > PostCommand > Camera to enable it, then try again.')
+      } else {
+        setError('Unable to open camera. Please try again.')
+      }
+    }
   }
 
   async function getGPS(direction) {
@@ -159,7 +169,9 @@ export default function ClockIn() {
     } catch (err) {
       const loc = { lat: null, lng: null, accuracy: null, timestamp: new Date().toISOString(), gps_error: err.message }
       setLocation(loc)
-      direction === 'in' ? clockIn(loc) : clockOut(loc)
+      setGpsFailDir(direction)
+      setGpsFailLoc(loc)
+      setStep(STEPS.GPS_FAIL)
     }
   }async function uploadPhoto(dataUrl, filename) {
     try {
@@ -179,7 +191,11 @@ export default function ClockIn() {
       const { data: empData } = await supabase.from('employee').select('id').eq('user_id', profile.id).eq('company_id', profile.company_id).single()
       const photoUrl = photoIn ? await uploadPhoto(photoIn, `${empData.id}-in-${Date.now()}.jpg`) : null
       const now = new Date()
-      const { data: ts, error: tsErr } = await supabase.from('timesheet').insert({ company_id: profile.company_id, employee_id: empData.id, site_id: shift.site_id, shift_id: shift.id, date: now.toISOString().split('T')[0], clock_in: now.toISOString(), clock_in_location: loc, clock_in_photo_url: photoUrl, status: 'pending', device_type: 'web', notes: override ? `Geofence override: ${reason}. Distance: ${distance}m` : null }).select().single()
+      const noteParts = []
+      if (override) noteParts.push(`Geofence override: ${reason}. Distance: ${distance}m`)
+      if (photoIn && !photoUrl) noteParts.push('Photo upload failed at clock-in.')
+      if (loc.gps_error) noteParts.push('GPS unavailable at clock-in — clocked in without geofence verification.')
+      const { data: ts, error: tsErr } = await supabase.from('timesheet').insert({ company_id: profile.company_id, employee_id: empData.id, site_id: shift.site_id, shift_id: shift.id, date: now.toISOString().split('T')[0], clock_in: now.toISOString(), clock_in_location: loc, clock_in_photo_url: photoUrl, status: 'pending', device_type: 'web', notes: noteParts.length ? noteParts.join(' ') : null }).select().single()
       if (tsErr) { haptic('error'); setError(tsErr.message); setSaving(false); return }
       haptic('success')
       setTimesheet(ts)
@@ -230,6 +246,15 @@ export default function ClockIn() {
       {step===STEPS.READY_IN&&shift&&site&&<Card><SL>YOUR SHIFT</SL><ShiftSum shift={shift} site={site}/><div style={{marginTop:'24px'}}><button onClick={()=>{ if(isNative()){ setStep(STEPS.PHOTO_IN); handleNativeCamera('in') } else { setStep(STEPS.PHOTO_IN); setTimeout(()=>photoInRef.current?.click(),100) } }} style={pBtnStyle}><Icon name="log-in" size={18}/>CLOCK IN</button><p style={{fontSize:'12px',color:'var(--text-muted)',textAlign:'center',marginTop:'10px'}}>Photo required</p></div></Card>}
       {step===STEPS.PHOTO_IN&&<Card><SL>CLOCK-IN PHOTO</SL><div style={{textAlign:'center',padding:'24px 0'}}><Icon name="eye" size={40} color="var(--accent)"/><div style={{marginTop:'12px',fontSize:'14px',color:'var(--text-primary)',fontWeight:600}}>Take your clock-in photo</div></div><input ref={photoInRef} type="file" accept="image/*" capture="environment" style={{display:'none'}} onChange={e=>handlePhotoCapture(e.target.files[0],'in')}/>{photoIn&&<div style={{marginBottom:'16px',borderRadius:'var(--radius-md)',overflow:'hidden',border:'1px solid var(--border-subtle)'}}><img src={photoIn} alt="" style={{width:'100%',maxHeight:'200px',objectFit:'cover',display:'block'}}/></div>}<button onClick={()=>photoInRef.current?.click()} style={pBtnStyle}><Icon name="eye" size={18}/>{photoIn?'RETAKE':'OPEN CAMERA'}</button><button onClick={()=>setStep(STEPS.READY_IN)} style={{...sBtnStyle,marginTop:'8px'}}>CANCEL</button></Card>}
       {(step===STEPS.GPS_IN||step===STEPS.GPS_OUT)&&<Card><div style={{textAlign:'center',padding:'32px'}}><div style={{animation:'pulse 1.5s infinite'}}><Icon name="map-pin" size={40} color="var(--accent)"/></div><div style={{marginTop:'16px',fontSize:'14px',color:'var(--text-primary)',fontWeight:600}}>Getting your location...</div></div></Card>}
+      {step===STEPS.GPS_FAIL&&<Card>
+        <div style={{background:'var(--color-warning-bg)',border:'1px solid rgba(232,148,58,0.3)',borderRadius:'var(--radius-md)',padding:'16px',marginBottom:'20px',display:'flex',gap:'12px',alignItems:'flex-start'}}>
+          <Icon name="map-pin" size={20} color="var(--color-warning)"/>
+          <div><div style={{fontSize:'14px',fontWeight:700,color:'var(--color-warning)',marginBottom:'4px'}}>LOCATION UNAVAILABLE</div><div style={{fontSize:'13px',color:'var(--text-secondary)',lineHeight:1.5}}>GPS could not determine your location. Your supervisor will be notified. You can clock in without geofence verification or try again.</div></div>
+        </div>
+        <button onClick={()=>{ setStep(gpsFailDir==='in'?STEPS.GPS_IN:STEPS.GPS_OUT); getGPS(gpsFailDir) }} style={{...pBtnStyle,background:'var(--color-warning)',marginBottom:'8px'}}><Icon name="refresh-cw" size={16}/>TRY AGAIN</button>
+        <button onClick={()=>{ const d=gpsFailDir; const l=gpsFailLoc; setGpsFailDir(null); setGpsFailLoc(null); d==='in'?clockIn(l):clockOut(l) }} disabled={saving} style={{...sBtnStyle}}>{saving?'CLOCKING IN...':'CLOCK IN WITHOUT GPS'}</button>
+        <button onClick={()=>setStep(gpsFailDir==='in'?STEPS.READY_IN:STEPS.CLOCKED_IN)} style={{...sBtnStyle,marginTop:'8px'}}>CANCEL</button>
+      </Card>}
       {step===STEPS.GEOFENCE_WARN&&<Card>
         <div style={{background:'var(--color-warning-bg)',border:'1px solid rgba(232,148,58,0.3)',borderRadius:'var(--radius-md)',padding:'16px',marginBottom:'20px',display:'flex',gap:'12px',alignItems:'flex-start'}}>
           <Icon name="alert-circle" size={20} color="var(--color-warning)"/>
