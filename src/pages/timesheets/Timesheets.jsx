@@ -282,6 +282,7 @@ function TimesheetRow({ts,isLast,empName,siteName,onClick}) {
         <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-primary)'}}>{empName(ts.employee_id)}</div>
         <div style={{fontSize:'11px',color:'var(--text-muted)'}}>{siteName(ts.site_id)}</div>
         {ts.is_manual_entry && <div style={{fontSize:'10px',color:'var(--color-warning, #e8943a)',marginTop:'2px',display:'flex',alignItems:'center',gap:'3px'}}><Icon name="edit-2" size={9} color="var(--color-warning, #e8943a)"/>Manager entered</div>}
+        {!ts.is_manual_entry && ts.clock_in_location?.gps_error && <div style={{fontSize:'10px',color:'var(--text-muted)',marginTop:'2px',display:'flex',alignItems:'center',gap:'3px'}}><Icon name="map-pin" size={9} color="var(--text-muted)"/>No GPS</div>}
         {ts.reviewed_by && !ts.is_manual_entry && <div style={{fontSize:'10px',color:'var(--text-muted)',marginTop:'2px'}}>Edited by {empName(ts.reviewed_by)}{ts.reviewed_at ? ' · '+new Date(ts.reviewed_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : ''}</div>}
       </div>
       <div style={{fontSize:'12px',color:'var(--text-secondary)'}}>
