@@ -122,7 +122,7 @@ export default function Settings() {
 
         {/* Right panel */}
         <div style={s.panel}>
-          {tab === 'company'       && <CompanyTab       profile={profile} companyId={companyId} dirtyRef={dirtyRef} />}
+          {tab === 'company'       && <CompanyTab       profile={profile} companyId={companyId} dirtyRef={dirtyRef} onNavigateTab={handleTabChange} />}
           {tab === 'team'          && <TeamTab          profile={profile} companyId={companyId} theme={theme} toggleTheme={toggleTheme} />}
           {tab === 'ops'           && <CompanySettings  embedded />}
           {tab === 'notifications' && <NotificationsTab profile={profile} companyId={companyId} />}
@@ -186,7 +186,7 @@ const DEFAULT_PERMS = {
 
 // ── Tab 1 — Company Profile ───────────────────────────────────────────────────
 
-function CompanyTab({ profile, companyId, dirtyRef }) {
+function CompanyTab({ profile, companyId, dirtyRef, onNavigateTab }) {
   const toast = useToast()
   const [form, setForm]   = useState({ name:'', logo_url:'', primary_color:'#c8a84b', address:'', phone:'', email:'', role_style:'military' })
   const [customRanks, setCustomRanks] = useState([])
@@ -321,9 +321,19 @@ function CompanyTab({ profile, companyId, dirtyRef }) {
           <div style={s.lbl}>Company Name</div>
           <Inp value={form.name} onChange={e=>setF('name',e.target.value)} placeholder="Nationwide Police Services" />
         </div>
-        <div style={{ fontSize:'12px', color:'var(--text-muted)', marginBottom:'14px' }}>
-          Manage per-state licenses under the <strong style={{ color:'var(--text-secondary)' }}>State Licensing</strong> tab.
-        </div>
+        <button
+          onClick={() => onNavigateTab('licensing')}
+          style={{ display:'flex', alignItems:'center', justifyContent:'space-between', width:'100%', background:'var(--accent-bg)', border:'1px solid var(--accent-border)', borderRadius:'var(--radius-sm)', padding:'10px 14px', cursor:'pointer', marginBottom:'14px', gap:'10px', textAlign:'left' }}
+        >
+          <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
+            <Icon name="shield" size={15} color="var(--accent)" />
+            <div>
+              <div style={{ fontSize:'12px', fontWeight:700, color:'var(--accent)', fontFamily:'var(--font-condensed)', letterSpacing:'0.5px' }}>STATE LICENSES</div>
+              <div style={{ fontSize:'11px', color:'var(--text-secondary)', marginTop:'1px' }}>Manage per-state security licenses under the State Licensing tab</div>
+            </div>
+          </div>
+          <Icon name="chevron-right" size={14} color="var(--accent)" />
+        </button>
         <div style={s.fieldFull}>
           <div style={s.lbl}>Company Logo</div>
           {form.logo_url && (
