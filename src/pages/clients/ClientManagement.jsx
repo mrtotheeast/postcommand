@@ -447,7 +447,14 @@ function ClientFormModal({ client, companyId, onClose, onSaved }) {
       })
       if (siteErr) throw siteErr
 
-      toast('Client created')
+      const inviteEmail = form.email.trim()
+      if (inviteEmail) {
+        const firstName = form.contact_name.trim().split(' ')[0] || ''
+        supabase.functions.invoke('send-email', {
+          body: { type: 'welcome', to: inviteEmail, firstName, company_id: companyId }
+        }).catch(() => {})
+      }
+      toast(inviteEmail ? `Client created — invite sent to ${inviteEmail}` : 'Client created')
       ok = true
     } catch (err) {
       toast('Failed to save: ' + (err.message || 'Unknown error'), 'error')
