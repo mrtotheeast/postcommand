@@ -219,8 +219,10 @@ export default function ClockIn() {
       const { error: tsErr } = await supabase.from('timesheet').update({ clock_out: now.toISOString(), clock_out_location: loc, clock_out_photo_url: photoUrl, total_hours: Number(totalHours.toFixed(2)), status: 'pending' }).eq('id', timesheet.id)
       if (tsErr) { haptic('error'); setError(tsErr.message); setSaving(false); return }
       haptic('success')
+      // Fetch custom_ranks fresh — profile.company is absent on cache-hit profiles
+      const { data: companyRow } = await supabase.from('company').select('custom_ranks').eq('id', profile.company_id).single()
       supabase.functions.invoke('send-push', {
-        body: { company_id: profile.company_id, type: 'timesheet_pending', title: 'Timesheet Awaiting Approval', body: 'A timesheet has been submitted for approval', target_roles: rolesAtOrAbove('lieutenant', profile.company?.custom_ranks) }
+        body: { company_id: profile.company_id, type: 'timesheet_pending', title: 'Timesheet Awaiting Approval', body: 'A timesheet has been submitted for approval', target_roles: rolesAtOrAbove('lieutenant', companyRow?.custom_ranks) }
       }).catch(() => {})
       setStep(STEPS.COMPLETE)
     } catch(e) { setError(e.message) }
