@@ -167,12 +167,13 @@ export default function ClientManagement() {
               <button onClick={()=>setSelected(null)} style={{background:'transparent',border:'none',color:'var(--text-muted)',cursor:'pointer',display:'flex',minHeight:'44px',minWidth:'44px',alignItems:'center',justifyContent:'center'}}><Icon name="x" size={18}/></button>
             </div>
             <div style={s.tabRow}>
-              {['overview','onboarding','contracts'].map(t=>(
+              {['overview','contacts','onboarding','contracts'].map(t=>(
                 <button key={t} style={{...s.tab,...(panelTab===t?s.tabAct:{})}} onClick={()=>setPanelTab(t)}>{t.charAt(0).toUpperCase()+t.slice(1)}</button>
               ))}
             </div>
             <div style={s.panelBody}>
               {panelTab==='overview' && <ClientOverview client={selected} sites={clientSites(selected.id)} companyId={profile.company_id} />}
+              {panelTab==='contacts' && <ClientContactsTab client={selected} companyId={profile.company_id} />}
               {panelTab==='onboarding' && <ClientOnboarding client={selected} companyId={profile.company_id} />}
               {panelTab==='contracts' && <ClientContracts client={selected} companyId={profile.company_id} />}
             </div>
@@ -545,4 +546,132 @@ function ClientFormModal({ client, companyId, onClose, onSaved }) {
     )
   }
 
+}
+
+function ClientContactsTab({ client, companyId }) {
+  const toast = useToast()
+  const [contacts, setContacts] = useState([])
+  const [loading,  setLoading]  = useState(true)
+  const [showAdd,  setShowAdd]  = useState(false)
+  const [saving,   setSaving]   = useState(false)
+  const [sending,  setSending]  = useState(null) // contact id being invited
+  const [form, setForm] = useState({ full_name:'', email:'', phone:'' })
+  const foc = e => e.target.style.borderColor = 'var(--border-focus)'
+  const blr = e => e.target.style.borderColor = 'var(--border)'
+
+  const load = withLoadTimeout(async function load() {
+    setLoading(true)
+    try {
+      const { data } = await supabase.from('client_contact')
+        .select('*').eq('client_id', client.id).order('is_main_contact', { ascending: false })
+      setContacts(data || [])
+    } finally { setLoading(false) }
+  }, { setLoading })
+
+  useEffect(() => { load() }, [client.id])
+
+  async function addContact() {
+    if (!form.full_name.trim() && !form.email.trim()) return
+    setSaving(true)
+    try {
+      const { error } = await supabase.from('client_contact').insert({
+        client_id:  client.id,
+        company_id: companyId,
+        full_name:  form.full_name.trim() || null,
+        email:      form.email.trim()     || null,
+        phone:      form.phone.trim()     || null,
+        is_main_contact: contacts.length === 0,
+      })
+      if (error) throw error
+      if (form.email.trim()) {
+        const firstName = form.full_name.trim().split(' ')[0] || ''
+        supabase.functions.invoke('send-email', {
+          body: { type: 'welcome', to: form.email.trim(), firstName, company_id: companyId }
+        }).catch(() => {})
+        toast(`Contact added — invite sent to ${form.email.trim()}`)
+      } else {
+        toast('Contact added')
+      }
+      setForm({ full_name:'', email:'', phone:'' })
+      setShowAdd(false)
+      load()
+    } catch(e) {
+      toast(e.message || 'Failed to add contact', 'error')
+    } finally { setSaving(false) }
+  }
+
+  async function removeContact(id) {
+    if (!window.confirm('Remove this contact?')) return
+    await supabase.from('client_contact').delete().eq('id', id)
+    load()
+  }
+
+  async function sendInvite(contact) {
+    if (!contact.email) return
+    setSending(contact.id)
+    try {
+      const firstName = contact.full_name?.split(' ')[0] || ''
+      await supabase.functions.invoke('send-email', {
+        body: { type: 'welcome', to: contact.email, firstName, company_id: companyId }
+      })
+      toast(`Invite sent to ${contact.email}`)
+    } catch { toast('Failed to send invite', 'error') }
+    finally { setSending(null) }
+  }
+
+  if (loading) return <div style={{padding:'20px',color:'var(--text-muted)',fontSize:'12px',fontFamily:'var(--font-condensed)',letterSpacing:'1px'}}>LOADING...</div>
+
+  return (
+    <div style={{padding:'16px 20px'}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'14px'}}>
+        <div style={{fontSize:'10px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1.5px',fontFamily:'var(--font-condensed)'}}>Contacts ({contacts.length})</div>
+        <button style={{...s.btn,height:'30px',fontSize:'11px',padding:'0 12px'}} onClick={()=>setShowAdd(o=>!o)}>
+          <Icon name="plus" size={12}/>{showAdd ? 'CANCEL' : 'ADD CONTACT'}
+        </button>
+      </div>
+
+      {showAdd && (
+        <div style={{background:'var(--bg-surface)',border:'1px solid var(--border)',borderRadius:'var(--radius-md)',padding:'14px',marginBottom:'14px'}}>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'10px'}}>
+            <div style={{gridColumn:'1/-1'}}><div style={{fontSize:'11px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',marginBottom:'4px'}}>Full Name</div><input style={s.inp} value={form.full_name} onChange={e=>setForm(p=>({...p,full_name:e.target.value}))} onFocus={foc} onBlur={blr} placeholder="Jane Smith"/></div>
+            <div><div style={{fontSize:'11px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',marginBottom:'4px'}}>Email</div><input style={s.inp} type="email" value={form.email} onChange={e=>setForm(p=>({...p,email:e.target.value}))} onFocus={foc} onBlur={blr} placeholder="jane@acme.com"/></div>
+            <div><div style={{fontSize:'11px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)',marginBottom:'4px'}}>Phone</div><input style={s.inp} value={form.phone} onChange={e=>setForm(p=>({...p,phone:e.target.value}))} onFocus={foc} onBlur={blr} placeholder="(410) 555-0000"/></div>
+          </div>
+          <button style={{...s.btn,height:'34px',fontSize:'12px',padding:'0 14px',opacity:saving?0.6:1}} onClick={addContact} disabled={saving}>
+            <Icon name="user-plus" size={13}/>{saving?'SAVING...':'SAVE CONTACT'}
+          </button>
+        </div>
+      )}
+
+      {contacts.length === 0 ? (
+        <div style={{textAlign:'center',padding:'32px',color:'var(--text-muted)',fontSize:'13px'}}>No contacts on file.</div>
+      ) : contacts.map(c => (
+        <div key={c.id} style={{display:'flex',alignItems:'flex-start',gap:'12px',padding:'12px 0',borderBottom:'1px solid var(--border)'}}>
+          <div style={{width:'36px',height:'36px',borderRadius:'50%',background:'var(--accent-bg)',border:'1px solid var(--accent-border)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontFamily:'var(--font-display)',fontSize:'14px',color:'var(--accent)'}}>
+            {(c.full_name||'?').charAt(0).toUpperCase()}
+          </div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
+              <span style={{fontSize:'13px',fontWeight:600,color:'var(--text-primary)'}}>{c.full_name||'—'}</span>
+              {c.is_main_contact && <span style={{fontSize:'10px',fontWeight:700,padding:'1px 6px',borderRadius:'8px',background:'var(--accent-bg)',color:'var(--accent)',fontFamily:'var(--font-condensed)',letterSpacing:'0.5px'}}>PRIMARY</span>}
+            </div>
+            {c.email && <div style={{fontSize:'12px',color:'var(--text-secondary)',marginTop:'2px'}}>{c.email}</div>}
+            {c.phone && <div style={{fontSize:'12px',color:'var(--text-muted)',marginTop:'1px'}}>{c.phone}</div>}
+          </div>
+          <div style={{display:'flex',gap:'6px',flexShrink:0}}>
+            {c.email && (
+              <button onClick={()=>sendInvite(c)} disabled={sending===c.id} title="Send invite" style={{background:'transparent',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',color:'var(--text-muted)',cursor:'pointer',padding:'5px 8px',display:'flex',alignItems:'center',gap:'4px',fontSize:'11px',fontFamily:'var(--font-condensed)',opacity:sending===c.id?0.5:1}}>
+                <Icon name="send" size={12}/>{sending===c.id?'...':'INVITE'}
+              </button>
+            )}
+            {!c.is_main_contact && (
+              <button onClick={()=>removeContact(c.id)} title="Remove contact" style={{background:'transparent',border:'none',color:'var(--text-muted)',cursor:'pointer',padding:'6px',display:'flex',alignItems:'center'}}>
+                <Icon name="trash-2" size={13}/>
+              </button>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
 }
