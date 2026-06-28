@@ -27,16 +27,18 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     )
 
-    // Get subscriptions for target company + optional role filter
-    let query = supabase
+    // Get subscriptions for target company; join employee for role-based filtering
+    const { data: rawSubs } = await supabase
       .from('push_subscription')
-      .select('subscription_json, employee_id')
+      .select('subscription_json, employee_id, employee!inner(role)')
       .eq('company_id', company_id)
       .eq('active', true)
 
-    const { data: subs } = await query
+    const subs = target_roles?.length
+      ? (rawSubs || []).filter((s: any) => target_roles.includes(s.employee?.role))
+      : (rawSubs || [])
 
-    if (!subs?.length) return new Response(JSON.stringify({ sent: 0 }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    if (!subs.length) return new Response(JSON.stringify({ sent: 0 }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
 
     const payload = JSON.stringify({ title, body, url: url || '/', tag: 'postcommand' })
     let sent = 0, failed = 0
