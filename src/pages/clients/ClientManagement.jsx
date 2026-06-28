@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
 import { withLoadTimeout } from '../../lib/withLoadTimeout'
@@ -285,11 +285,30 @@ function ClientOnboarding({ client, companyId }) {
 }
 
 function ClientContracts({ client, companyId }) {
-  const [contracts, setContracts] = useState([])
-  const [loading,   setLoading]   = useState(true)
-  const [showNew,   setShowNew]   = useState(false)
-  const [form,      setForm]      = useState({ title:'', file_url:'', start_date:'', end_date:'', value:'', auto_renewal:false, status:'active' })
-  const [saving,    setSaving]    = useState(false)
+  const toast = useToast()
+  const [contracts,     setContracts]     = useState([])
+  const [loading,       setLoading]       = useState(true)
+  const [showNew,       setShowNew]       = useState(false)
+  const [form,          setForm]          = useState({ title:'', file_url:'', start_date:'', end_date:'', value:'', auto_renewal:false, status:'active' })
+  const [saving,        setSaving]        = useState(false)
+  const [uploadingFile, setUploadingFile] = useState(false)
+  const fileRef = useRef(null)
+
+  async function uploadFile(file) {
+    setUploadingFile(true)
+    try {
+      const path = `${companyId}/${client.id}/${Date.now()}-${file.name}`
+      const { data, error } = await supabase.storage.from('client-contracts').upload(path, file, { upsert: true, contentType: file.type })
+      if (error) { toast('Upload failed: ' + error.message, 'error'); return }
+      const { data: { publicUrl } } = supabase.storage.from('client-contracts').getPublicUrl(data.path)
+      setForm(p => ({ ...p, file_url: publicUrl }))
+      toast('File uploaded')
+    } catch(e) {
+      toast('Upload error: ' + (e.message || 'Unknown'), 'error')
+    } finally {
+      setUploadingFile(false)
+    }
+  }
 
   useEffect(() => {
     const _timer = setTimeout(() => setLoading(false), 10_000)
@@ -329,7 +348,18 @@ function ClientContracts({ client, companyId }) {
             <div><div style={s.lbl}>Start Date</div><input type="date" style={s.inp} value={form.start_date} onChange={e=>setForm(p=>({...p,start_date:e.target.value}))} onFocus={foc} onBlur={blr}/></div>
             <div><div style={s.lbl}>End Date</div><input type="date" style={s.inp} value={form.end_date} onChange={e=>setForm(p=>({...p,end_date:e.target.value}))} onFocus={foc} onBlur={blr}/></div>
             <div><div style={s.lbl}>Contract Value ($)</div><input type="number" style={s.inp} value={form.value} onChange={e=>setForm(p=>({...p,value:e.target.value}))} onFocus={foc} onBlur={blr} placeholder="0"/></div>
-            <div><div style={s.lbl}>File URL</div><input style={s.inp} value={form.file_url} onChange={e=>setForm(p=>({...p,file_url:e.target.value}))} onFocus={foc} onBlur={blr} placeholder="https://..."/></div>
+            <div style={{gridColumn:'1/-1'}}>
+              <div style={s.lbl}>Contract File</div>
+              <div style={{display:'flex',gap:'8px',alignItems:'center',marginBottom:'6px',flexWrap:'wrap'}}>
+                <button type="button" style={{...s.ghost,height:'34px',fontSize:'11px',padding:'0 12px',opacity:uploadingFile?0.6:1}} onClick={()=>fileRef.current?.click()} disabled={uploadingFile}>
+                  <Icon name={uploadingFile?'loader':'upload'} size={13}/>{uploadingFile?'UPLOADING…':'UPLOAD FILE'}
+                </button>
+                {form.file_url && <a href={form.file_url} target="_blank" rel="noopener noreferrer" style={{fontSize:'12px',color:'var(--accent)',display:'inline-flex',alignItems:'center',gap:'4px',textDecoration:'none'}}><Icon name="external-link" size={11}/>View</a>}
+              </div>
+              <input ref={fileRef} type="file" accept="application/pdf,.pdf,.doc,.docx" style={{display:'none'}} onChange={e=>{if(e.target.files[0])uploadFile(e.target.files[0]);e.target.value=''}}/>
+              <div style={{fontSize:'10px',color:'var(--text-muted)',fontFamily:'var(--font-condensed)',letterSpacing:'0.5px',marginBottom:'4px'}}>OR ENTER URL</div>
+              <input style={s.inp} value={form.file_url} onChange={e=>setForm(p=>({...p,file_url:e.target.value}))} onFocus={foc} onBlur={blr} placeholder="https://..."/>
+            </div>
           </div>
           <label style={{display:'flex',alignItems:'center',gap:'8px',fontSize:'13px',color:'var(--text-primary)',cursor:'pointer',marginBottom:'12px'}}>
             <input type="checkbox" checked={form.auto_renewal} onChange={e=>setForm(p=>({...p,auto_renewal:e.target.checked}))} style={{accentColor:'var(--accent)',width:'16px',height:'16px'}}/>Auto-renewal
