@@ -5,6 +5,7 @@ import { withLoadTimeout } from '../../lib/withLoadTimeout'
 import { atLeast } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
 import { useToast } from '../../components/ui/Toast'
+import ClientBilling from './ClientBilling'
 
 const CONTRACT_STATUS = { active:{label:'Active',color:'var(--color-success)',bg:'var(--color-success-bg)'}, expired:{label:'Expired',color:'var(--color-danger)',bg:'var(--color-danger-bg)'}, pending:{label:'Pending',color:'var(--color-warning)',bg:'var(--color-warning-bg)'} }
 const ONBOARDING_STEPS = ['Contract Signed','Site Survey Complete','Post Orders Drafted','Staff Assigned','Go-Live Date Set','First Billing Invoice Sent']
@@ -38,6 +39,7 @@ export default function ClientManagement() {
   const toast = useToast()
   const isMobile = window.innerWidth < 640
   const canDelete = atLeast(profile?.role, 'chief')
+  const canBill   = ['chief','super_admin'].includes(profile?.role)
   const [clients,    setClients]    = useState([])
   const [sites,      setSites]      = useState([])
   const [loading,    setLoading]    = useState(true)
@@ -167,7 +169,7 @@ export default function ClientManagement() {
               <button onClick={()=>setSelected(null)} style={{background:'transparent',border:'none',color:'var(--text-muted)',cursor:'pointer',display:'flex',minHeight:'44px',minWidth:'44px',alignItems:'center',justifyContent:'center'}}><Icon name="x" size={18}/></button>
             </div>
             <div style={s.tabRow}>
-              {['overview','contacts','onboarding','contracts'].map(t=>(
+              {['overview','contacts','onboarding','contracts',...(canBill?['billing']:[])].map(t=>(
                 <button key={t} style={{...s.tab,...(panelTab===t?s.tabAct:{})}} onClick={()=>setPanelTab(t)}>{t.charAt(0).toUpperCase()+t.slice(1)}</button>
               ))}
             </div>
@@ -176,12 +178,13 @@ export default function ClientManagement() {
               {panelTab==='contacts' && <ClientContactsTab client={selected} companyId={profile.company_id} />}
               {panelTab==='onboarding' && <ClientOnboarding client={selected} companyId={profile.company_id} />}
               {panelTab==='contracts' && <ClientContracts client={selected} companyId={profile.company_id} />}
+              {panelTab==='billing' && <ClientBilling client={selected} />}
             </div>
           </div>
         </>
       )}
 
-      {showModal && <ClientFormModal client={editClient} companyId={profile.company_id} onClose={()=>{setShowModal(false);setEditClient(null)}} onSaved={()=>{setShowModal(false);setEditClient(null);load()}} />}
+      {showModal && <ClientFormModal client={editClient} companyId={profile.company_id} onClose={()=>{setShowModal(false);setEditClient(null)}} onSaved={async (newClientId, openBilling)=>{setShowModal(false);setEditClient(null);await load();if(openBilling&&newClientId){const {data}=await supabase.from('client').select('*').eq('id',newClientId).single();if(data){setSelected(data);setPanelTab('billing')}}}} canBill={canBill} />}
     </div>
   )
 }
@@ -394,7 +397,7 @@ function ClientContracts({ client, companyId }) {
   )
 }
 
-function ClientFormModal({ client, companyId, onClose, onSaved }) {
+function ClientFormModal({ client, companyId, onClose, onSaved, canBill }) {
   const toast = useToast()
   // step is only used in create mode: 'client' | 'site' | 'done'
   const [step, setStep] = useState('client')
@@ -403,6 +406,7 @@ function ClientFormModal({ client, companyId, onClose, onSaved }) {
     : { company_name:'', contact_name:'', phone:'', email:'', address:'', contract_status:'active', notes:'' })
   const [site, setSite] = useState({ name:'', address:'', city:'', state:'', latitude:'', longitude:'', geofence_feet:'500' })
   const [saving, setSaving] = useState(false)
+  const [setupBilling, setSetupBilling] = useState(false)
 
   function setF(k, v) { setForm(p => ({ ...p, [k]: v })) }
   function setS(k, v) { setSite(p => ({ ...p, [k]: v })) }
@@ -486,12 +490,12 @@ function ClientFormModal({ client, companyId, onClose, onSaved }) {
         }).catch(() => {})
       }
       toast(inviteEmail ? `Client created — invite sent to ${inviteEmail}` : 'Client created')
-      ok = true
+      ok = newClient.id
     } catch (err) {
       toast('Failed to save: ' + (err.message || 'Unknown error'), 'error')
     } finally {
       setSaving(false)
-      if (ok) onSaved()
+      if (ok) onSaved(ok, setupBilling)
     }
   }
 
@@ -567,6 +571,12 @@ function ClientFormModal({ client, companyId, onClose, onSaved }) {
             <div><div style={s.lbl}>Longitude</div><input style={s.inp} type="number" step="any" value={site.longitude} onChange={e=>setS('longitude',e.target.value)} onFocus={foc} onBlur={blr} placeholder="-77.0369"/></div>
             <div style={{ gridColumn:'1/-1' }}><div style={s.lbl}>Geofence Radius (feet)</div><input style={s.inp} type="number" value={site.geofence_feet} onChange={e=>setS('geofence_feet',e.target.value)} onFocus={foc} onBlur={blr} placeholder="500"/></div>
           </div>
+          {canBill && (
+            <label style={{ display:'flex', alignItems:'center', gap:'8px', fontSize:'13px', color:'var(--text-secondary)', marginBottom:'16px', cursor:'pointer' }}>
+              <input type="checkbox" checked={setupBilling} onChange={e=>setSetupBilling(e.target.checked)} style={{ accentColor:'var(--accent)', width:'15px', height:'15px' }}/>
+              Set up direct billing (ACH / card auto-pay) after creating
+            </label>
+          )}
           <div style={{ display:'flex', gap:'10px' }}>
             <button style={{ ...s.btn, opacity:(!site.name.trim()||saving)?0.6:1 }} onClick={saveFull} disabled={!site.name.trim()||saving}>{saving?'SAVING...':'CREATE CLIENT'}</button>
             <button style={s.ghost} onClick={()=>setStep('client')}>BACK</button>

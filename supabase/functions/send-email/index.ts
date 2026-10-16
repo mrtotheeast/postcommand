@@ -263,10 +263,15 @@ serve(async (req) => {
 
       // Attempt to create a Stripe one-time checkout session for the Pay Now button.
       // Uses price_data (not price_id) so no pre-created Stripe product is needed.
-      // TODO: set STRIPE_SECRET_KEY in Supabase secrets to enable Pay Now links in invoice emails.
+      // The session is created on the company's connected Stripe account so the
+      // client's payment goes to the company, not the PostCommand platform account.
+      // No connected account (or charges not enabled) → no Pay Now button.
       let payNowUrl: string | null = null
       const stripeKey = Deno.env.get('STRIPE_SECRET_KEY')
-      if (stripeKey && total_cents && total_cents > 0 && invoiceId) {
+      const { data: payAccount } = data.company_id
+        ? await supabase.from('company_payment_account').select('stripe_account_id, charges_enabled').eq('company_id', data.company_id).maybeSingle()
+        : { data: null }
+      if (stripeKey && payAccount?.charges_enabled && total_cents && total_cents > 0 && invoiceId) {
         try {
           const successUrl = pdf_url || 'https://postcommand.app'
           const cancelUrl  = pdf_url || 'https://postcommand.app'
@@ -285,6 +290,7 @@ serve(async (req) => {
             headers: {
               'Authorization': `Bearer ${stripeKey}`,
               'Content-Type': 'application/x-www-form-urlencoded',
+              'Stripe-Account': payAccount.stripe_account_id,
             },
             body: params,
           })

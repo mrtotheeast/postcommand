@@ -9,6 +9,7 @@ import Icon from '../../components/ui/Icon'
 import { useToast } from '../../components/ui/Toast'
 import CompanySettings from './CompanySettings'
 import { isNative } from '../../lib/platform'
+import { invokeBilling } from '../../lib/billing'
 
 // ── Shared primitives ─────────────────────────────────────────────────────────
 
@@ -73,6 +74,7 @@ const TABS = [
   { id:'ops',           label:'Operations',        icon:'sliders' },
   { id:'notifications', label:'Notifications',     icon:'bell' },
   { id:'integrations',  label:'Integrations',      icon:'link' },
+  { id:'payments',      label:'Client Payments',   icon:'credit-card' },
   { id:'security',      label:'Security',          icon:'lock' },
   { id:'ai',            label:'AI Settings',       icon:'zap' },
   { id:'licensing',     label:'State Licensing',   icon:'map-pin' },
@@ -90,7 +92,7 @@ export default function Settings() {
   }, [profileConfirmed, role, navigate])
   const { theme, toggleTheme }  = useTheme()
   const toast                   = useToast()
-  const [tab, setTab]           = useState('company')
+  const [tab, setTab]           = useState(() => TABS.some(t => t.id === new URLSearchParams(window.location.search).get('tab')) ? new URLSearchParams(window.location.search).get('tab') : 'company')
   const dirtyRef                = useRef(false)
 
   const handleTabChange = useCallback((id) => {
@@ -127,6 +129,7 @@ export default function Settings() {
           {tab === 'ops'           && <CompanySettings  embedded />}
           {tab === 'notifications' && <NotificationsTab profile={profile} companyId={companyId} />}
           {tab === 'integrations'  && <IntegrationsTab  companyId={companyId} />}
+          {tab === 'payments'      && <PaymentsTab />}
           {tab === 'security'      && <SecurityTab      profile={profile} companyId={companyId} />}
           {tab === 'ai'            && <AITab            companyId={companyId} />}
           {tab === 'licensing'     && <StateLicensingTab companyId={companyId} />}
@@ -740,6 +743,95 @@ function PTOSettingsSection({ companyId }) {
       </div>
       <button style={s.btn} onClick={save}><Icon name="save" size={14}/>SAVE PTO SETTINGS</button>
     </div>
+  )
+}
+
+// ── Client Payments (Stripe Connect) ──────────────────────────────────────────
+
+function PaymentsTab() {
+  const toast = useToast()
+  const [status,    setStatus]    = useState(null)
+  const [loading,   setLoading]   = useState(true)
+  const [busy,      setBusy]      = useState(false)
+  const [surcharge, setSurcharge] = useState('0')
+
+  async function load() {
+    setLoading(true)
+    try {
+      const st = await invokeBilling('stripe-connect', { action:'status' })
+      setStatus(st)
+      setSurcharge(String(st.card_surcharge_pct ?? 0))
+    } catch (e) {
+      toast(e.message, 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+  useEffect(() => { load() }, [])
+
+  async function connect() {
+    setBusy(true)
+    try {
+      const { url } = await invokeBilling('stripe-connect', { action:'onboard', return_path:'/settings?tab=payments' })
+      window.location.href = url
+    } catch (e) {
+      toast(e.message, 'error')
+      setBusy(false)
+    }
+  }
+
+  async function saveSurcharge() {
+    setBusy(true)
+    try {
+      await invokeBilling('stripe-connect', { action:'set_surcharge', pct:Number(surcharge) })
+      toast('Surcharge saved')
+    } catch (e) {
+      toast(e.message, 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (loading) return <div className="skeleton" style={{ height:'160px', borderRadius:'8px' }} />
+
+  const ready = status?.connected && status.charges_enabled
+  return (
+    <>
+      <div style={s.card}>
+        <div style={s.cardTitle}>Stripe Account</div>
+        <div style={{ fontSize:'13px', color:'var(--text-secondary)', lineHeight:1.6, marginBottom:'16px' }}>
+          Connect your company's Stripe account to auto-debit clients by ACH or card. Payments deposit directly to your bank account.
+          Card and bank numbers are stored by Stripe, never in PostCommand.
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap:'10px', marginBottom:'16px' }}>
+          <Icon name={ready ? 'check-circle' : 'alert-circle'} size={16} color={ready ? 'var(--color-success)' : 'var(--color-warning)'} />
+          <span style={{ fontSize:'14px', color:'var(--text-primary)' }}>
+            {!status?.connected ? 'Not connected' : ready ? 'Connected. Ready to accept payments' : 'Setup incomplete. Finish onboarding with Stripe'}
+          </span>
+        </div>
+        <div style={{ display:'flex', gap:'10px', flexWrap:'wrap' }}>
+          {!ready && <button style={{ ...s.btn, opacity:busy?0.6:1 }} onClick={connect} disabled={busy}><Icon name="link" size={14}/>{status?.connected ? 'CONTINUE STRIPE SETUP' : 'CONNECT STRIPE'}</button>}
+          {status?.connected && <a style={{ ...s.ghost, textDecoration:'none' }} href="https://dashboard.stripe.com/" target="_blank" rel="noreferrer"><Icon name="external-link" size={14}/>OPEN STRIPE DASHBOARD</a>}
+        </div>
+      </div>
+
+      {status?.connected && (
+        <div style={s.card}>
+          <div style={s.cardTitle}>Credit Card Surcharge</div>
+          <div style={{ fontSize:'12px', color:'var(--text-muted)', lineHeight:1.6, marginBottom:'12px' }}>
+            Optional fee added to <strong>credit</strong> card payments only. Debit, prepaid, and ACH payments are never surcharged.
+            Max 3%. Surcharging is banned in CT, MA, and PR, and card networks require advance notice and disclosure on invoices. Check the rules before enabling it.
+          </div>
+          <div style={{ display:'flex', gap:'10px', alignItems:'flex-end' }}>
+            <div style={{ ...s.field, maxWidth:'140px', minWidth:'120px' }}>
+              <div style={s.lbl}>Surcharge %</div>
+              <Inp type="number" value={surcharge} onChange={e=>setSurcharge(e.target.value)} placeholder="0" />
+            </div>
+            <button style={{ ...s.btn, opacity:busy?0.6:1 }} onClick={saveSurcharge} disabled={busy}><Icon name="save" size={14}/>SAVE</button>
+          </div>
+        </div>
+      )}
+    </>
   )
 }
 

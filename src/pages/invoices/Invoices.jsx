@@ -234,6 +234,11 @@ export default function Invoices() {
                     <span style={{ ...s.pill, background:STATUS[inv.status]?.bg, color:STATUS[inv.status]?.color }}>
                       {STATUS[inv.status]?.label ?? inv.status}
                     </span>
+                    {inv.autopay_payment_id && inv.status !== 'paid' && (
+                      <span style={{ display:'inline-flex', alignItems:'center', gap:'4px', fontSize:'10px', color:'var(--color-warning)', fontFamily:'var(--font-condensed)', letterSpacing:'0.5px' }}>
+                        <Icon name="clock" size={10} />Auto-pay processing
+                      </span>
+                    )}
                     {viewMap[inv.id] && (
                       <span style={{ display:'inline-flex', alignItems:'center', gap:'4px', fontSize:'10px', color:'var(--color-success)', fontFamily:'var(--font-condensed)', letterSpacing:'0.5px' }}>
                         <span style={{ width:'6px', height:'6px', borderRadius:'50%', background:'var(--color-success)', flexShrink:0 }}/>
