@@ -28,6 +28,14 @@ export default function Dashboard() {
   return <MainDashboard profile={profile} effectiveRole={effectiveRole} badges={badges} navigate={navigate} />
 }
 
+// Tenant company name for dashboard headers. Truncates long names; hidden until the
+// full profile (with company) has loaded.
+function CompanyLine({ profile }) {
+  const name = profile?.company?.name
+  if (!name) return null
+  return <div title={name} style={{fontSize:'12px',color:'var(--text-secondary)',fontWeight:600,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:'100%',marginBottom:'2px'}}>{name}</div>
+}
+
 // ── DAR Widgets ───────────────────────────────────────────────────────────────
 
 function DarDueWidget({ profile, navigate }) {
@@ -191,7 +199,8 @@ function MainDashboard({ profile, effectiveRole, badges, navigate }) {
       <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}`}</style>
       {['super_admin','chief','lieutenant'].includes(effectiveRole) && <OnboardingChecklist companyId={profile?.company_id}/>}
       <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:'28px',gap:'16px',flexDirection:isMobile?'column':'row'}}>
-        <div>
+        <div style={{minWidth:0,maxWidth:'100%'}}>
+          <CompanyLine profile={profile} />
           <div style={{fontSize:'12px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)'}}>{greeting},</div>
           <div style={{fontFamily:'var(--font-display)',fontSize:'32px',letterSpacing:'2px',color:'var(--text-primary)',lineHeight:1.1,margin:'2px 0 4px'}}>{profile?.first_name || ROLE_LABELS[effectiveRole] || 'Welcome'}</div>
           <div style={{fontSize:'12px',color:'var(--text-muted)'}}>{ROLE_LABELS[effectiveRole]} · {dateStr}</div>
@@ -366,6 +375,7 @@ function OfficerDashboard({ profile, badges, navigate }) {
     <div style={{padding:isMobile?'12px':'24px',maxWidth:'800px',animation:'fadeIn 200ms ease'}}>
       <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}`}</style>
       <div style={{marginBottom:'24px'}}>
+        <CompanyLine profile={profile} />
         <div style={{fontSize:'12px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)'}}>{greeting},</div>
         <div style={{fontFamily:'var(--font-display)',fontSize:'32px',letterSpacing:'2px',color:'var(--text-primary)',lineHeight:1.1,margin:'2px 0 4px'}}>{displayName}</div>
         <div style={{fontSize:'12px',color:'var(--text-muted)'}}>Officer · {dateStr}</div>
@@ -475,6 +485,7 @@ function CorporalDashboard({ profile, badges, navigate }) {
     <div style={{padding:isMobile?'12px':'24px',maxWidth:'900px',animation:'fadeIn 200ms ease'}}>
       <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}`}</style>
       <div style={{marginBottom:'24px'}}>
+        <CompanyLine profile={profile} />
         <div style={{fontSize:'12px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1px',fontFamily:'var(--font-condensed)'}}>{greeting},</div>
         <div style={{fontFamily:'var(--font-display)',fontSize:'32px',letterSpacing:'2px',color:'var(--text-primary)',lineHeight:1.1,margin:'2px 0 4px'}}>{profile?.first_name || 'Corporal'}</div>
         <div style={{fontSize:'12px',color:'var(--text-muted)'}}>Corporal · {new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}</div>
@@ -560,6 +571,7 @@ function ClientDashboard({ profile }) {
     <div style={{padding:isMobile?'12px':'24px',maxWidth:'1000px',animation:'fadeIn 200ms ease'}}>
       <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}`}</style>
       <div style={{marginBottom:'24px'}}>
+        <CompanyLine profile={profile} />
         <div style={{fontFamily:'var(--font-display)',fontSize:'28px',letterSpacing:'2px',color:'var(--text-primary)',lineHeight:1}}>CLIENT PORTAL</div>
         <div style={{fontSize:'12px',color:'var(--text-muted)',marginTop:'4px'}}>Security activity for your account · Last 30 days</div>
       </div>

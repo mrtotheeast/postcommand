@@ -1109,7 +1109,7 @@ Generate a compliance audit report as JSON:
 
           {report.flags?.length > 0 && (
             <div style={{ ...s.chartCard, border:'1px solid rgba(232,148,58,0.3)', background:'var(--color-warning-bg)' }}>
-              <div style={{ ...s.chartTitle, color:'var(--color-warning)' }}>⚠ Compliance Flags ({report.flags.length})</div>
+              <div style={{ ...s.chartTitle, color:'var(--color-warning)' }}><Icon name="alert-triangle" size={13} /> Compliance Flags ({report.flags.length})</div>
               {report.flags.map((f,i)=><div key={i} style={{ fontSize:'13px', color:'var(--color-warning)', padding:'4px 0', lineHeight:1.5 }}>{f}</div>)}
             </div>
           )}

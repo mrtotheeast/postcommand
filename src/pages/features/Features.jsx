@@ -1,11 +1,12 @@
 import { useState } from 'react'
+import Icon from '../../components/ui/Icon'
 
 const LEVEL_COLORS = { 0:'#8899aa', 1:'#8899aa', 2:'#5b9fe0', 3:'#3aaa6a', 4:'#c8a84b', 5:'#e05555', 6:'#e05555' }
 const LEVEL_LABELS = { 1:'Officer / All Staff', 2:'Corporal / Lead', 3:'Sergeant / Supervisor', 4:'Lieutenant / Manager+', 5:'Chief / Admin+', 6:'Super Admin' }
 
 const CATEGORIES = [
   {
-    id:'workforce', title:'Workforce Management', icon:'👥',
+    id:'workforce', title:'Workforce Management', icon:'users',
     features:[
       { name:'Employee Directory', desc:'Full employee roster with profiles, credentials, and contact info. Search by name, role, or site.', minLevel:3, highlights:['Role-based access','Credential tracking','Document storage','Training records','Change log'] },
       { name:'App Invitations', desc:'Invite employees to PostCommand with branded email. Secure tokenized links, resend capability, and bulk invite.', minLevel:4, highlights:['Branded invite emails','Resend capability','Bulk invite','Invitation status tracking'] },
@@ -14,7 +15,7 @@ const CATEGORIES = [
     ]
   },
   {
-    id:'scheduling', title:'Scheduling', icon:'📅',
+    id:'scheduling', title:'Scheduling', icon:'calendar',
     features:[
       { name:'Shift Scheduling', desc:'Create, manage, and publish shifts. Officers receive notifications when new schedules go live.', minLevel:3, highlights:['Drag-and-drop scheduling','Weekly / daily views','Auto-assign by availability','Shift swap requests'] },
       { name:'Clock In / Out', desc:'GPS-verified clock in and out at assigned posts. Geofence radius configurable per site (min 10m).', minLevel:1, highlights:['GPS geofence verification','Clock-in photo','Geofence override with reason','Supervisor notification on override'] },
@@ -22,16 +23,16 @@ const CATEGORIES = [
     ]
   },
   {
-    id:'field', title:'Field Operations', icon:'🚨',
+    id:'field', title:'Field Operations', icon:'alert-triangle',
     features:[
       { name:'Incident Reports', desc:'File detailed incident reports with AI-assisted narrative writing. Full approval workflow.', minLevel:1, highlights:['AI narrative writing','Multi-field form','Suspect details','Emergency services fields','CAD number auto-assigned'] },
       { name:'SOS Emergency Alert', desc:'Hold SOS button for 3 seconds to trigger an immediate alert with GPS location to supervisors.', minLevel:1, highlights:['GPS location sharing','Immediate supervisor notification','Audio + haptic alert','30-second cancel window'] },
       { name:'Patrol Logs', desc:'Log patrol sessions with QR checkpoint scanning. Route playback and completion stats for supervisors.', minLevel:1, highlights:['QR checkpoint scanning','Route recording','Completion percentage','Missed checkpoint flags'] },
-      { name:'Live Map', desc:'Real-time map showing all on-duty officers across all sites with GPS position updates every 60 seconds.', minLevel:4, highlights:['Real-time GPS updates','Site geofence display','On-duty / off-duty status','Last update timestamp'] },
+      { name:'Live Map', desc:'Map showing all on-duty officers across all sites. Tap Refresh to load the latest positions.', minLevel:4, highlights:['Refresh on demand','Site geofence display','On-duty / off-duty status','Last update timestamp'] },
     ]
   },
   {
-    id:'compliance', title:'Compliance & Audit', icon:'📋',
+    id:'compliance', title:'Compliance & Audit', icon:'file-text',
     features:[
       { name:'Employee Change Log', desc:'Every change to an employee record is logged: who changed what, from what, to what, and when.', minLevel:3, highlights:['24-month rolling history','Pay change tracking','Status change tracking','Supervisor visibility by assignment'] },
       { name:'AI Audit Report', desc:'Generate AI-powered compliance audit reports from change log data. Export to PDF.', minLevel:4, highlights:['Date range filters','Pay change summary','Status change summary','AI-generated flags and recommendations'] },
@@ -40,7 +41,7 @@ const CATEGORIES = [
     ]
   },
   {
-    id:'payroll', title:'Payroll & Finance', icon:'💰',
+    id:'payroll', title:'Payroll & Finance', icon:'dollar-sign',
     features:[
       { name:'Gusto Integration', desc:'Connect your Gusto account to run payroll directly from PostCommand. Hours sync from approved timesheets.', minLevel:4, highlights:['OAuth secure connection','Hours sync from timesheets','Submit payroll to Gusto','Pay stub viewer per employee'] },
       { name:'Payroll CSV Export', desc:'Export approved timesheet hours as CSV for import into your payroll provider.', minLevel:3, highlights:['CSV export','OT calculation (over 40 hours)','Per pay period export','Google Sheets export'] },
@@ -48,7 +49,7 @@ const CATEGORIES = [
     ]
   },
   {
-    id:'ai', title:'AI Features', icon:'🤖',
+    id:'ai', title:'AI Features', icon:'zap',
     features:[
       { name:'AI Incident Writing', desc:'Officers answer guided questions; Claude writes a formal, professional narrative in law enforcement style.', minLevel:1, highlights:['Guided Q&A mode','Professional law enforcement style','POLISH button to refine','Runs via Supabase edge function'] },
       { name:'AI Training Suggestions', desc:'Claude analyzes your training completion data and suggests courses the team should prioritize.', minLevel:4, highlights:['Based on completion rates','Based on incident history','4 prioritized suggestions','High / Medium / Low priority'] },
@@ -91,7 +92,7 @@ export default function Features() {
           {CATEGORIES.map(cat => (
             <button key={cat.id} onClick={()=>setActiveId(cat.id)}
               style={{ width:'100%', textAlign:'left', padding:'8px 10px', borderRadius:'6px', border:'none', cursor:'pointer', fontFamily:'Barlow, sans-serif', fontSize:'13px', background:activeId===cat.id?'#f0f4ff':'transparent', color:activeId===cat.id?'#2563eb':'#374151', fontWeight:activeId===cat.id?600:400, marginBottom:'2px', display:'flex', alignItems:'center', gap:'8px' }}>
-              <span>{cat.icon}</span>{cat.title}
+              <Icon name={cat.icon} size={14} />{cat.title}
             </button>
           ))}
           <div style={{ marginTop:'24px', padding:'16px', background:'#fafafa', borderRadius:'8px', border:'1px solid #e5e7eb' }}>
@@ -115,7 +116,7 @@ export default function Features() {
           {CATEGORIES.map(cat => (
             <div key={cat.id} id={cat.id} style={{ marginBottom:'48px' }}>
               <div style={{ display:'flex', alignItems:'center', gap:'12px', marginBottom:'20px', paddingBottom:'12px', borderBottom:'2px solid #e5e7eb' }}>
-                <span style={{ fontSize:'24px' }}>{cat.icon}</span>
+                <Icon name={cat.icon} size={24} />
                 <h2 style={{ fontFamily:'Bebas Neue, sans-serif', fontSize:'28px', letterSpacing:'2px', color:'#0d0f14', margin:0 }}>{cat.title}</h2>
               </div>
               <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(300px,1fr))', gap:'16px' }}>

@@ -1,7 +1,6 @@
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { useAuth } from './context/AuthContext'
-import { GuidedTour } from './components/ui/GuidedTour'
 import { supabase } from './lib/supabase'
 import { isNative } from './lib/platform'
 import AppLayout from './components/layout/AppLayout'
@@ -39,6 +38,7 @@ import AuditLog from './pages/audit/AuditLog'
 import Payroll from './pages/payroll/Payroll'
 import PerformanceReviews from './pages/reviews/PerformanceReviews'
 import ClientManagement from './pages/clients/ClientManagement'
+import Contracts from './pages/contracts/Contracts'
 import MarketingHome from './pages/marketing/Home'
 import MarketingFeatures from './pages/marketing/Features'
 import MarketingPricing from './pages/marketing/Pricing'
@@ -63,6 +63,14 @@ function ProtectedRoute({ children }) {
   if (needsPassword) return <Navigate to="/set-password" replace />
   if (role === 'client') return <Navigate to="/portal" replace />
   return <AppLayout>{children}</AppLayout>
+}
+// Platform area (/admin): platform-owner company AND super_admin. Waits for the
+// full profile (the cached one has no company data) before deciding.
+function PlatformRoute({ children }) {
+  const { isPlatformAdmin, profileConfirmed } = useAuth()
+  if (!profileConfirmed) return <Spinner />
+  if (!isPlatformAdmin) return <Navigate to="/dashboard" replace />
+  return children
 }
 function ClientRoute({ children }) {
   const { isAuthenticated, loading, needsPassword } = useAuth()
@@ -127,26 +135,11 @@ function AuthCallback() {
 }
 
 export default function App() {
-  const { isAuthenticated, loading, role, profile } = useAuth()
-  const [showTour, setShowTour] = useState(false)
-
-  useEffect(() => {
-    if (!profile?.id) return
-    const seen  = localStorage.getItem(`pc-tour-seen-${profile.id}`)
-    const never = localStorage.getItem(`pc-tour-never-${profile.id}`)
-    if (!seen && !never) setShowTour(true)
-  }, [profile?.id])
-
-  useEffect(() => {
-    const handler = () => setShowTour(true)
-    window.addEventListener('start-tour', handler)
-    return () => window.removeEventListener('start-tour', handler)
-  }, [])
+  const { isAuthenticated, loading, role } = useAuth()
 
   if (loading) return <div style={{minHeight:'100vh',backgroundColor:'var(--bg-base)',display:'flex',alignItems:'center',justifyContent:'center'}}><style>{`@keyframes spinY{0%{transform:rotateY(0deg)}100%{transform:rotateY(360deg)}}`}</style><img src="/app-icon-transparent.png" alt="PostCommand" style={{width:'80px',height:'80px',objectFit:'contain',animation:'spinY 1.4s linear infinite',transformStyle:'preserve-3d'}}/></div>
   return (
     <>
-    {showTour && profile && <GuidedTour profile={profile} onDone={() => setShowTour(false)} />}
     <OAuthCallbackHandler />
     <PrivacyBanner />
     <Routes>
@@ -184,9 +177,10 @@ export default function App() {
       <Route path="/dar"        element={<ProtectedRoute><DAR /></ProtectedRoute>} />
       <Route path="/inbox"      element={<ProtectedRoute><Inbox /></ProtectedRoute>} />
       <Route path="/archived"   element={<ProtectedRoute><Archived /></ProtectedRoute>} />
-      <Route path="/admin"      element={<ProtectedRoute><SuperAdmin /></ProtectedRoute>} />
+      <Route path="/admin"      element={<ProtectedRoute><PlatformRoute><SuperAdmin /></PlatformRoute></ProtectedRoute>} />
       <Route path="/reviews"    element={<ProtectedRoute><PerformanceReviews /></ProtectedRoute>} />
       <Route path="/clients"    element={<ProtectedRoute><ClientManagement /></ProtectedRoute>} />
+      <Route path="/contracts"  element={<ProtectedRoute><Contracts /></ProtectedRoute>} />
       <Route path="/help"       element={<ProtectedRoute><Help /></ProtectedRoute>} />
       <Route path="/audit"      element={<ProtectedRoute><AuditLog /></ProtectedRoute>} />
       <Route path="/payroll"    element={<ProtectedRoute><Payroll /></ProtectedRoute>} />

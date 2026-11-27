@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
 import { withLoadTimeout } from '../../lib/withLoadTimeout'
@@ -6,8 +7,14 @@ import { atLeast } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
 import { useToast } from '../../components/ui/Toast'
 import ClientBilling from './ClientBilling'
+import ArchiveClientDialog from './ArchiveClientDialog'
+import TaxExemptionFields, { TaxExemptionSummary, useCompanyJurisdictions, loadExemptions, validateExemptions, saveExemptions } from './TaxExemptionFields'
+import { dbErrorMessage } from '../../lib/dbErrors'
+import ContractDrawer, { STATUS as SERVICE_STATUS, renewalFlag } from '../contracts/ContractDrawer'
+import { fmtDate as fmtContractDate } from '../contracts/ContractDialogs'
 
 const CONTRACT_STATUS = { active:{label:'Active',color:'var(--color-success)',bg:'var(--color-success-bg)'}, expired:{label:'Expired',color:'var(--color-danger)',bg:'var(--color-danger-bg)'}, pending:{label:'Pending',color:'var(--color-warning)',bg:'var(--color-warning-bg)'} }
+const CLIENT_STATUS = { active:{label:'Active',color:'var(--color-success)',bg:'var(--color-success-bg)'}, inactive:{label:'Inactive',color:'var(--text-muted)',bg:'var(--border)'}, suspended:{label:'Suspended',color:'var(--color-warning)',bg:'var(--color-warning-bg)'} }
 const ONBOARDING_STEPS = ['Contract Signed','Site Survey Complete','Post Orders Drafted','Staff Assigned','Go-Live Date Set','First Billing Invoice Sent']
 
 const s = {
@@ -35,11 +42,17 @@ const s = {
 }
 
 export default function ClientManagement() {
-  const { profile } = useAuth()
+  const { profile, effectiveRole, profileConfirmed } = useAuth()
   const toast = useToast()
+  const navigate = useNavigate()
   const isMobile = window.innerWidth < 640
-  const canDelete = atLeast(profile?.role, 'chief')
-  const canBill   = ['chief','super_admin'].includes(profile?.role)
+  // View As aware. Same roles as the Clients nav item; the route itself has no role guard.
+  const canView   = ['chief','super_admin'].includes(effectiveRole)
+  const canDelete = atLeast(effectiveRole, 'chief')
+  const canBill   = ['chief','super_admin'].includes(effectiveRole)
+  useEffect(() => {
+    if (profileConfirmed && !canView) navigate('/dashboard', { replace: true })
+  }, [profileConfirmed, canView, navigate])
   const [clients,    setClients]    = useState([])
   const [sites,      setSites]      = useState([])
   const [loading,    setLoading]    = useState(true)
@@ -49,14 +62,15 @@ export default function ClientManagement() {
   const [showModal,  setShowModal]  = useState(false)
   const [editClient, setEditClient] = useState(null)
   const [deleting,   setDeleting]   = useState(null)
+  const [archiving,  setArchiving]  = useState(null) // { client, contracts, reason }
 
-  useEffect(() => { if (profile?.company_id) load() }, [profile])
+  useEffect(() => { if (profile?.company_id && canView) load() }, [profile, canView])
 
   const load = withLoadTimeout(async function load() {
     setLoading(true)
     try {
       const [{ data:cl }, { data:si }, { data:ct }] = await Promise.all([
-        supabase.from('client').select('*').eq('company_id',profile.company_id).order('name'),
+        supabase.from('client').select('*').eq('company_id',profile.company_id).is('deletion_date',null).order('name'),
         supabase.from('site').select('id,name,client_id').eq('company_id',profile.company_id),
         supabase.from('client_contact').select('client_id,full_name,phone,email').eq('company_id',profile.company_id).eq('is_main_contact',true),
       ])
@@ -75,31 +89,33 @@ export default function ClientManagement() {
     }
   }, { setLoading })
 
+  // Hard delete only when the client has no service contracts (service_contract.client_id
+  // is ON DELETE RESTRICT and contracts must be kept 7 years). Otherwise offer archive.
   async function handleDelete(client) {
-    const linkedSites = sites.filter(s => s.client_id === client.id)
-    const siteWarning = linkedSites.length > 0
-      ? `\n\nWarning: this client has ${linkedSites.length} site${linkedSites.length !== 1 ? 's' : ''} (${linkedSites.map(s=>s.name).join(', ')}) that will also need to be removed or reassigned before deletion can succeed.`
-      : ''
-    const confirmed = window.confirm(
-      `Permanently delete "${client.name}"?${siteWarning}\n\nThis cannot be undone.`
-    )
-    if (!confirmed) return
     setDeleting(client.id)
     try {
+      const { data: contracts, error: cErr } = await supabase.from('service_contract')
+        .select('id,status,jurisdiction_code').eq('client_id', client.id).eq('company_id', profile.company_id)
+      if (cErr) throw cErr
+      if (contracts.length > 0) { setArchiving({ client, contracts }); return }
+
+      const linkedSites = sites.filter(s => s.client_id === client.id)
+      const siteWarning = linkedSites.length > 0
+        ? `\n\nWarning: this client has ${linkedSites.length} site${linkedSites.length !== 1 ? 's' : ''} (${linkedSites.map(s=>s.name).join(', ')}) that will also need to be removed or reassigned before deletion can succeed.`
+        : ''
+      if (!window.confirm(`Permanently delete "${client.name}"?${siteWarning}\n\nThis cannot be undone.`)) return
+
       const { error } = await supabase.from('client').delete().eq('id', client.id).eq('company_id', profile.company_id)
       if (error) {
-        if (error.code === '23503') {
-          toast('Cannot delete: client has associated sites, contracts, or contacts. Remove those first.', 'error')
-        } else {
-          toast(error.message || 'Delete failed', 'error')
-        }
+        if (error.code === '23503') setArchiving({ client, contracts: [], reason: 'it still has sites, contacts, or other linked records' })
+        else toast(dbErrorMessage(error), 'error')
         return
       }
       if (selected?.id === client.id) setSelected(null)
       toast(`${client.name} deleted`)
       load()
     } catch(e) {
-      toast(e?.message || 'Delete failed', 'error')
+      toast(dbErrorMessage(e), 'error')
     } finally {
       setDeleting(null)
     }
@@ -126,7 +142,7 @@ export default function ClientManagement() {
           <tbody>
             {filtered.map(c => {
               const cnt = clientSites(c.id).length
-              const st  = CONTRACT_STATUS[c.status||'active']
+              const st  = CLIENT_STATUS[c.status] || CLIENT_STATUS.active
               return (
                 <tr key={c.id} style={s.tr} onClick={()=>{setSelected(c);setPanelTab('overview')}} onMouseEnter={e=>e.currentTarget.style.background='var(--bg-card-hover)'} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
                   <td style={s.tdName}>{c.name||'—'}</td>
@@ -177,12 +193,14 @@ export default function ClientManagement() {
               {panelTab==='overview' && <ClientOverview client={selected} sites={clientSites(selected.id)} companyId={profile.company_id} />}
               {panelTab==='contacts' && <ClientContactsTab client={selected} companyId={profile.company_id} />}
               {panelTab==='onboarding' && <ClientOnboarding client={selected} companyId={profile.company_id} />}
-              {panelTab==='contracts' && <ClientContracts client={selected} companyId={profile.company_id} />}
+              {panelTab==='contracts' && <ClientContracts client={selected} companyId={profile.company_id} role={effectiveRole} />}
               {panelTab==='billing' && <ClientBilling client={selected} />}
             </div>
           </div>
         </>
       )}
+
+      {archiving && <ArchiveClientDialog client={archiving.client} contracts={archiving.contracts} reason={archiving.reason} onClose={()=>setArchiving(null)} onArchived={()=>{ if (selected?.id === archiving.client.id) setSelected(null); setArchiving(null); load() }} />}
 
       {showModal && <ClientFormModal client={editClient} companyId={profile.company_id} onClose={()=>{setShowModal(false);setEditClient(null)}} onSaved={async (newClientId, openBilling)=>{setShowModal(false);setEditClient(null);await load();if(openBilling&&newClientId){const {data}=await supabase.from('client').select('*').eq('id',newClientId).single();if(data){setSelected(data);setPanelTab('billing')}}}} canBill={canBill} />}
     </div>
@@ -210,8 +228,11 @@ function ClientOverview({ client, sites, companyId }) {
 
   const fields = [
     {l:'Company',    v:client.name},
+    {l:'Legal Name', v:client.legal_name},
+    {l:'Entity',     v:[client.entity_jurisdiction, client.entity_type].filter(Boolean).join(' ')},
     {l:'Address',    v:client.billing_address},
-    {l:'Contract',   v:client.status?.toUpperCase()},
+    {l:'Notice Address', v:client.notice_address},
+    {l:'Status',     v:(CLIENT_STATUS[client.status]?.label || client.status)?.toUpperCase()},
     {l:'Notes',      v:client.notes},
   ]
   return (
@@ -223,6 +244,7 @@ function ClientOverview({ client, sites, companyId }) {
           <span style={{color:'var(--text-primary)',maxWidth:'60%',textAlign:'right'}}>{f.v}</span>
         </div>
       ))}
+      <TaxExemptionSummary client={client} />
       {sites.length > 0 && (
         <>
           <div style={{fontSize:'10px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1.5px',fontFamily:'var(--font-condensed)',margin:'16px 0 10px'}}>Assigned Sites</div>
@@ -287,7 +309,56 @@ function ClientOnboarding({ client, companyId }) {
   )
 }
 
-function ClientContracts({ client, companyId }) {
+// Service contracts (service_contract, generated from templates) — same drawer as /contracts.
+function ServiceContractsSection({ client, companyId, role }) {
+  const toast = useToast()
+  const [rows,     setRows]     = useState([])
+  const [loading,  setLoading]  = useState(true)
+  const [selected, setSelected] = useState(null)
+
+  async function load() {
+    setLoading(true)
+    const { data, error } = await supabase.from('service_contract')
+      .select('*, client:client_id(name, legal_name), template:template_id(name)')
+      .eq('client_id', client.id).eq('company_id', companyId)
+      .order('created_at', { ascending:false })
+    if (error) toast(dbErrorMessage(error), 'error')
+    setRows(data || []); setLoading(false)
+  }
+  useEffect(() => { load() }, [client.id])
+
+  return (
+    <div style={{marginBottom:'22px'}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'10px'}}>
+        <div style={{fontSize:'10px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1.5px',fontFamily:'var(--font-condensed)'}}>Service Contracts ({rows.length})</div>
+        <button style={{...s.btn,height:'32px',fontSize:'11px',padding:'0 12px',opacity:0.5,cursor:'not-allowed'}} disabled title="Available once the contract builder is ready"><Icon name="plus" size={12}/>NEW CONTRACT</button>
+      </div>
+      {loading ? <div style={{fontSize:'12px',color:'var(--text-muted)'}}>Loading…</div>
+        : rows.length === 0 ? <div style={{textAlign:'center',padding:'18px',color:'var(--text-muted)',fontSize:'13px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)'}}>No service contracts yet.</div>
+        : rows.map(c => {
+          const st = SERVICE_STATUS[c.status] || SERVICE_STATUS.draft
+          const flag = renewalFlag(c)
+          return (
+            <div key={c.id} onClick={()=>setSelected(c)} style={{background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'12px 14px',marginBottom:'8px',cursor:'pointer'}}
+              onMouseEnter={e=>e.currentTarget.style.borderColor='var(--accent-border)'} onMouseLeave={e=>e.currentTarget.style.borderColor='var(--border-subtle)'}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px'}}>
+                <div style={{fontSize:'13px',fontWeight:600,color:'var(--text-primary)'}}>{c.template?.name || `${c.jurisdiction_code} service agreement`}</div>
+                <span style={{...s.pill,background:st.bg,color:st.color}}>{st.label}</span>
+              </div>
+              <div style={{fontSize:'11px',color:'var(--text-muted)',marginTop:'4px',display:'flex',gap:'12px',flexWrap:'wrap',alignItems:'center'}}>
+                <span>{c.jurisdiction_code}</span>
+                <span>{fmtContractDate(c.effective_date)} – {fmtContractDate(c.term_end_date)}</span>
+                {flag && <span style={{...s.pill,background:flag.bg,color:flag.color}}>{flag.text}</span>}
+              </div>
+            </div>
+          )
+        })}
+      {selected && <ContractDrawer contract={selected} role={role} onClose={()=>setSelected(null)} onChanged={()=>{ setSelected(null); load() }} />}
+    </div>
+  )
+}
+
+function ClientContracts({ client, companyId, role }) {
   const toast = useToast()
   const [contracts,     setContracts]     = useState([])
   const [loading,       setLoading]       = useState(true)
@@ -341,8 +412,13 @@ function ClientContracts({ client, companyId }) {
 
   return (
     <div style={{padding:'16px 20px'}}>
+      <ServiceContractsSection client={client} companyId={companyId} role={role} />
+
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'10px'}}>
+        <div style={{fontSize:'10px',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'1.5px',fontFamily:'var(--font-condensed)'}}>Uploaded Documents ({contracts.length})</div>
+      </div>
       {!showNew ? (
-        <button style={{...s.btn,marginBottom:'14px',height:'36px',fontSize:'12px',padding:'0 14px'}} onClick={()=>setShowNew(true)}><Icon name="plus" size={13}/>ADD CONTRACT</button>
+        <button style={{...s.btn,marginBottom:'14px',height:'36px',fontSize:'12px',padding:'0 14px'}} onClick={()=>setShowNew(true)}><Icon name="upload" size={13}/>UPLOAD DOCUMENT</button>
       ) : (
         <div style={{background:'var(--bg-surface)',border:'1px solid var(--border)',borderRadius:'var(--radius-md)',padding:'14px',marginBottom:'14px'}}>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'10px'}}>
@@ -373,7 +449,7 @@ function ClientContracts({ client, companyId }) {
           </div>
         </div>
       )}
-      {contracts.length===0 ? <div style={{textAlign:'center',padding:'32px',color:'var(--text-muted)',fontSize:'13px'}}>No contracts on file.</div>
+      {contracts.length===0 ? <div style={{textAlign:'center',padding:'24px',color:'var(--text-muted)',fontSize:'13px'}}>No uploaded documents.</div>
         : contracts.map((c,i)=>{
           const st = CONTRACT_STATUS[c.status||'active']
           return (
@@ -399,6 +475,21 @@ function ClientContracts({ client, companyId }) {
 
 function ClientFormModal({ client, companyId, onClose, onSaved, canBill }) {
   const toast = useToast()
+  const { user } = useAuth()
+  const jurisdictions = useCompanyJurisdictions(companyId)
+  const [tax, setTax] = useState({ isTaxExempt: !!client?.is_tax_exempt, rows: [] })
+  const [details, setDetails] = useState({ legal_name:client?.legal_name||'', entity_type:client?.entity_type||'', entity_jurisdiction:client?.entity_jurisdiction||'', notice_address:client?.notice_address||'' })
+  useEffect(() => {
+    if (client?.id) loadExemptions(client.id).then(rows => setTax(p => ({ ...p, rows }))).catch(() => {})
+  }, [client?.id])
+  function setD(k, v) { setDetails(p => ({ ...p, [k]: v })) }
+  const detailFields = {
+    legal_name: details.legal_name.trim() || null,
+    entity_type: details.entity_type.trim() || null,
+    entity_jurisdiction: details.entity_jurisdiction.trim().toUpperCase() || null,
+    notice_address: details.notice_address.trim() || null,
+    is_tax_exempt: tax.isTaxExempt,
+  }
   // step is only used in create mode: 'client' | 'site' | 'done'
   const [step, setStep] = useState('client')
   const [form, setForm] = useState(client
@@ -416,6 +507,7 @@ function ClientFormModal({ client, companyId, onClose, onSaved, canBill }) {
   // Edit mode — single-step save
   async function saveEdit() {
     if (!form.company_name.trim()) return
+    try { validateExemptions(tax.isTaxExempt, tax.rows) } catch (e) { toast(e.message, 'error'); return }
     setSaving(true)
     let ok = false
     try {
@@ -424,12 +516,14 @@ function ClientFormModal({ client, companyId, onClose, onSaved, canBill }) {
         billing_address: form.address.trim() || null,
         status: form.contract_status || 'active',
         notes: form.notes.trim() || null,
+        ...detailFields,
       }).eq('id', client.id).eq('company_id', companyId)
       if (error) throw error
+      await saveExemptions({ clientId: client.id, companyId, userId: user?.id, ...tax })
       toast('Client saved')
       ok = true
     } catch (err) {
-      toast('Failed to save: ' + (err.message || 'Unknown error'), 'error')
+      toast('Failed to save: ' + dbErrorMessage(err), 'error')
     } finally {
       setSaving(false)
       if (ok) onSaved()
@@ -449,10 +543,12 @@ function ClientFormModal({ client, companyId, onClose, onSaved, canBill }) {
           name: form.company_name.trim(),
           billing_address: form.address.trim() || null,
           status: 'active',
+          ...detailFields,
         })
         .select('id')
         .single()
       if (clientErr) throw clientErr
+      await saveExemptions({ clientId: newClient.id, companyId, userId: user?.id, ...tax })
 
       const { error: contactErr } = await supabase.from('client_contact').insert({
         client_id: newClient.id,
@@ -492,7 +588,7 @@ function ClientFormModal({ client, companyId, onClose, onSaved, canBill }) {
       toast(inviteEmail ? `Client created — invite sent to ${inviteEmail}` : 'Client created')
       ok = newClient.id
     } catch (err) {
-      toast('Failed to save: ' + (err.message || 'Unknown error'), 'error')
+      toast('Failed to save: ' + dbErrorMessage(err), 'error')
     } finally {
       setSaving(false)
       if (ok) onSaved(ok, setupBilling)
@@ -514,7 +610,13 @@ function ClientFormModal({ client, companyId, onClose, onSaved, canBill }) {
             <div><div style={s.lbl}>Contact Email</div><input style={s.inp} type="email" value={form.email} onChange={e=>setF('email',e.target.value)} onFocus={foc} onBlur={blr}/></div>
             <div><div style={s.lbl}>Contact Phone</div><input style={s.inp} value={form.phone} onChange={e=>setF('phone',e.target.value)} onFocus={foc} onBlur={blr}/></div>
             <div style={{ gridColumn:'1/-1' }}><div style={s.lbl}>Billing Address</div><input style={s.inp} value={form.address} onChange={e=>setF('address',e.target.value)} onFocus={foc} onBlur={blr}/></div>
-            <div><div style={s.lbl}>Contract Status</div><select style={{ ...s.inp, cursor:'pointer' }} value={form.contract_status} onChange={e=>setF('contract_status',e.target.value)}><option value="active">Active</option><option value="pending">Pending</option><option value="expired">Expired</option></select></div>
+            <div><div style={s.lbl}>Client Status</div><select style={{ ...s.inp, cursor:'pointer' }} value={form.contract_status} onChange={e=>setF('contract_status',e.target.value)}>{Object.entries(CLIENT_STATUS).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}</select></div>
+            <div style={{ gridColumn:'1/-1', fontSize:'10px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1.5px', fontFamily:'var(--font-condensed)', marginTop:'6px' }}>Contract Details</div>
+            <div style={{ gridColumn:'1/-1' }}><div style={s.lbl}>Legal Name</div><input style={s.inp} value={details.legal_name} onChange={e=>setD('legal_name',e.target.value)} onFocus={foc} onBlur={blr} placeholder="Acme Property Management LLC"/></div>
+            <div><div style={s.lbl}>Entity Type</div><input style={s.inp} value={details.entity_type} onChange={e=>setD('entity_type',e.target.value)} onFocus={foc} onBlur={blr} placeholder="limited liability company"/></div>
+            <div><div style={s.lbl}>Entity State</div><input style={{ ...s.inp, textTransform:'uppercase' }} maxLength={2} value={details.entity_jurisdiction} onChange={e=>setD('entity_jurisdiction',e.target.value.toUpperCase())} onFocus={foc} onBlur={blr} placeholder="MD"/></div>
+            <div style={{ gridColumn:'1/-1' }}><div style={s.lbl}>Notice Address</div><input style={s.inp} value={details.notice_address} onChange={e=>setD('notice_address',e.target.value)} onFocus={foc} onBlur={blr} placeholder="Where legal notices are delivered"/></div>
+            <TaxExemptionFields value={tax} onChange={setTax} jurisdictions={jurisdictions} />
           </div>
           <div style={{ marginBottom:'18px' }}><div style={s.lbl}>Notes</div><textarea style={{ ...s.inp, minHeight:'60px', resize:'vertical', lineHeight:1.5 }} value={form.notes} onChange={e=>setF('notes',e.target.value)} onFocus={foc} onBlur={blr}/></div>
           <div style={{ display:'flex', gap:'10px' }}>
@@ -542,9 +644,15 @@ function ClientFormModal({ client, companyId, onClose, onSaved, canBill }) {
             <div><div style={s.lbl}>Contact Email</div><input style={s.inp} type="email" value={form.email} onChange={e=>setF('email',e.target.value)} onFocus={foc} onBlur={blr}/></div>
             <div><div style={s.lbl}>Contact Phone</div><input style={s.inp} value={form.phone} onChange={e=>setF('phone',e.target.value)} onFocus={foc} onBlur={blr}/></div>
             <div style={{ gridColumn:'1/-1' }}><div style={s.lbl}>Billing Address</div><input style={s.inp} value={form.address} onChange={e=>setF('address',e.target.value)} onFocus={foc} onBlur={blr} placeholder="123 Main St, Suite 100"/></div>
+            <div style={{ gridColumn:'1/-1', fontSize:'10px', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'1.5px', fontFamily:'var(--font-condensed)', marginTop:'6px' }}>Contract Details</div>
+            <div style={{ gridColumn:'1/-1' }}><div style={s.lbl}>Legal Name</div><input style={s.inp} value={details.legal_name} onChange={e=>setD('legal_name',e.target.value)} onFocus={foc} onBlur={blr} placeholder="Acme Property Management LLC"/></div>
+            <div><div style={s.lbl}>Entity Type</div><input style={s.inp} value={details.entity_type} onChange={e=>setD('entity_type',e.target.value)} onFocus={foc} onBlur={blr} placeholder="limited liability company"/></div>
+            <div><div style={s.lbl}>Entity State</div><input style={{ ...s.inp, textTransform:'uppercase' }} maxLength={2} value={details.entity_jurisdiction} onChange={e=>setD('entity_jurisdiction',e.target.value.toUpperCase())} onFocus={foc} onBlur={blr} placeholder="MD"/></div>
+            <div style={{ gridColumn:'1/-1' }}><div style={s.lbl}>Notice Address</div><input style={s.inp} value={details.notice_address} onChange={e=>setD('notice_address',e.target.value)} onFocus={foc} onBlur={blr} placeholder="Where legal notices are delivered"/></div>
+            <TaxExemptionFields value={tax} onChange={setTax} jurisdictions={jurisdictions} />
           </div>
           <div style={{ display:'flex', gap:'10px' }}>
-            <button style={{ ...s.btn, opacity:!form.company_name.trim()?0.6:1 }} onClick={()=>setStep('site')} disabled={!form.company_name.trim()}>NEXT: SITE INFO <Icon name="arrow-right" size={14}/></button>
+            <button style={{ ...s.btn, opacity:!form.company_name.trim()?0.6:1 }} onClick={()=>{ try { validateExemptions(tax.isTaxExempt, tax.rows); setStep('site') } catch (e) { toast(e.message, 'error') } }} disabled={!form.company_name.trim()}>NEXT: SITE INFO <Icon name="arrow-right" size={14}/></button>
             <button style={s.ghost} onClick={onClose}>CANCEL</button>
           </div>
         </div>
@@ -640,6 +748,22 @@ function ClientContactsTab({ client, companyId }) {
     } finally { setSaving(false) }
   }
 
+  // One site contact and one billing contact per client (Schedule A has one row each).
+  async function toggleRole(contact, field) {
+    const next = !contact[field]
+    try {
+      if (next) {
+        const { error: clrErr } = await supabase.from('client_contact').update({ [field]: false }).eq('client_id', client.id).neq('id', contact.id)
+        if (clrErr) throw clrErr
+      }
+      const { error } = await supabase.from('client_contact').update({ [field]: next }).eq('id', contact.id)
+      if (error) throw error
+      load()
+    } catch (e) {
+      toast(dbErrorMessage(e), 'error')
+    }
+  }
+
   async function removeContact(id) {
     if (!window.confirm('Remove this contact?')) return
     await supabase.from('client_contact').delete().eq('id', id)
@@ -694,6 +818,15 @@ function ClientContactsTab({ client, companyId }) {
             <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
               <span style={{fontSize:'13px',fontWeight:600,color:'var(--text-primary)'}}>{c.full_name||'—'}</span>
               {c.is_main_contact && <span style={{fontSize:'10px',fontWeight:700,padding:'1px 6px',borderRadius:'8px',background:'var(--accent-bg)',color:'var(--accent)',fontFamily:'var(--font-condensed)',letterSpacing:'0.5px'}}>PRIMARY</span>}
+            </div>
+            <div style={{display:'flex',gap:'6px',marginTop:'6px'}}>
+              {[['is_site_contact','SITE'],['is_billing_contact','BILLING']].map(([field,label]) => (
+                <button key={field} onClick={()=>toggleRole(c, field)} title={`${c[field]?'Remove as':'Set as'} ${label.toLowerCase()} contact (Schedule A)`}
+                  style={{fontSize:'10px',fontWeight:700,padding:'2px 8px',borderRadius:'8px',cursor:'pointer',fontFamily:'var(--font-condensed)',letterSpacing:'0.5px',
+                    border:`1px solid ${c[field]?'var(--accent-border)':'var(--border)'}`,background:c[field]?'var(--accent-bg)':'transparent',color:c[field]?'var(--accent)':'var(--text-muted)'}}>
+                  {c[field] ? '✓ ' : ''}{label}
+                </button>
+              ))}
             </div>
             {c.email && <div style={{fontSize:'12px',color:'var(--text-secondary)',marginTop:'2px'}}>{c.email}</div>}
             {c.phone && <div style={{fontSize:'12px',color:'var(--text-muted)',marginTop:'1px'}}>{c.phone}</div>}

@@ -45,7 +45,7 @@ export default function Support() {
       </Section>
 
       <Section id="status" title="Service Status">
-        <P>For real-time service status and incident updates, contact support@postcommand.app.</P>
+        <P>For service status and incident updates, contact support@postcommand.app.</P>
       </Section>
     </LegalLayout>
   )

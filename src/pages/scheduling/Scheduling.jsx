@@ -111,6 +111,13 @@ function getViewDates(baseDate, weeks) {
 
 // ── Main Scheduling Component ─────────────────────────────────────────────────
 
+// Sign-in state for the schedule grid. Signed in = accepted invite OR app access.
+// Returns null when signed in, otherwise the badge label.
+function signInStatus(emp) {
+  if (emp.invitation_status === 'accepted' || emp.has_app_access === true) return null
+  return emp.invitation_status === 'sent' ? 'Invite pending' : 'Not invited'
+}
+
 export default function Scheduling() {
   const { profile } = useAuth()
   const toast = useToast()
@@ -165,11 +172,12 @@ export default function Scheduling() {
           .gte('start_time', dateRange.start.toISOString())
           .lte('start_time', dateRange.end.toISOString())
           .order('start_time'),
+        // Every active employee, invited or not. Those without an accepted sign-in are
+        // flagged in the grid (signInStatus) and skipped by schedule notifications.
         supabase.from('employee')
-          .select('id,first_name,last_name,position_title,role,profile_photo_url,status,is_armed')
+          .select('id,first_name,last_name,position_title,role,profile_photo_url,status,is_armed,invitation_status,has_app_access')
           .eq('company_id', profile.company_id)
           .eq('status', 'active')
-          .or('invitation_status.eq.accepted,has_app_access.eq.true')
           .order('last_name'),
         supabase.from('site').select('id,name,city,state').eq('company_id', profile.company_id),
         supabase.from('employee').select('id').eq('company_id', profile.company_id).eq('user_id', profile.id).maybeSingle(),
@@ -358,12 +366,14 @@ export default function Scheduling() {
               if (status === 'published') {
                 toast('Schedule published')
                 const shift = shifts.find(s => s.id === id)
-                if (shift) {
+                // Skip notifications for employees who have not signed in yet.
+                const assignee = shift && employees.find(e => e.id === shift.employee_id)
+                if (shift && !(assignee && signInStatus(assignee))) {
                   supabase.functions.invoke('send-push', {
                     body: { company_id: profile.company_id, type: 'shift_published', title: 'New Shift Published', body: 'A shift has been assigned to you', target_employee_id: shift.employee_id }
                   }).catch(() => {})
-                  const {data:emp} = await supabase.from('employee').select('first_name,email').eq('id',shift.employee_id).single()
-                  if (emp?.email) emailSchedulePublished({ to:emp.email, firstName:emp.first_name, shiftCount:1, period:new Date(shift.start_time).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'}) })
+                  const {data:emp} = await supabase.from('employee').select('first_name,email,invitation_status,has_app_access').eq('id',shift.employee_id).single()
+                  if (emp?.email && !signInStatus(emp)) emailSchedulePublished({ to:emp.email, firstName:emp.first_name, shiftCount:1, period:new Date(shift.start_time).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'}) })
                 }
               }
               setSelected(null); loadAll()
@@ -589,10 +599,11 @@ function StaffingGrid({ dates, employees, allEmployees, shifts, sites, today, ca
         <tbody>
           {employees.map(emp => {
             const hours = getEmpPeriodHours(emp.id)
+            const notSignedIn = signInStatus(emp)
             return (
               <tr key={emp.id}>
-                {/* Employee name cell */}
-                <td style={stickyEmpCell}>
+                {/* Employee name cell (red tint layered over the card color so the sticky cell stays opaque) */}
+                <td style={notSignedIn ? { ...stickyEmpCell, background:'linear-gradient(var(--color-danger-bg), var(--color-danger-bg)), var(--bg-card)' } : stickyEmpCell}>
                   <div style={{display:'flex', alignItems:'center', gap:'8px'}}>
                     <div style={{width:'34px', height:'34px', borderRadius:'50%', background:'var(--accent-bg)', border:'1px solid var(--accent-border)', display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'var(--font-condensed)', fontSize:'12px', fontWeight:700, color:'var(--accent)', flexShrink:0, overflow:'hidden'}}>
                       {emp.profile_photo_url
@@ -603,6 +614,7 @@ function StaffingGrid({ dates, employees, allEmployees, shifts, sites, today, ca
                     <div style={{minWidth:0, flex:1}}>
                       <div style={{fontSize:'12px', fontWeight:600, color:'var(--text-primary)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>{emp.first_name} {emp.last_name}</div>
                       {emp.position_title && <div style={{fontSize:'10px', color:'var(--text-muted)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', marginTop:'1px'}}>{emp.position_title}</div>}
+                      {notSignedIn && <span style={{display:'inline-block', marginTop:'3px', fontSize:'9px', fontWeight:700, fontFamily:'var(--font-condensed)', letterSpacing:'0.5px', textTransform:'uppercase', padding:'1px 6px', borderRadius:'8px', color:'var(--color-danger)', border:'1px solid var(--color-danger)', background:'var(--bg-card)'}}>{notSignedIn}</span>}
                     </div>
                     {hours > 0 && (
                       <div style={{fontSize:'11px', color:'var(--accent)', fontFamily:'var(--font-display)', fontWeight:700, flexShrink:0, letterSpacing:'0.5px'}}>{Number.isInteger(hours) ? hours : hours.toFixed(1)}h</div>

@@ -4,12 +4,13 @@ import { useAuth } from '../../context/AuthContext'
 import { useTheme } from '../../context/ThemeContext'
 import { supabase } from '../../lib/supabase'
 import { withLoadTimeout } from '../../lib/withLoadTimeout'
-import { ROLE_LABELS, ROLE_LEVELS, atLeast, ROLE_TITLES } from '../../config/roles'
+import { ROLE_LABELS, ROLE_LEVELS, atLeast, ROLE_TITLES, ROLE_STYLE_LABELS, DEFAULT_CUSTOM_RANKS, MAX_CUSTOM_RANK_LEVEL, roleDisplayLabel } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
 import { useToast } from '../../components/ui/Toast'
 import CompanySettings from './CompanySettings'
 import { isNative } from '../../lib/platform'
 import { invokeBilling } from '../../lib/billing'
+import ContractSettingsTab from './ContractSettingsTab'
 
 // ── Shared primitives ─────────────────────────────────────────────────────────
 
@@ -75,6 +76,7 @@ const TABS = [
   { id:'notifications', label:'Notifications',     icon:'bell' },
   { id:'integrations',  label:'Integrations',      icon:'link' },
   { id:'payments',      label:'Client Payments',   icon:'credit-card' },
+  { id:'contracts',     label:'Contracts',         icon:'file-check' },
   { id:'security',      label:'Security',          icon:'lock' },
   { id:'ai',            label:'AI Settings',       icon:'zap' },
   { id:'licensing',     label:'State Licensing',   icon:'map-pin' },
@@ -84,7 +86,7 @@ const TABS = [
 // ── Main export ───────────────────────────────────────────────────────────────
 
 export default function Settings() {
-  const { profile, companyId, role, profileConfirmed } = useAuth()
+  const { profile, companyId, effectiveRole: role, profileConfirmed } = useAuth()   // View As aware
   const navigate = useNavigate()
   useEffect(() => {
     if (!profileConfirmed) return
@@ -130,6 +132,7 @@ export default function Settings() {
           {tab === 'notifications' && <NotificationsTab profile={profile} companyId={companyId} />}
           {tab === 'integrations'  && <IntegrationsTab  companyId={companyId} />}
           {tab === 'payments'      && <PaymentsTab />}
+          {tab === 'contracts'     && <ContractSettingsTab />}
           {tab === 'security'      && <SecurityTab      profile={profile} companyId={companyId} />}
           {tab === 'ai'            && <AITab            companyId={companyId} />}
           {tab === 'licensing'     && <StateLicensingTab companyId={companyId} />}
@@ -164,6 +167,8 @@ const PERM_GROUPS = [
   { group:'Admin', perms:[
     { id:'view_invoices',    label:'View Invoices' },
     { id:'create_invoices',  label:'Create Invoices' },
+    { id:'view_contracts',   label:'View Contracts' },
+    { id:'manage_rates',     label:'Manage Price Rates' },
     { id:'view_reports',     label:'View Reports' },
     { id:'manage_sites',     label:'Manage Sites' },
     { id:'manage_clients',   label:'Manage Clients' },
@@ -178,8 +183,13 @@ const PERM_GROUPS = [
     { id:'view_ccw_map', label:'View CCW Map' },
   ]},
 ]
-const PERM_ROLES = ['officer','corporal','sergeant','lieutenant','chief']
+// Matrix columns. NOTE: these toggles currently affect navigation only (see
+// AppLayout NAV_PERMISSION_MAP); pages and database RLS do not check them.
+const PERM_ROLES = ['officer','corporal','sergeant','lieutenant','chief','accounting']
+const RANK_PERM_ROLES = ['officer','corporal','sergeant','lieutenant','chief']   // rank ladder, used to seed custom ranks
 const DEFAULT_PERMS = {
+  // Accountant: invoices, price rates and contracts by default; the admin can toggle more.
+  accounting: new Set(['view_dashboard','view_timesheets','use_live_map','view_invoices','create_invoices','view_reports','view_contracts','manage_rates']),
   officer:    new Set(['view_dashboard','clock_in_out','view_timesheets','create_incidents','view_patrol','use_sos','view_ccw_map']),
   corporal:   new Set(['view_dashboard','clock_in_out','view_timesheets','approve_timesheets','create_incidents','view_incidents','view_patrol','use_sos','view_personnel','view_ccw_map']),
   sergeant:   new Set(['view_dashboard','clock_in_out','view_timesheets','approve_timesheets','manage_schedule','create_incidents','view_incidents','approve_incidents','view_patrol','create_patrol','use_sos','use_live_map','view_personnel','edit_personnel','invite_employees','view_employee_profiles','view_ccw_map']),
@@ -205,7 +215,17 @@ function CompanyTab({ profile, companyId, dirtyRef, onNavigateTab }) {
     supabase.from('company').select('*').eq('id', companyId).single().then(({ data }) => {
       if (data) {
         setForm(f => ({ ...f, name:data.name||'', logo_url:data.logo_url||'', primary_color:data.primary_color||'#c8a84b', address:data.address||'', phone:data.phone||'', email:data.email||'', role_style:data.role_style||'military' }))
-        setCustomRanks(data.custom_ranks||[])
+        const style = data.role_style || 'military'
+        if (data.custom_ranks?.length) setCustomRanks(data.custom_ranks)
+        else {
+          // No custom ranks set: seed this style's defaults (never overwrites existing ranks).
+          const defaults = DEFAULT_CUSTOM_RANKS[style] || []
+          setCustomRanks(defaults)
+          if (defaults.length) {
+            supabase.from('company').update({ custom_ranks: defaults }).eq('id', companyId)
+              .then(({ error }) => { if (!error) seedRankPermissions(defaults) })
+          }
+        }
       }
     })
     // Also load from localStorage as fallback
@@ -276,19 +296,16 @@ function CompanyTab({ profile, companyId, dirtyRef, onNavigateTab }) {
     setUploadingLogo(false)
   }
 
-  async function save() {
-    setSaving(true); setMsg(null)
-    document.documentElement.style.setProperty('--accent', form.primary_color)
-    setKey(`pc-company-${companyId}`, { primaryColor:form.primary_color, logoUrl:form.logo_url, displayName:form.name })
-
-    // Seed default permissions for any new custom ranks (slugs not yet in role_permission)
-    const sluggedRanks = customRanks.filter(r => r.slug)
+  // Seed default role_permission rows for custom ranks not yet in role_permission,
+  // copied from the nearest built-in rank.
+  async function seedRankPermissions(ranks) {
+    const sluggedRanks = ranks.filter(r => r.slug)
     if (sluggedRanks.length > 0) {
       const { data: existingPerms } = await supabase.from('role_permission').select('role').eq('company_id', companyId)
       const existingRoles = new Set((existingPerms || []).map(r => r.role))
       const newRanks = sluggedRanks.filter(r => !existingRoles.has(r.slug))
       if (newRanks.length > 0) {
-        const builtinLevels = PERM_ROLES.map(r => ({ slug: r, level: ROLE_LEVELS[r] }))
+        const builtinLevels = RANK_PERM_ROLES.map(r => ({ slug: r, level: ROLE_LEVELS[r] }))
         const allPerms = PERM_GROUPS.flatMap(g => g.perms.map(p => p.id))
         const seedRows = []
         for (const rank of newRanks) {
@@ -307,6 +324,14 @@ function CompanyTab({ profile, companyId, dirtyRef, onNavigateTab }) {
         await supabase.from('role_permission').upsert(seedRows, { onConflict: 'company_id,role,permission' })
       }
     }
+  }
+
+  async function save() {
+    setSaving(true); setMsg(null)
+    document.documentElement.style.setProperty('--accent', form.primary_color)
+    setKey(`pc-company-${companyId}`, { primaryColor:form.primary_color, logoUrl:form.logo_url, displayName:form.name })
+
+    await seedRankPermissions(customRanks)
 
     const { error } = await supabase.from('company').update({ name:form.name.trim()||null, logo_url:form.logo_url.trim()||null, primary_color:form.primary_color, address:form.address.trim()||null, phone:form.phone.trim()||null, email:form.email.trim()||null, role_style:form.role_style, custom_ranks:customRanks }).eq('id', companyId)
     setSaving(false)
@@ -387,15 +412,19 @@ function CompanyTab({ profile, companyId, dirtyRef, onNavigateTab }) {
         <div style={s.cardTitle}>Role Display Style</div>
         <div style={{ fontSize:'13px', color:'var(--text-secondary)', marginBottom:'14px', lineHeight:1.6 }}>Choose how role titles are displayed throughout the app.</div>
         <div style={{ display:'flex', gap:'12px', flexWrap:'wrap' }}>
-          {[['military','Military — Officer, Corporal, Sergeant, Lieutenant, Chief'],['standard','Standard — Employee, Lead, Supervisor, Manager, Admin']].map(([v,l])=>(
+          {[['military','Military: Officer, Corporal, Sergeant, Lieutenant, Captain, Major, Chief'],['standard','Standard: Officer, OIC, Lead, Supervisor, Manager, CEO, CFO, Admin']].map(([v,l])=>(
             <label key={v} style={{display:'flex',alignItems:'center',gap:'8px',cursor:'pointer',padding:'12px 16px',border:`2px solid ${form.role_style===v?'var(--accent)':'var(--border-subtle)'}`,borderRadius:'var(--radius-md)',background:form.role_style===v?'var(--accent-bg)':'transparent',flex:1,minWidth:'220px',transition:'all 150ms ease'}}>
-              <input type="radio" value={v} checked={form.role_style===v} onChange={()=>{ if(dirtyRef) dirtyRef.current=true; setForm(p=>({...p,role_style:v})) }} style={{accentColor:'var(--accent)'}}/>
+              <input type="radio" value={v} checked={form.role_style===v} onChange={()=>{ if(dirtyRef) dirtyRef.current=true; setForm(p=>({...p,role_style:v})); if(!customRanks.length) setCustomRanks(DEFAULT_CUSTOM_RANKS[v]||[]) }} style={{accentColor:'var(--accent)'}}/>
               <span style={{fontSize:'13px',color:form.role_style===v?'var(--accent)':'var(--text-primary)',fontWeight:form.role_style===v?600:400}}>{l}</span>
             </label>
           ))}
         </div>
         <div style={{marginTop:'14px',fontSize:'11px',color:'var(--text-muted)'}}>
-          Current titles: {Object.entries(ROLE_TITLES[form.role_style]||ROLE_TITLES.military).filter(([k])=>k!=='0'&&k!=='6').map(([,v])=>v).join(' → ')}
+          Current titles: {[
+            ...Object.entries(ROLE_TITLES[form.role_style]||ROLE_TITLES.military).filter(([k])=>k!=='0').map(([k,v])=>({ title:v, level:Number(k), order:0 })),
+            ...Object.keys(ROLE_STYLE_LABELS[form.role_style]||{}).map(r=>({ title:roleDisplayLabel(r, form.role_style), level:ROLE_LEVELS[r], order:1 })),
+            ...customRanks.filter(r=>r.title).map(r=>({ title:r.title, level:r.level, order:2 })),
+          ].sort((a,b)=>a.level-b.level||a.order-b.order).map(x=>`${x.title} (${x.level})`).join(' → ')}
         </div>
       </div>
 
@@ -403,7 +432,7 @@ function CompanyTab({ profile, companyId, dirtyRef, onNavigateTab }) {
       <div style={s.card}>
         <div style={s.cardTitle}>Custom Ranks</div>
         <div style={{fontSize:'13px',color:'var(--text-secondary)',marginBottom:'14px',lineHeight:1.6}}>
-          Add intermediate ranks between standard levels. Example: Captain (level 3.5) sits between Sergeant and Lieutenant.
+          Add intermediate ranks between standard levels, from 1 to 5.9 (below Admin). Example: Captain (level 4.4) sits between Lieutenant and Chief.
         </div>
         {customRanks.sort((a,b)=>a.level-b.level).map((r,i)=>(
           <div key={i} style={{display:'flex',alignItems:'center',gap:'12px',padding:'8px 0',borderBottom:'1px solid var(--border)'}}>
@@ -417,10 +446,12 @@ function CompanyTab({ profile, companyId, dirtyRef, onNavigateTab }) {
           <input type="number" min="1" max="5.9" step="0.1" placeholder="Level (1-5.9)" value={newRank.level} onChange={e=>setNewRank(p=>({...p,level:e.target.value}))} style={{...s.inp,width:'130px'}}/>
           <button onClick={()=>{
             if(!newRank.title||!newRank.level)return
+            const lvl = Number(newRank.level)
+            if (!Number.isFinite(lvl) || lvl < 1 || lvl > MAX_CUSTOM_RANK_LEVEL) { setNewRankError(`Level must be between 1 and ${MAX_CUSTOM_RANK_LEVEL}.`); return }
             const slug = makeSlug(newRank.title.trim())
             if (!slug) { setNewRankError('Title produces an invalid or duplicate slug.'); return }
             if(dirtyRef) dirtyRef.current=true
-            setCustomRanks(p=>[...p,{title:newRank.title.trim(),level:parseFloat(newRank.level),slug}])
+            setCustomRanks(p=>[...p,{title:newRank.title.trim(),level:lvl,slug}])
             setNewRank({title:'',level:''})
             setNewRankError(null)
           }} style={{...s.ghost,height:'44px',padding:'0 14px',flexShrink:0}}>ADD</button>
@@ -1102,7 +1133,7 @@ function RolePermissionsMatrix({ companyId, profile }) {
   const allRoles = useMemo(() => {
     const builtins = PERM_ROLES.map(r => ({
       slug: r,
-      label: ROLE_TITLES[roleStyle]?.[ROLE_LEVELS[r]] ?? ROLE_LABELS[r],
+      label: roleDisplayLabel(r, roleStyle),
       level: ROLE_LEVELS[r],
     }))
     const customs = customRanks

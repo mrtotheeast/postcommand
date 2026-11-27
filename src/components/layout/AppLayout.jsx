@@ -8,6 +8,9 @@ import { isNative } from '../../lib/platform'
 import { supabase } from '../../lib/supabase'
 import Icon from '../ui/Icon'
 import Badge from '../ui/Badge'
+import { GuidedTour } from '../ui/GuidedTour'
+import { useToast } from '../ui/Toast'
+import NoInvitation from './NoInvitation'
 
 // NAV_ITEMS ids that map 1:1 to a role_permission key for the custom-role veto.
 // The other 15 nav items (training, personnel, open-shifts, etc.) have no
@@ -28,7 +31,12 @@ const NAV_PERMISSION_MAP = {
   clockin:    'clock_in_out',
   sos:        'use_sos',
   billing:    'manage_billing',
+  contracts:  'view_contracts',
 }
+// role_permission toggles currently affect navigation only; pages and database
+// RLS do not check them. For the accounting role they can grant or hide nav items,
+// except these pages, whose own guards still block accounting.
+const NO_GRANT_ITEMS = new Set(['settings', 'clients', 'billing', 'admin'])
 const NAV_BUILTIN_ROLES = new Set(['officer','corporal','sergeant','lieutenant','chief','super_admin','hr','accounting','office_staff','client'])
 
 const s = {
@@ -72,7 +80,8 @@ const s = {
 }
 
 export default function AppLayout({ children }) {
-  const { profile, signOut, viewRole, switchViewAs, exitViewAs, effectiveRole } = useAuth()
+  const { profile, signOut, viewRole, switchViewAs, exitViewAs, effectiveRole, isPlatformAdmin, inviteClaim, clearInviteClaim } = useAuth()
+  const toast = useToast()
   const { isDark, toggleTheme } = useTheme()
   const { badges, totalUnread, notifications, markAllRead, markRead } = useNotifications()
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -90,12 +99,20 @@ export default function AppLayout({ children }) {
   const actualRole = profile?.role
   const role = effectiveRole   // used everywhere below for nav filtering
 
+  // Sidebar scroll. SidebarContent is re-created on every render, so its <nav>
+  // remounts; these refs carry the position across remounts within this page
+  // load only. A fresh load starts at the top (Dashboard first). The active item
+  // is scrolled into view only after the user clicks a nav item.
+  const navScrollRef = useRef(0)
+  const scrollToActiveRef = useRef(false)
+  useEffect(() => { localStorage.removeItem('pc-sidebar-scroll') }, [])   // drop the old cross-session value
+
   // Permissions veto for custom role slugs. Watches `role` (effectiveRole) so
   // View As simulation sees the same veto a real user in that role would see.
   // Built-in roles clear perms immediately — null = not applicable (fail-open).
   const [customRolePerms, setCustomRolePerms] = useState(null)
   useEffect(() => {
-    if (!role || !profile?.company_id || NAV_BUILTIN_ROLES.has(role)) {
+    if (!role || !profile?.company_id || (NAV_BUILTIN_ROLES.has(role) && role !== 'accounting')) {
       setCustomRolePerms(null)
       return
     }
@@ -112,6 +129,43 @@ export default function AppLayout({ children }) {
   }, [role, profile?.company_id])
 
   const canViewAs = atLeast(actualRole, 'sergeant')
+
+  // Invitation claim result from AuthContext: welcome toast once after a successful
+  // claim; help screen instead of an empty app when no invitation was found.
+  useEffect(() => {
+    if (inviteClaim?.status !== 'claimed') return
+    toast(inviteClaim.companyName ? `Welcome to ${inviteClaim.companyName}. Your account is now connected.` : 'Welcome. Your account is now connected to your company.')
+    clearInviteClaim()
+  }, [inviteClaim])
+  const noInvitation = (inviteClaim?.status === 'no_invite' || inviteClaim?.status === 'ambiguous') && !profile?.company_id
+
+  // Guided tour lives here (not in App) so it only runs for signed-in users inside
+  // the app shell, never on the landing, login, or client portal pages.
+  const [showTour, setShowTour] = useState(false)
+  useEffect(() => {
+    if (!profile?.id) return
+    const seen  = localStorage.getItem(`pc-tour-seen-${profile.id}`)
+    const never = localStorage.getItem(`pc-tour-never-${profile.id}`)
+    if (!seen && !never) setShowTour(true)
+  }, [profile?.id])
+  useEffect(() => {
+    const handler = () => setShowTour(true)
+    window.addEventListener('start-tour', handler)
+    return () => window.removeEventListener('start-tour', handler)
+  }, [])
+  // While the tour runs, make every nav target visible: expand all sections, and
+  // open the mobile drawer or un-collapse the desktop sidebar (not persisted).
+  useEffect(() => {
+    if (!showTour) return
+    setExpandedSections(prev => Object.fromEntries(Object.keys(prev).map(k => [k, true])))
+    if (isMobile) setDrawerOpen(true)
+    else setSidebarCollapsed(false)
+  }, [showTour, isMobile])
+  function endTour() {
+    setShowTour(false)
+    if (isMobile) setDrawerOpen(false)
+    setSidebarCollapsed(localStorage.getItem('pc-sidebar-collapsed') === '1')
+  }
 
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth <= 768)
@@ -146,6 +200,13 @@ export default function AppLayout({ children }) {
         items: sec.items.filter(item => {
           if (native && item.hideOnNative) return false
           if (item.hideInSidebar) return false
+          if (item.id === 'admin') return isPlatformAdmin   // Platform: platform-owner company only
+          // Accounting: the permission matrix can hide or add nav items.
+          if (role === 'accounting' && customRolePerms) {
+            const perm = customRolePerms[NAV_PERMISSION_MAP[item.id]]
+            if (perm === false) return false
+            if (perm === true && !NO_GRANT_ITEMS.has(item.id)) return true
+          }
           if (item.roles.includes(role)) return true
           // Custom role slugs: level-based fallback against the military ranks in this item's
           // roles array. Items with no military ranks (super_admin-only, client-only) are
@@ -165,7 +226,7 @@ export default function AppLayout({ children }) {
         }),
       }))
       .filter(sec => sec.items.length > 0)
-  }, [role, native, customRolePerms])
+  }, [role, native, customRolePerms, isPlatformAdmin])
 
   const initials = profile ? `${profile.first_name?.[0]??''}${profile.last_name?.[0]??''}`.toUpperCase() || 'U' : 'U'
   const pageTitle = visibleSections.flatMap(s => s.items).find(item => location.pathname.startsWith(item.path))?.label ?? 'Command Center'
@@ -179,8 +240,13 @@ export default function AppLayout({ children }) {
   const SidebarContent = () => {
     const navRef = useRef(null)
     useLayoutEffect(() => {
-      const saved = localStorage.getItem('pc-sidebar-scroll')
-      if (saved && navRef.current) navRef.current.scrollTop = parseInt(saved, 10)
+      const nav = navRef.current
+      if (!nav) return
+      nav.scrollTop = navScrollRef.current
+      if (scrollToActiveRef.current) {
+        scrollToActiveRef.current = false
+        nav.querySelector('[aria-current="page"]')?.scrollIntoView({ block:'nearest' })
+      }
     }, [])
     return (
     <>
@@ -188,13 +254,18 @@ export default function AppLayout({ children }) {
         <img src="/app-icon-transparent.png" alt="" style={{width:'36px',height:'36px',objectFit:'contain',marginBottom:'6px',display:'block'}}/>
         <div style={s.logo}>POST<span style={{color:'var(--text-primary)'}}>COMMAND</span></div>
         <div style={s.logoSub}>Security Workforce Management</div>
+        {profile?.company?.name && (
+          <div title={profile.company.name} style={{marginTop:'10px',fontSize:'13px',fontWeight:600,color:'var(--text-primary)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
+            {profile.company.name}
+          </div>
+        )}
         {profile?.company?.short_code && (
           <div style={{display:'inline-block',marginTop:'6px',fontSize:'10px',fontFamily:'var(--font-condensed)',letterSpacing:'1.5px',color:'var(--accent)',background:'var(--accent-bg)',border:'1px solid var(--accent-border)',borderRadius:'var(--radius-sm)',padding:'2px 8px'}}>
             Client ID: {profile.company.short_code}
           </div>
         )}
       </div>
-      <nav ref={navRef} style={s.nav} onScroll={e => localStorage.setItem('pc-sidebar-scroll', String(e.currentTarget.scrollTop))}>
+      <nav ref={navRef} style={s.nav} onScroll={e => { navScrollRef.current = e.currentTarget.scrollTop }}>
         {visibleSections.map(sec => {
           const isExpanded = expandedSections[sec.section] !== false
           return (
@@ -211,7 +282,7 @@ export default function AppLayout({ children }) {
                 const count = getBadgeCount(item)
                 return (
                   <button key={item.id} style={{...s.navItem,...(active?s.navItemActive:{})}}
-                    onClick={() => navigate(item.path)}
+                    onClick={() => { scrollToActiveRef.current = true; navigate(item.path) }}
                     aria-current={active?'page':undefined}
                     data-tour={item.id}>
                     <Icon name={item.icon} size={17} />
@@ -248,6 +319,9 @@ export default function AppLayout({ children }) {
                 { value:'corporal',   label: ROLE_LABELS['corporal'],   level: 2 },
                 { value:'sergeant',   label: ROLE_LABELS['sergeant'],   level: 3 },
                 { value:'lieutenant', label: ROLE_LABELS['lieutenant'], level: 4 },
+                { value:'hr',           label: ROLE_LABELS['hr'],           level: 1 },
+                { value:'accounting',   label: ROLE_LABELS['accounting'],   level: 1 },
+                { value:'office_staff', label: ROLE_LABELS['office_staff'], level: 1 },
                 ...(profile?.company?.custom_ranks || []).filter(r => r.slug && r.title).map(r => ({ value: r.slug, label: r.title, level: r.level })),
                 { value:'client', label: ROLE_LABELS['client'], level: -1 },
               ]
@@ -271,6 +345,7 @@ export default function AppLayout({ children }) {
 
   return (
     <div style={s.shell}>
+      {showTour && profile && <GuidedTour profile={profile} onDone={endTour} />}
       {!isMobile && (
         <>
           <aside
@@ -370,9 +445,10 @@ export default function AppLayout({ children }) {
         {viewRole && (
           <button onClick={exitViewAs} style={{ background:'var(--accent)', color:'var(--text-inverse)', textAlign:'center', padding:'7px 16px', fontSize:'12px', fontFamily:'var(--font-condensed)', letterSpacing:'1px', fontWeight:700, flexShrink:0, border:'none', cursor:'pointer', width:'100%', display:'flex', alignItems:'center', justifyContent:'center', gap:'8px' }}>
             <Icon name="eye" size={13}/>VIEWING AS {ROLE_LABELS[viewRole]?.toUpperCase() || viewRole.toUpperCase()} — CLICK TO EXIT
+            <span style={{ fontWeight:400, letterSpacing:'0.5px', opacity:0.9 }}>· Screens only: data access still follows your real login ({ROLE_LABELS[actualRole] || actualRole}), so this can't show what {ROLE_LABELS[viewRole] || viewRole} is permitted to read.</span>
           </button>
         )}
-        <main style={s.content} id="main-content" data-tour="main">{children}</main>
+        <main style={s.content} id="main-content" data-tour="main">{noInvitation ? <NoInvitation reason={inviteClaim.status} /> : children}</main>
       </div>
     </div>
   )

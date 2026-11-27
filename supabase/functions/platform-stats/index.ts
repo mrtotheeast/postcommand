@@ -23,11 +23,20 @@ Deno.serve(async (req) => {
     const { data: { user } } = await userClient.auth.getUser()
     if (!user) throw new Error('Unauthorized')
 
-    const { data: profile } = await userClient.from('user_profile').select('role').eq('id', user.id).single()
+    // Both checks use the caller's own JWT: role must be super_admin AND the caller's
+    // company must be the platform owner. super_admin alone is not enough — every
+    // company owner is super_admin of their own company.
+    const { data: profile } = await userClient.from('user_profile')
+      .select('role, company_id, company:company_id(is_platform_owner)')
+      .eq('id', user.id).single()
     if (profile?.role !== 'super_admin') throw new Error('Forbidden — super_admin only')
+    if (profile?.company?.is_platform_owner !== true) throw new Error('Forbidden — platform owner only')
 
-    // Now use service role for cross-company queries
+    // Service role for the cross-company queries. Re-confirm the flag with it too, so a
+    // missing or RLS-hidden company row can never pass (fails closed either way).
     const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+    const { data: company } = await admin.from('company').select('is_platform_owner').eq('id', profile.company_id).maybeSingle()
+    if (company?.is_platform_owner !== true) throw new Error('Forbidden — platform owner only')
 
     const now      = new Date()
     const month    = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()

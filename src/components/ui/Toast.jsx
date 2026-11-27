@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useCallback } from 'react'
 
 const ToastContext = createContext(null)
 
-const ICONS  = { success:'✓', error:'✗', info:'ℹ', warning:'⚠' }
+const ICONS  = { success:'✓', error:'✗', info:'i', warning:'!' }
 const COLORS = {
   success: { bg:'var(--color-success-bg)', border:'rgba(58,170,106,0.3)',  color:'var(--color-success)'  },
   error:   { bg:'var(--color-danger-bg)',  border:'rgba(224,85,85,0.3)',   color:'var(--color-danger)'   },

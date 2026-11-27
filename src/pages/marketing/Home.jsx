@@ -105,7 +105,7 @@ const FEATURES = [
   },
   {
     title: 'Live Officer Tracking',
-    desc: 'Real-time GPS across all active sites. Geofence monitoring, checkpoint logging, and shift-scoped location history.',
+    desc: 'Map of on-duty officers across all active sites, refreshed on demand. Geofence monitoring, checkpoint logging, and shift-scoped location history.',
   },
 ]
 

@@ -18,9 +18,27 @@ export type ISODate = string // 'YYYY-MM-DD'
 export interface PostInput {
   postName: string
   hoursPerWeek: number | string   // decimal allowed, up to 2 places (e.g. 37.5)
-  hourlyRateCents: Cents
+  hourlyRateCents?: Cents | null  // falls back to the contract base rate when absent
   startTime?: string              // 'HH:MM', 24h — used only for the minimum-shift check
   endTime?: string
+  daysOfWeek?: number[]           // 0 = Sunday … 6 = Saturday (matches the database)
+}
+
+// Default multipliers from company_contract_setting. Decimal strings or
+// numbers (e.g. '1.70'); null means "not set" and yields a null rate.
+export interface RateMultipliers {
+  overtime?: number | string | null
+  holiday?: number | string | null
+  shortNotice?: number | string | null
+  emergency?: number | string | null
+}
+
+export interface DerivedRates {
+  regular: Cents
+  overtime: Cents | null
+  holiday: Cents | null
+  shortNotice: Cents | null
+  emergency: Cents | null
 }
 
 export interface TaxRate {
@@ -179,9 +197,10 @@ function shiftMinutes(start: string, end: string): number {
 export function weeklyCharges(
   posts: PostInput[],
   taxRate: TaxRate | null | undefined,
-  options: { minimumShiftHours?: number | string } = {},
+  options: { minimumShiftHours?: number | string; baseRateCents?: Cents | null; exempt?: boolean } = {},
 ): WeeklyChargesResult {
-  const taxRateBps = requireConfirmedTaxRate(taxRate)
+  // A tax-exempt client pays no sales tax, so no confirmed rate is needed.
+  const taxRateBps = options.exempt ? 0 : requireConfirmedTaxRate(taxRate)
   const warnings: string[] = []
   const minShiftMinutes = options.minimumShiftHours != null
     ? roundDiv(toScaledInt(options.minimumShiftHours, 2, 'minimumShiftHours') * 60, 100)
@@ -189,7 +208,7 @@ export function weeklyCharges(
 
   const perPost = posts.map((p, i) => {
     const label = p.postName || `Post ${i + 1}`
-    assertCents(p.hourlyRateCents, `${label} hourly rate`)
+    const rate = postHourlyRate(p, options.baseRateCents, label)
     const centiHours = toScaledInt(p.hoursPerWeek, 2, `${label} hours per week`)
     if (minShiftMinutes != null && p.startTime && p.endTime) {
       const mins = shiftMinutes(p.startTime, p.endTime)
@@ -200,15 +219,146 @@ export function weeklyCharges(
     return {
       postName: label,
       hoursPerWeek: (centiHours / 100).toFixed(2),
-      hourlyRateCents: p.hourlyRateCents,
+      hourlyRateCents: rate,
       // hours are scaled ×100, so divide back out — rounded once per post
-      weeklyChargeCents: roundDiv(centiHours * p.hourlyRateCents, 100),
+      weeklyChargeCents: roundDiv(centiHours * rate, 100),
     }
   })
 
   const subtotalCents = perPost.reduce((a, p) => a + p.weeklyChargeCents, 0)
   const taxCents = roundDiv(subtotalCents * taxRateBps, 10000)
   return { perPost, subtotalCents, taxCents, weeklyTotalCents: subtotalCents + taxCents, warnings }
+}
+
+// A post's own hourly rate, or the contract base rate when it has none.
+export function postHourlyRate(post: PostInput, baseRateCents: Cents | null | undefined, label = post.postName): Cents {
+  const rate = post.hourlyRateCents ?? baseRateCents
+  if (rate == null) throw new Error(`${label || 'Post'} has no hourly rate and the contract has no base rate`)
+  assertCents(rate, `${label || 'Post'} hourly rate`)
+  return rate
+}
+
+// Every rate derived from one hourly rate: regular × each multiplier, rounded
+// half-up once. $50.00 × 1.7 = $85.00. An unset multiplier gives a null rate.
+export function derivedRates(hourlyRateCents: Cents, multipliers: RateMultipliers): DerivedRates {
+  assertCents(hourlyRateCents, 'hourly rate')
+  const apply = (m: number | string | null | undefined, label: string) =>
+    m == null || m === '' ? null : roundDiv(hourlyRateCents * toScaledInt(m, 4, `${label} multiplier`), 10000)
+  return {
+    regular: hourlyRateCents,
+    overtime: apply(multipliers.overtime, 'overtime'),
+    holiday: apply(multipliers.holiday, 'holiday'),
+    shortNotice: apply(multipliers.shortNotice, 'short-notice'),
+    emergency: apply(multipliers.emergency, 'emergency'),
+  }
+}
+
+// Derived rates for each post, from that post's own rate (falling back to the base).
+export function postDerivedRates(posts: PostInput[], baseRateCents: Cents | null | undefined, multipliers: RateMultipliers) {
+  return posts.map((p, i) => {
+    const label = p.postName || `Post ${i + 1}`
+    return {
+      postName: label,
+      rateSource: (p.hourlyRateCents != null ? 'post' : 'base') as 'post' | 'base',
+      ...derivedRates(postHourlyRate(p, baseRateCents, label), multipliers),
+    }
+  })
+}
+
+export interface TermLength {
+  days: number              // inclusive: 00:00 on start through 23:59 on end
+  weeksExact: string        // e.g. '1.43'
+  wholeWeeks: number
+  months: number            // whole calendar months from the start date
+  monthRemainderDays: number
+  years: number
+  label: string             // the most natural unit, e.g. '10 days', '6 months', '1 year 2 months'
+}
+
+const plural = (n: number, unit: string) => `${n} ${unit}${n === 1 ? '' : 's'}`
+
+export function termLength(start: ISODate, end: ISODate): TermLength {
+  const days = daysBetween(start, end) + 1
+  if (days < 1) throw new Error('The term end date must be on or after the start date')
+  let months = 0
+  while (daysBetween(addMonths(start, months + 1), addDays(end, 1)) >= 0) months++
+  const monthRemainderDays = daysBetween(addMonths(start, months), end) + 1
+  const years = Math.floor(months / 12)
+  const wholeWeeks = Math.floor(days / 7)
+  const weekRem = days % 7
+  const weeksExact = (roundDiv(days * 100, 7) / 100).toFixed(2)
+
+  let label: string
+  if (days < 28) label = plural(days, 'day')
+  else if (months === 0) label = [plural(wholeWeeks, 'week'), weekRem ? plural(weekRem, 'day') : ''].filter(Boolean).join(' ')
+  else {
+    const parts = [years ? plural(years, 'year') : '', months % 12 ? plural(months % 12, 'month') : '', monthRemainderDays ? plural(monthRemainderDays, 'day') : '']
+    label = parts.filter(Boolean).join(' ')
+  }
+  return { days, weeksExact, wholeWeeks, months, monthRemainderDays, years, label }
+}
+
+// Days in [start, end] (inclusive) that fall on one of `daysOfWeek`.
+export function countScheduledDays(start: ISODate, end: ISODate, daysOfWeek: number[]): number {
+  const set = new Set(daysOfWeek)
+  for (const d of set) if (!Number.isInteger(d) || d < 0 || d > 6) throw new Error(`Day of week must be 0–6 (got ${d})`)
+  let count = 0
+  const total = daysBetween(start, end) + 1
+  const firstDow = new Date(`${start}T00:00:00Z`).getUTCDay()
+  for (let i = 0; i < total; i++) if (set.has((firstDow + i) % 7)) count++
+  return count
+}
+
+export interface ContractValue {
+  isEstimate: true
+  note: string
+  termDays: number
+  perPost: { postName: string; hourlyRateCents: Cents; method: 'scheduled_days' | 'prorated'; occurrences: number | null; valueCents: Cents }[]
+  subtotalCents: Cents
+  taxCents: Cents
+  totalCents: Cents
+}
+
+// Estimated contract value over the term. Never typed by hand.
+//   • Post with days_of_week: hours per occurrence = hours_per_week ÷ number of
+//     scheduled days; value = occurrences in the term × hours × rate.
+//   • Post without days: weekly charge × term days ÷ 7.
+// Each post is rounded once; tax is computed once on the subtotal (0 if exempt).
+// It's an estimate: actual invoices follow hours worked, holidays, and changes.
+export function contractValue(
+  posts: PostInput[],
+  term: { start: ISODate; end: ISODate },
+  taxRate: TaxRate | null | undefined,
+  options: { exempt?: boolean; baseRateCents?: Cents | null } = {},
+): ContractValue {
+  const taxRateBps = options.exempt ? 0 : requireConfirmedTaxRate(taxRate)
+  const termDays = termLength(term.start, term.end).days
+
+  const perPost = posts.map((p, i) => {
+    const label = p.postName || `Post ${i + 1}`
+    const rate = postHourlyRate(p, options.baseRateCents, label)
+    const centiHours = toScaledInt(p.hoursPerWeek, 2, `${label} hours per week`)
+    const days = [...new Set(p.daysOfWeek || [])]
+    if (days.length) {
+      const occurrences = countScheduledDays(term.start, term.end, days)
+      return { postName: label, hourlyRateCents: rate, method: 'scheduled_days' as const, occurrences,
+        valueCents: roundDiv(centiHours * rate * occurrences, 100 * days.length) }
+    }
+    return { postName: label, hourlyRateCents: rate, method: 'prorated' as const, occurrences: null,
+      valueCents: roundDiv(centiHours * rate * termDays, 100 * 7) }
+  })
+
+  const subtotalCents = perPost.reduce((a, p) => a + p.valueCents, 0)
+  const taxCents = roundDiv(subtotalCents * taxRateBps, 10000)
+  return {
+    isEstimate: true,
+    note: 'Estimate based on the scheduled posts. Actual invoices follow hours worked, holidays, and schedule changes.',
+    termDays,
+    perPost,
+    subtotalCents,
+    taxCents,
+    totalCents: subtotalCents + taxCents,
+  }
 }
 
 // Section 5.1: deposit = N weeks of scheduled charges INCLUDING sales tax.
