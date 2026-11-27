@@ -96,6 +96,20 @@ export default function CCWMap() {
       .catch(() => setHasSession(false))
   }, [])
 
+  // Enrichment data from Supabase ccw_state_data table
+  const [enrichMap, setEnrichMap] = useState({})
+  useEffect(() => {
+    supabase
+      .from('ccw_state_data')
+      .select('state_code,summary,self_defense_laws,permit_fee,processing_time,training_required,recent_changes,notes,official_source_url')
+      .then(({ data, error }) => {
+        if (error || !data) return
+        const map = {}
+        data.forEach(row => { map[row.state_code] = row })
+        setEnrichMap(map)
+      })
+  }, [])
+
   const [homeState,    setHomeState]    = useState('')
   const [filterType,   setFilterType]   = useState('all')
   const [search,       setSearch]       = useState('')
@@ -127,6 +141,22 @@ export default function CCWMap() {
     return true
   }), [filterType, search])
 
+  function mergeEnrich(state) {
+    if (!state) return state
+    const e = enrichMap[state.code] || {}
+    return {
+      ...state,
+      gunLawSummary:    e.summary              || state.gunLawSummary,
+      selfDefenseLaws:  e.self_defense_laws    || state.selfDefenseLaws,
+      fee:              e.permit_fee           ?? state.fee,
+      processingTime:   e.processing_time      || state.processingTime,
+      trainingRequired: e.training_required    || state.trainingRequired,
+      recentChanges:    e.recent_changes       || state.recentChanges,
+      notes:            e.notes               || state.notes,
+      officialSource:   e.official_source_url || state.officialSource,
+    }
+  }
+
   function handleStateClick(code) {
     const state = STATE_MAP[code]
     if (!state) return
@@ -134,12 +164,12 @@ export default function CCWMap() {
       setSelected(prev => prev.includes(code) ? prev.filter(c=>c!==code) : prev.length<8?[...prev,code]:prev)
       return
     }
-    setModal(state)
+    setModal(mergeEnrich(state))
   }
 
   function selectByCode(code) {
     const st = STATE_MAP[code]
-    if (st) setModal(st)
+    if (st) setModal(mergeEnrich(st))
   }
 
   function printPDF() {
@@ -479,7 +509,7 @@ function StateModal({ state, onClose, onSelect, homeState }) {
             {[
               { label:'Permit Type',        value:state.permitName },
               { label:'Processing Time',    value:state.processingTime },
-              { label:'Permit Fee',         value:state.fee===0?'Free':`$${state.fee}` },
+              { label:'Permit Fee',         value:state.fee===0?'Free':state.fee?String(state.fee).startsWith('$')?state.fee:`$${state.fee}`:undefined },
               { label:'Training Required',  value:state.trainingRequired },
               { label:'Red Flag Law',       value:state.redFlagLaw?'Yes':'No' },
             ].map(item => (
@@ -503,6 +533,14 @@ function StateModal({ state, onClose, onSelect, homeState }) {
             <div style={{ background:'#f0f9f0', border:'1px solid rgba(46,125,50,0.2)', borderRadius:'6px', padding:'10px 14px', marginBottom:'14px' }}>
               <div style={{ fontSize:'9px', color:'#2e7d32', textTransform:'uppercase', letterSpacing:'1px', fontFamily:FONT, marginBottom:'4px' }}>Self Defense Laws</div>
               <div style={{ fontSize:'12px', color:'#1b5e20' }}>{state.selfDefenseLaws}</div>
+            </div>
+          )}
+
+          {/* Recent changes */}
+          {state.recentChanges && state.recentChanges.trim() && (
+            <div style={{ background:'#fff8e1', border:'1px solid rgba(230,115,0,0.3)', borderRadius:'6px', padding:'10px 14px', marginBottom:'14px' }}>
+              <div style={{ fontSize:'9px', color:'#e65100', textTransform:'uppercase', letterSpacing:'1px', fontFamily:FONT, marginBottom:'4px' }}>⚡ Recent Law Changes</div>
+              <div style={{ fontSize:'12px', color:'#bf360c' }}>{state.recentChanges}</div>
             </div>
           )}
 
