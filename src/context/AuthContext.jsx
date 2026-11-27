@@ -20,6 +20,9 @@ export function AuthProvider({ children }) {
   const lastSignedInRef     = useRef({ userId: null, at: 0 })   // deduplication
   const passwordCheckedRef  = useRef(false)                      // skip redundant password_set query on tab-resume SIGNED_IN
   const profileUserIdRef    = useRef(null)                       // tracks userId of currently loaded profile; blocks redundant loadProfile() calls
+  // Result of claim_invitation for the app shell: { status:'claimed', companyName }
+  // (welcome toast) or { status:'no_invite' | 'ambiguous' } (no-invitation screen).
+  const [inviteClaim, setInviteClaim] = useState(null)
   const [profileConfirmed, setProfileConfirmed] = useState(false) // true once loadProfile() finishes a real DB fetch (not a cache hit)
 
   function readProfileCache(userId) {
@@ -53,6 +56,9 @@ export function AuthProvider({ children }) {
   }
 
   const effectiveRole = viewRole || profile?.role
+  // Platform area (/admin): effective role super_admin AND the platform-owner company.
+  // Cached profiles have no company data, so this stays false until the full profile loads.
+  const isPlatformAdmin = effectiveRole === 'super_admin' && profile?.company?.is_platform_owner === true
   const isNPS = profile?.company_id === NPS_COMPANY_ID
 
   async function loadProfile(userId, sessionUser) {
@@ -76,7 +82,7 @@ export function AuthProvider({ children }) {
       const { data: profileData, error: profileError } = await Promise.race([
         supabase
           .from('user_profile')
-          .select('*, company(role_style, custom_titles, custom_ranks, name, short_code)')
+          .select('*, company(role_style, custom_titles, custom_ranks, name, short_code, is_platform_owner)')
           .eq('id', userId)
           .maybeSingle(),
         new Promise((_, reject) =>
@@ -104,6 +110,31 @@ export function AuthProvider({ children }) {
           console.log(`[Auth] ${label} query failed or timed out:`, err?.message)
           return { data: null, error: { message: err?.message || 'timeout' } }
         })
+      }
+
+      // Invited sign-in with no profile row or no company: ask the database to link
+      // this user to their invitation BEFORE any client-side profile auto-create below.
+      // An RPC error is logged and ignored so sign-in continues as before.
+      let claimReason = null
+      if (!profile || !profile.company_id) {
+        const { data: claimData, error: claimError } = await withTimeout(supabase.rpc('claim_invitation'), 'claim_invitation RPC')
+        const claim = Array.isArray(claimData) ? claimData[0] : claimData
+        if (claimError) {
+          console.log('[Auth] claim_invitation failed:', claimError.message)
+        } else if (claim?.claimed === true) {
+          const { data: claimedProfile } = await withTimeout(
+            supabase
+              .from('user_profile')
+              .select('*, company(role_style, custom_titles, custom_ranks, name, short_code, is_platform_owner)')
+              .eq('id', userId)
+              .maybeSingle(),
+            'user_profile reload after claim'
+          )
+          if (claimedProfile) profile = claimedProfile
+          setInviteClaim({ status: 'claimed', companyName: claimedProfile?.company?.name || null })
+        } else {
+          claimReason = claim?.reason || null
+        }
       }
 
       if (profile) {
@@ -203,7 +234,7 @@ export function AuthProvider({ children }) {
                 first_name: emp.first_name || '',
                 last_name:  emp.last_name  || '',
               })
-              .select('*, company(role_style, custom_titles, custom_ranks, name, short_code)')
+              .select('*, company(role_style, custom_titles, custom_ranks, name, short_code, is_platform_owner)')
               .single(),
             'user_profile INSERT (employee)'
           )
@@ -255,7 +286,7 @@ export function AuthProvider({ children }) {
                   first_name: firstName,
                   last_name:  lastName,
                 })
-                .select('*, company(role_style, custom_titles, custom_ranks, name, short_code)')
+                .select('*, company(role_style, custom_titles, custom_ranks, name, short_code, is_platform_owner)')
                 .single(),
               'user_profile INSERT (client)'
             )
@@ -340,6 +371,10 @@ export function AuthProvider({ children }) {
         }
       }
 
+      // No invitation (or more than one) and still no company: the app shell shows a help screen.
+      const noInvite = (claimReason === 'no_invite' || claimReason === 'ambiguous') && !profile?.company_id
+      setInviteClaim(prev => noInvite ? { status: claimReason } : (prev?.status === 'claimed' ? prev : null))
+
       console.log('[Auth] setProfile — id:', profile?.id, 'company_id:', profile?.company_id, 'role:', profile?.role)
       setProfile(profile)
       if (profile?.id) profileUserIdRef.current = profile.id
@@ -362,6 +397,15 @@ export function AuthProvider({ children }) {
   useEffect(() => { userRef.current = user }, [user])
 
   useEffect(() => {
+    // A used or expired magic link lands with an error in the URL (hash or query).
+    // Send the user to /login with a friendly message instead of the raw error.
+    const urlParams = new URLSearchParams(`${window.location.search.slice(1)}&${window.location.hash.replace(/^#/, '')}`)
+    if (urlParams.get('error_code') === 'otp_expired') {
+      sessionStorage.setItem('pc-login-notice', 'That link has already been used or has expired. Sign in below or ask your administrator to send a new invite.')
+      window.location.replace('/login')
+      return
+    }
+
     // Hard timeout — if anything in the initial auth check hangs for 8 seconds,
     // force loading=false so the app falls through to the login screen instead of
     // spinning forever. Cleared in loadProfile's finally block on success.
@@ -513,6 +557,7 @@ export function AuthProvider({ children }) {
     passwordCheckedRef.current = false
     profileUserIdRef.current = null
     setProfileConfirmed(false)
+    setInviteClaim(null)
   }
 
   return (
@@ -521,6 +566,9 @@ export function AuthProvider({ children }) {
       signIn, signOut,
       role: profile?.role,
       effectiveRole,
+      isPlatformAdmin,
+      inviteClaim,
+      clearInviteClaim: () => setInviteClaim(prev => (prev?.status === 'claimed' ? null : prev)),
       viewRole,
       switchViewAs,
       exitViewAs,

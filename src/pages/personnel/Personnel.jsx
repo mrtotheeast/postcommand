@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
+import { sendEmployeeInvite } from '../../lib/invites'
+import { returnEmployeeToActive, REACTIVATE_FROM } from '../../lib/employeeStatus'
 import { ROLE_LABELS, ROLE_LEVELS, buildRoleOptions, atLeast } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
 import EmployeeProfile from './EmployeeProfile'
@@ -19,7 +21,12 @@ const STATUS_COLORS = {
   active:{bg:'rgba(58,170,106,0.12)',color:'#3aaa6a'},inactive:{bg:'rgba(130,130,130,0.12)',color:'#8899aa'},
   terminated:{bg:'rgba(224,85,85,0.12)',color:'#e05555'},probation:{bg:'rgba(232,148,58,0.12)',color:'#e8943a'},
   suspended:{bg:'rgba(224,85,85,0.12)',color:'#e05555'},on_leave:{bg:'rgba(91,159,224,0.12)',color:'#5b9fe0'},
+  archived:{bg:'rgba(130,130,130,0.12)',color:'#8899aa'},
 }
+const STATUS_LABELS = { active:'Active', inactive:'Inactive', probation:'Probation', suspended:'Suspended', on_leave:'On Leave', terminated:'Terminated', archived:'Archived' }
+// Single status filter (tabs). 'all' = everyone except archived; 'active' includes probation.
+const STATUS_FILTERS = [['all','All'],['active','Active'],['suspended','Suspended'],['on_leave','On Leave'],['inactive','Inactive'],['terminated','Terminated'],['archived','Archived']]
+const matchesStatusFilter = (status, f) => f === 'all' ? status !== 'archived' : f === 'active' ? (status === 'active' || status === 'probation') : status === f
 
 function friendlyError(err) {
   const msg = err?.message || ''
@@ -42,7 +49,6 @@ export default function Personnel() {
   const [error, setError] = useState(null)
   const [search, setSearch] = useState('')
   const [filterRole, setFilterRole] = useState('all')
-  const [filterStatus, setFilterStatus] = useState('all')
   const [selected, setSelected]     = useState(null)
   const [view, setView]             = useState('grid')
   const [showImport, setShowImport] = useState(false)
@@ -57,7 +63,7 @@ export default function Personnel() {
   const loadTimeoutRef = useRef(null)
   const [profileTab, setProfileTab] = useState('overview')
   const [statusModal, setStatusModal] = useState(null)   // emp object or null
-  const [statusTab, setStatusTab]     = useState('active') // active|suspended|terminated|archived
+  const [statusTab, setStatusTab]     = useState('active') // see STATUS_FILTERS
   const canViewSensitive = atLeast(profile?.role, 'lieutenant')
   const canEdit = atLeast(profile?.role, 'lieutenant')
 
@@ -65,6 +71,9 @@ export default function Personnel() {
     console.log('[Personnel] useEffect fired, company_id:', profile?.company_id)
     loadEmployees()
   }, [profile])
+
+  // Keep an open profile in sync after the list reloads (for example after a status change).
+  useEffect(() => { setSelected(s => s ? (employees.find(e => e.id === s.id) || s) : s) }, [employees])
 
   async function loadEmployees() {
     if (!profile?.company_id) {
@@ -118,12 +127,9 @@ export default function Personnel() {
       (tileFilter === 'armed' && e.is_armed) ||
       (tileFilter === 'appAccess' && e.has_app_access) ||
       (tileFilter === 'pendingInvite' && e.invitation_status === 'sent' && !e.has_app_access)
-    // Status tab filter: active tab hides suspended/terminated/archived unless explicitly shown
-    const matchStatusTab = statusTab === 'active'
-      ? (e.status === 'active' || e.status === 'inactive' || e.status === 'probation')
-      : e.status === statusTab
-    return matchSearch && matchTile && matchStatusTab && (filterRole==='all'||e.role===filterRole) && (filterStatus==='all'||e.status===filterStatus)
-  }), [employees, search, filterRole, filterStatus, tileFilter, statusTab])
+    const matchStatusTab = matchesStatusFilter(e.status, statusTab)
+    return matchSearch && matchTile && matchStatusTab && (filterRole==='all'||e.role===filterRole)
+  }), [employees, search, filterRole, tileFilter, statusTab])
 
   const stats = useMemo(() => ({
     total: employees.length,
@@ -185,11 +191,11 @@ export default function Personnel() {
 
       {/* Status filter tabs */}
       <div style={{display:'flex',gap:'2px',marginBottom:'16px',borderBottom:'1px solid var(--border)',paddingBottom:0,overflowX:'auto'}}>
-        {[['active','Active'],['suspended','Suspended'],['on_leave','On Leave'],['terminated','Terminated'],['archived','Archived']].map(([v,l])=>(
+        {STATUS_FILTERS.map(([v,l])=>(
           <button key={v} onClick={()=>setStatusTab(v)} style={{padding:'8px 16px',fontSize:'12px',background:'transparent',border:'none',cursor:'pointer',fontFamily:'var(--font-condensed)',letterSpacing:'0.5px',borderBottom:`2px solid ${statusTab===v?'var(--accent)':'transparent'}`,color:statusTab===v?'var(--accent)':'var(--text-muted)',transition:'all 150ms ease',fontWeight:statusTab===v?700:400,marginBottom:'-1px'}}>
             {l}
             <span style={{marginLeft:'6px',fontSize:'11px',background:statusTab===v?'var(--accent-bg)':'var(--border)',color:statusTab===v?'var(--accent)':'var(--text-muted)',padding:'1px 6px',borderRadius:'10px'}}>
-              {employees.filter(e=>e.status===(v==='archived'?'archived':v)).length}
+              {employees.filter(e=>matchesStatusFilter(e.status, v)).length}
             </span>
           </button>
         ))}
@@ -222,15 +228,6 @@ export default function Personnel() {
           <option value="all">All Roles</option>
           {buildRoleOptions(profile?.company).map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
-        <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value)} style={{padding:'0 12px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',color:'var(--text-primary)',fontSize:'13px',height:'44px',cursor:'pointer',minWidth:'130px'}}>
-          <option value="all">All Status</option>
-          <option value="active">Active</option>
-          <option value="inactive">Inactive</option>
-          <option value="probation">Probation</option>
-          <option value="suspended">Suspended</option>
-          <option value="on_leave">On Leave</option>
-          <option value="terminated">Terminated</option>
-        </select>
         <div style={{display:'flex',gap:'4px',background:'var(--bg-card)',border:'1px solid var(--border-subtle)',borderRadius:'var(--radius-md)',padding:'4px'}}>
           {['grid','list'].map(v=>(
             <button key={v} onClick={()=>setView(v)} style={{width:'36px',height:'36px',border:'none',borderRadius:'6px',background:view===v?'var(--accent-bg)':'transparent',color:view===v?'var(--accent)':'var(--text-muted)',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>
@@ -243,7 +240,7 @@ export default function Personnel() {
       {mainView==='photo_approvals' && <PhotoApprovalsTab companyId={profile.company_id} />}
       {mainView==='directory' && (
       <>
-      {(search||filterRole!=='all'||filterStatus!=='all') && <div style={{fontSize:'12px',color:'var(--text-muted)',marginBottom:'12px'}}>Showing {filtered.length} of {employees.length}</div>}
+      {(search||filterRole!=='all') && <div style={{fontSize:'12px',color:'var(--text-muted)',marginBottom:'12px'}}>Showing {filtered.length} of {employees.length}</div>}
 
       {filtered.length===0 && (
         <div style={{textAlign:'center',padding:'60px 24px',color:'var(--text-muted)'}}>
@@ -455,7 +452,7 @@ function EmpCard({emp,ini,canViewSensitive,onClick,onStatusAction}) {
       </div>
       <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
         <span style={{fontSize:'11px',fontWeight:600,padding:'2px 8px',borderRadius:'10px',background:rc.bg,color:rc.color}}>{ROLE_LABELS[emp.role]??emp.role}</span>
-        <span style={{fontSize:'11px',fontWeight:600,padding:'2px 8px',borderRadius:'10px',background:sc.bg,color:sc.color}}>{emp.status??'Unknown'}</span>
+        <span style={{fontSize:'11px',fontWeight:600,padding:'2px 8px',borderRadius:'10px',background:sc.bg,color:sc.color}}>{STATUS_LABELS[emp.status]??emp.status??'Unknown'}</span>
         {emp.is_armed&&<span style={{fontSize:'11px',fontWeight:600,padding:'2px 8px',borderRadius:'10px',background:'rgba(201,162,39,0.12)',color:'var(--accent)'}}>Armed</span>}
         {emp.has_app_access || emp.invitation_status==='accepted'
           ? <span style={{fontSize:'10px',fontWeight:700,padding:'2px 7px',borderRadius:'10px',background:'var(--color-success-bg)',color:'var(--color-success)'}}>APP ACCESS</span>
@@ -503,7 +500,7 @@ function EmpRow({emp,ini,isLast,onClick,bulkMode,bulkSelected,setBulkSelected}) 
       </div>
       <div style={{fontSize:'13px',color:'var(--text-secondary)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{emp.position_title||'—'}</div>
       <span style={{fontSize:'11px',fontWeight:600,padding:'2px 8px',borderRadius:'10px',background:rc.bg,color:rc.color,display:'inline-block'}}>{ROLE_LABELS[emp.role]??emp.role}</span>
-      <span style={{fontSize:'11px',fontWeight:600,padding:'2px 8px',borderRadius:'10px',background:sc.bg,color:sc.color,display:'inline-block'}}>{emp.status??'—'}</span>
+      <span style={{fontSize:'11px',fontWeight:600,padding:'2px 8px',borderRadius:'10px',background:sc.bg,color:sc.color,display:'inline-block'}}>{STATUS_LABELS[emp.status]??emp.status??'Unknown'}</span>
       <div style={{display:'flex',alignItems:'center',gap:'6px',justifyContent:'flex-end'}}>
         {emp.is_armed&&<Icon name="shield" size={14} color="var(--accent)"/>}
         {emp.has_app_access&&<Icon name="phone" size={14} color="var(--color-info)"/>}
@@ -514,6 +511,7 @@ function EmpRow({emp,ini,isLast,onClick,bulkMode,bulkSelected,setBulkSelected}) 
 }
 
 function EmpDetail({emp,canViewSensitive,canEdit,onClose,onRefresh}) {
+  const { profile } = useAuth()
   const toast = useToast()
   const [editing,setEditing]  = useState(false)
   const [inviting,setInviting] = useState(false)
@@ -527,16 +525,9 @@ function EmpDetail({emp,canViewSensitive,canEdit,onClose,onRefresh}) {
   async function sendInvite() {
     if (!emp.email) return
     setInviting(true); setInviteMsg(null)
-    const { error } = await supabase.auth.signInWithOtp({
-      email: emp.email,
-      options: {
-        shouldCreateUser: true,
-        emailRedirectTo: 'https://postcommand.app',
-        data: { first_name: emp.first_name, last_name: emp.last_name, company_id: emp.company_id, employee_id: emp.id }
-      }
-    })
+    // Shared helper: sends the invite and sets invitation_status to 'sent' on success.
+    const { error } = await sendEmployeeInvite(emp, profile?.company?.name)
     if (!error) {
-      await supabase.from('employee').update({ invitation_status: 'sent' }).eq('id', emp.id).eq('company_id', emp.company_id)
       onRefresh?.()
       setInviteMsg({ ok:true, text:`Invite sent to ${emp.email}.` })
       toast('Invite sent to ' + emp.email, 'info')
@@ -791,9 +782,9 @@ function BulkConfirmModal({ action, count, companyId, selectedIds, employees, on
       } else if (action.type === 'invite') {
         results = await Promise.allSettled(withEmail.map(async id => {
           const emp = empMap[id]
-          const { error } = await supabase.auth.signInWithOtp({ email: emp.email, options: { shouldCreateUser: true, emailRedirectTo: 'https://postcommand.app', data: { first_name: emp.first_name, last_name: emp.last_name, company_id: emp.company_id, employee_id: emp.id } } })
+          // Shared helper: sends the invite and sets invitation_status to 'sent' on success.
+          const { error } = await sendEmployeeInvite({ ...emp, company_id: companyId }, profile?.company?.name)
           if (error) throw error
-          await supabase.from('employee').update({ invitation_status: 'sent' }).eq('id', id).eq('company_id', companyId)
         }))
       } else if (action.type === 'add_to_channel') {
         if (!channelId) { toast('Select a channel first', 'error'); setActing(false); return }
@@ -1075,6 +1066,8 @@ function AddEmployeeModal({ companyId, onClose, onSaved }) {
   const [success,setSuccess]  = useState(false)
   const [sendingInvite, setSendingInvite] = useState(false)
   const [savedEmp, setSavedEmp] = useState(null)
+  const [inviteNow, setInviteNow] = useState(true)
+  const [inviteResult, setInviteResult] = useState(null)   // { ok, text } after an invite attempt
 
   function setF(k,v) { setForm(p=>({...p,[k]:v})) }
   const foc = e => { e.target.style.borderColor='var(--border-focus)' }
@@ -1112,7 +1105,13 @@ function AddEmployeeModal({ companyId, onClose, onSaved }) {
         .catch(() => {})
       setSavedEmp(data)
       setSuccess(true)
-      toast('Employee added successfully')
+      // Invite only after the employee row has saved.
+      if (inviteNow) {
+        const ok = await sendInvite(data)
+        if (!ok) return   // keep the modal open so the failure message is read
+      } else {
+        toast('Employee added successfully')
+      }
       setTimeout(() => { onSaved() }, 2500)
     } catch(e) {
       setError(friendlyError(e))
@@ -1121,21 +1120,22 @@ function AddEmployeeModal({ companyId, onClose, onSaved }) {
     }
   }
 
-  async function sendInvite() {
-    if (!savedEmp?.email) return
+  // Same invite as the employee profile's Invite button. On failure the employee
+  // is kept and invitation_status is set back to 'pending' so it can be retried.
+  async function sendInvite(emp = savedEmp) {
+    if (!emp?.email) return false
     setSendingInvite(true)
-    const { error } = await supabase.auth.signInWithOtp({
-      email: savedEmp.email,
-      options: {
-        shouldCreateUser: true,
-        emailRedirectTo: 'https://postcommand.app',
-        data: { first_name: savedEmp.first_name, last_name: savedEmp.last_name, company_id: companyId, employee_id: savedEmp.id }
-      }
-    })
-    if (!error) {
-      await supabase.from('employee').update({ invitation_status: 'sent' }).eq('id', savedEmp.id).eq('company_id', companyId)
-    }
+    const { error } = await sendEmployeeInvite({ ...emp, company_id: companyId }, profile?.company?.name)
     setSendingInvite(false)
+    if (error) {
+      await supabase.from('employee').update({ invitation_status: 'pending' }).eq('id', emp.id).eq('company_id', companyId)
+      setInviteResult({ ok:false, text:`Employee added, but the invite email could not be sent: ${friendlyError(error).replace(/\.?$/, '.')} Invitation status is Pending. Use Invite to App to try again.` })
+      toast('Employee added. Invite email failed.', 'error')
+      return false
+    }
+    setInviteResult({ ok:true, text:`Invite sent to ${emp.email}.` })
+    toast(`Employee added. Invite sent to ${emp.email}`)
+    return true
   }
 
   const ov  = { position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:400,display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'32px 16px',overflowY:'auto' }
@@ -1154,9 +1154,11 @@ function AddEmployeeModal({ companyId, onClose, onSaved }) {
             <Icon name="check-circle" size={40} color="var(--color-success)"/>
             <div style={{fontFamily:'var(--font-display)',fontSize:'20px',letterSpacing:'2px',color:'var(--text-primary)',margin:'12px 0 6px'}}>EMPLOYEE ADDED</div>
             <div style={{fontSize:'13px',color:'var(--text-secondary)',marginBottom:'20px'}}>{savedEmp?.first_name} {savedEmp?.last_name} has been added successfully.</div>
-            <button onClick={sendInvite} disabled={sendingInvite} style={{display:'inline-flex',alignItems:'center',gap:'8px',background:'var(--color-info-bg)',color:'var(--color-info)',border:'1px solid rgba(91,159,224,0.3)',borderRadius:'var(--radius-sm)',padding:'0 20px',height:'42px',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',opacity:sendingInvite?0.6:1}}>
+            {inviteResult && <div style={{fontSize:'13px',lineHeight:1.5,padding:'10px 14px',borderRadius:'var(--radius-sm)',marginBottom:'16px',textAlign:'left',background:inviteResult.ok?'var(--color-success-bg)':'var(--color-danger-bg)',color:inviteResult.ok?'var(--color-success)':'var(--color-danger)',border:`1px solid ${inviteResult.ok?'rgba(58,170,106,0.3)':'rgba(192,57,43,0.3)'}`}}>{inviteResult.text}</div>}
+            {!inviteResult?.ok && <button onClick={() => sendInvite()} disabled={sendingInvite} style={{display:'inline-flex',alignItems:'center',gap:'8px',background:'var(--color-info-bg)',color:'var(--color-info)',border:'1px solid rgba(91,159,224,0.3)',borderRadius:'var(--radius-sm)',padding:'0 20px',height:'42px',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',opacity:sendingInvite?0.6:1}}>
               <Icon name="mail" size={14}/>{sendingInvite?'SENDING...':'INVITE TO APP'}
-            </button>
+            </button>}
+            {inviteResult && !inviteResult.ok && <div style={{marginTop:'12px'}}><button onClick={onSaved} style={{background:'transparent',border:'1px solid var(--border)',borderRadius:'var(--radius-sm)',color:'var(--text-secondary)',fontFamily:'var(--font-condensed)',fontSize:'12px',letterSpacing:'1px',cursor:'pointer',padding:'0 16px',height:'36px'}}>CLOSE</button></div>}
           </div>
         ) : (
           <>
@@ -1164,7 +1166,8 @@ function AddEmployeeModal({ companyId, onClose, onSaved }) {
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px',marginBottom:'12px'}}>
               <div><div style={lbl}>First Name *</div><input style={inp} value={form.first_name} onChange={e=>setF('first_name',e.target.value)} onFocus={foc} onBlur={blr} placeholder="Jane"/></div>
               <div><div style={lbl}>Last Name *</div><input style={inp} value={form.last_name} onChange={e=>setF('last_name',e.target.value)} onFocus={foc} onBlur={blr} placeholder="Smith"/></div>
-              <div><div style={lbl}>Email *</div><input style={inp} type="email" value={form.email} onChange={e=>setF('email',e.target.value)} onFocus={foc} onBlur={blr} placeholder="jane@company.com"/></div>
+              <div><div style={lbl}>Email *</div><input style={inp} type="email" value={form.email} onChange={e=>setF('email',e.target.value)} onFocus={foc} onBlur={blr} placeholder="jane@company.com"/>
+                {inviteNow && form.email.trim() && <div style={{fontSize:'11px',color:'var(--text-muted)',marginTop:'5px'}}>Invite will be sent to {form.email.trim()}</div>}</div>
               <div><div style={lbl}>Phone</div><input style={inp} value={form.phone_number} onChange={e=>setF('phone_number',e.target.value)} onFocus={foc} onBlur={blr} placeholder="(555) 000-0000"/></div>
               <div><div style={lbl}>Role *</div><select style={{...inp,cursor:'pointer'}} value={form.role} onChange={e=>setF('role',e.target.value)} onFocus={foc} onBlur={blr}>{roleOptions.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
               <div><div style={lbl}>Position Title</div><input style={inp} value={form.position_title} onChange={e=>setF('position_title',e.target.value)} onFocus={foc} onBlur={blr} placeholder="Security Officer"/></div>
@@ -1173,6 +1176,9 @@ function AddEmployeeModal({ companyId, onClose, onSaved }) {
             </div>
             <label style={{display:'flex',alignItems:'center',gap:'8px',fontSize:'13px',color:'var(--text-primary)',cursor:'pointer',marginBottom:'20px'}}>
               <input type="checkbox" checked={form.is_armed} onChange={e=>setF('is_armed',e.target.checked)} style={{accentColor:'var(--accent)',width:'16px',height:'16px',cursor:'pointer'}}/>Armed Officer
+            </label>
+            <label style={{display:'flex',alignItems:'center',gap:'8px',fontSize:'13px',color:'var(--text-primary)',cursor:'pointer',marginTop:'-12px',marginBottom:'20px'}}>
+              <input type="checkbox" checked={inviteNow} onChange={e=>setInviteNow(e.target.checked)} style={{accentColor:'var(--accent)',width:'16px',height:'16px',cursor:'pointer'}}/>Send invite email now
             </label>
             <div style={{display:'flex',gap:'10px'}}>
               <button onClick={save} disabled={saving} style={{display:'inline-flex',alignItems:'center',gap:'8px',background:'var(--accent)',color:'var(--text-inverse)',border:'none',borderRadius:'var(--radius-sm)',padding:'0 22px',height:'44px',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',opacity:saving?0.6:1}}>
@@ -1189,12 +1195,18 @@ function AddEmployeeModal({ companyId, onClose, onSaved }) {
 
 // ── Employee Status / Delete Modal ────────────────────────────────────────────
 
+// showFor: only offered for these current statuses. Options without it are hidden
+// when they equal the current status (so Archive is hidden for archived employees).
+// Reactivate / Rehire / Restore come first.
 const STATUS_OPTIONS = [
-  { id:'on_leave',   label:'Place on Leave',           description:'Employee is on approved leave. Status can be reversed when they return.',                               color:'var(--color-info,#5b9fe0)',icon:'🏖', requiresNote:true,  noteLabel:'Leave reason (type, notes)', reversible:true },
-  { id:'suspended',  label:'Suspend Employee',          description:'Temporarily suspends access. Employee remains in the system and can be reinstated.',                   color:'var(--color-warning)',  icon:'⏸', requiresNote:true,  noteLabel:'Reason for suspension', reversible:true },
-  { id:'terminated', label:'Terminate Employment',      description:'Ends employment. Employee record is retained for legal and payroll compliance.',                       color:'var(--color-danger)',   icon:'✕',  requiresNote:true,  noteLabel:'Reason for termination', reversible:false },
-  { id:'archived',   label:'Archive Employee',          description:'Hides from active lists. Record is preserved and can be restored at any time.',                        color:'var(--text-muted)',     icon:'📁', requiresNote:false, reversible:true },
-  { id:'deleted',    label:'Permanently Delete',        description:'IRREVERSIBLE. All data will be permanently deleted and cannot be recovered. This cannot be undone.',   color:'#dc2626',               icon:'🗑', requiresNote:true,  noteLabel:'Type DELETE to confirm', reversible:false, requiresConfirmText:'DELETE' },
+  { id:'reactivate', label:'Reactivate Employee', description:'Returns the employee to active status. Their record and history are kept.', color:'#3aaa6a', icon:'refresh-cw', requiresNote:false, reversible:true, showFor:REACTIVATE_FROM },
+  { id:'rehire',     label:'Rehire Employee',     description:'Returns the employee to active status. Their record and history are kept.', color:'#3aaa6a', icon:'user-plus',  requiresNote:false, reversible:true, showFor:['terminated'] },
+  { id:'restore',    label:'Restore Employee',    description:'Returns the employee to active status. Their record and history are kept.', color:'#3aaa6a', icon:'archive',    requiresNote:false, reversible:true, showFor:['archived'] },
+  { id:'on_leave',   label:'Place on Leave',           description:'Employee is on approved leave. Status can be reversed when they return.',                               color:'var(--color-info,#5b9fe0)',icon:'calendar', requiresNote:true,  noteLabel:'Leave reason (type, notes)', reversible:true },
+  { id:'suspended',  label:'Suspend Employee',          description:'Temporarily suspends access. Employee remains in the system and can be reinstated.',                   color:'var(--color-warning)',  icon:'minus-circle', requiresNote:true,  noteLabel:'Reason for suspension', reversible:true },
+  { id:'terminated', label:'Terminate Employment',      description:'Ends employment. The record is retained for legal and payroll compliance. Can be reversed by a rehire.',                       color:'var(--color-danger)',   icon:'x',  requiresNote:true,  noteLabel:'Reason for termination', reversible:true },
+  { id:'archived',   label:'Archive Employee',          description:'Hides from active lists. Record is preserved and can be restored at any time.',                        color:'var(--text-muted)',     icon:'archive', requiresNote:false, reversible:true },
+  { id:'deleted',    label:'Permanently Delete',        description:'IRREVERSIBLE. All data will be permanently deleted and cannot be recovered. This cannot be undone.',   color:'#dc2626',               icon:'trash-2', requiresNote:true,  noteLabel:'Type DELETE to confirm', reversible:false, requiresConfirmText:'DELETE' },
 ]
 
 function EmployeeStatusModal({ emp, profile, onClose, onDone }) {
@@ -1203,7 +1215,8 @@ function EmployeeStatusModal({ emp, profile, onClose, onDone }) {
   const [note, setNote]         = useState('')
   const [saving, setSaving]     = useState(false)
   const [error, setError]       = useState(null)
-  const opt = STATUS_OPTIONS.find(o => o.id === selected)
+  const options = STATUS_OPTIONS.filter(o => o.showFor ? o.showFor.includes(emp.status) : o.id !== emp.status)
+  const opt = options.find(o => o.id === selected)
 
   const canConfirm = opt && (
     !opt.requiresNote || note.trim().length > 0
@@ -1215,6 +1228,14 @@ function EmployeeStatusModal({ emp, profile, onClose, onDone }) {
     if (!opt) return
     setSaving(true); setError(null)
     try {
+      // Back to active: same shared helper as the profile-header buttons (update + change log).
+      if (opt.id === 'reactivate' || opt.id === 'rehire' || opt.id === 'restore') {
+        const { error: actErr } = await returnEmployeeToActive(emp, { mode: opt.id, actor: profile })
+        if (actErr) throw new Error(actErr.message)
+        toast({ reactivate:'Employee reactivated', rehire:'Employee rehired', restore:'Employee restored' }[opt.id], 'info')
+        onDone()
+        return
+      }
       if (opt.id === 'deleted') {
         const { error: delErr } = await supabase.from('employee').delete().eq('id', emp.id).eq('company_id', emp.company_id)
         if (delErr) throw new Error(delErr.message)
@@ -1260,14 +1281,14 @@ function EmployeeStatusModal({ emp, profile, onClose, onDone }) {
         </div>
 
         <div style={{display:'flex',flexDirection:'column',gap:'8px',marginBottom:'18px'}}>
-          {STATUS_OPTIONS.map(opt => (
+          {options.map(opt => (
             <button key={opt.id} onClick={()=>{setSelected(opt.id);setNote('')}}
               style={{textAlign:'left',padding:'14px 16px',borderRadius:'var(--radius-md)',border:`2px solid ${selected===opt.id?opt.color:'var(--border-subtle)'}`,background:selected===opt.id?`${opt.color}11`:'var(--bg-surface)',cursor:'pointer',transition:'all 150ms ease',display:'flex',alignItems:'flex-start',gap:'12px'}}>
-              <span style={{fontSize:'18px',lineHeight:1,flexShrink:0,marginTop:'1px'}}>{opt.icon}</span>
+              <span style={{lineHeight:1,flexShrink:0,marginTop:'1px',display:'flex'}}><Icon name={opt.icon} size={18} color={opt.color} /></span>
               <div>
                 <div style={{fontSize:'13px',fontWeight:700,color:selected===opt.id?opt.color:'var(--text-primary)',marginBottom:'3px'}}>{opt.label}</div>
                 <div style={{fontSize:'12px',color:'var(--text-muted)',lineHeight:1.5}}>{opt.description}</div>
-                {!opt.reversible && <div style={{fontSize:'11px',color:'var(--color-danger)',marginTop:'4px',fontWeight:600}}>⚠ NOT REVERSIBLE</div>}
+                {!opt.reversible && <div style={{fontSize:'11px',color:'var(--color-danger)',marginTop:'4px',fontWeight:600}}>NOT REVERSIBLE</div>}
               </div>
             </button>
           ))}

@@ -123,7 +123,7 @@ export default function Register() {
       const { data: authData, error: authErr } = await supabase.auth.signUp({
         email:    form.email,
         password: form.password,
-        options:  { data: { first_name: firstName, last_name: lastName, role: 'chief_app_admin' } },
+        options:  { data: { first_name: firstName, last_name: lastName, role: 'super_admin' } },
       })
 
       if (authErr) {
@@ -163,7 +163,7 @@ export default function Register() {
       const { error: profErr } = await supabase.from('user_profile').insert({
         id:               authData.user.id,
         company_id:       company.id,
-        role:             'chief_app_admin',
+        role:             'super_admin',
         first_name:       firstName,
         last_name:        lastName,
         email:            form.email,

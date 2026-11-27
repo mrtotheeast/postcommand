@@ -18,6 +18,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { ComposableMap, Geographies, Geography } from 'react-simple-maps'
 import CCW_DATA, { DATA_META, getStateData, getAllStateCodes } from './ccwData'
 import { supabase } from '../../lib/supabase'
+import Icon from '../../components/ui/Icon'
 
 const GEO_URL = '/us-states.json'
 
@@ -191,7 +192,7 @@ tr:nth-child(even){background:#fafafa}
 <tbody>${stateRows}</tbody>
 </table>
 <div class="disclaimer">
-<h4>⚠ DISCLAIMER</h4>
+<h4>DISCLAIMER</h4>
 <p>Data sourced from <strong>Handgunlaw.us</strong> (handgunlaw.us/states/USStatesThatHonorMyPermit.pdf), last verified ${DATA_META.lastVerified}. Handgunlaw.us is referenced by law enforcement and firearms attorneys nationwide. <strong>Laws change frequently — always verify with the destination state's official authority before carrying.</strong> This map is for reference only and is not legal advice. PostCommand assumes no liability for accuracy.</p>
 </div>
 <div class="footer">
@@ -246,7 +247,7 @@ Laws change frequently. Always verify with official state sources. This is not l
               className="print-btn"
               onClick={printPDF}
               style={{ display:'inline-flex', alignItems:'center', gap:'6px', background:C.bg, color:C.textSecond, border:`1px solid ${C.border}`, borderRadius:'6px', padding:'0 12px', height:'34px', fontSize:'11px', fontFamily:FONT, letterSpacing:'1px', cursor:'pointer' }}>
-              🖨 Print / Save PDF
+              <Icon name="printer" size={13} />Print / Save PDF
             </button>
           </div>
         </header>
@@ -276,7 +277,7 @@ Laws change frequently. Always verify with official state sources. This is not l
           />
           {/* Legend */}
           <div style={{ marginLeft:'auto', display:'flex', gap:'10px', flexWrap:'wrap', alignItems:'center' }}>
-            {homeState && <span style={{ fontSize:'11px', fontWeight:700, color:C.gold, background:C.goldBg, padding:'2px 8px', borderRadius:'10px', border:`1px solid rgba(200,168,75,0.3)` }}>📍 {homeState} selected</span>}
+            {homeState && <span style={{ fontSize:'11px', fontWeight:700, color:C.gold, background:C.goldBg, padding:'2px 8px', borderRadius:'10px', border:`1px solid rgba(200,168,75,0.3)` }}>{homeState} selected</span>}
             {Object.entries(PERMIT_TYPE_LABELS).map(([k,v])=>(
               <button key={k} onClick={()=>setFilterType(filterType===k?'all':k)}
                 style={{ display:'flex', alignItems:'center', gap:'5px', background:'transparent', border:'none', cursor:'pointer', fontSize:'10px', color:C.text, padding:'2px 4px', opacity:filterType!=='all'&&filterType!==k?0.3:1, transition:'opacity 150ms ease' }}>
@@ -308,7 +309,10 @@ Laws change frequently. Always verify with official state sources. This is not l
                 <Geographies geography={GEO_URL} onError={()=>setGeoError(true)}>
                   {({ geographies }) => {
                     if (!geographies?.length) return null
-                    return geographies.map(geo => {
+                    // Draw selected states last so their outline isn't covered by neighbours.
+                    const isSel = g => selected.includes(FIPS[g.id?.toString().padStart(2,'0')])
+                    const ordered = selected.length ? [...geographies.filter(g => !isSel(g)), ...geographies.filter(isSel)] : geographies
+                    return ordered.map(geo => {
                       const fips  = geo.id?.toString().padStart(2,'0')
                       const code  = FIPS[fips]
                       const state = code ? STATE_MAP[code] : null
@@ -327,7 +331,13 @@ Laws change frequently. Always verify with official state sources. This is not l
 
                       if (isFiltered) { fillOp = 1 }
                       else if (code === homeState) { fillOp = 1; stroke = C.gold; strokeWidth = 3 }
-                      else if (isSelected || isModal) { fillOp = 1; stroke = C.gold; strokeWidth = 2 }
+                      else if (isModal) { fillOp = 1; stroke = C.gold; strokeWidth = 2 }
+                      // Multi-select: selected states stay full color with a heavy outline;
+                      // everything else fades so the selection is easy to see.
+                      if (multiMode && selected.length) {
+                        if (isSelected) { fill = isFiltered ? baseColor(state.permitType) : mapFill; fillOp = 1; stroke = '#1a1a1a'; strokeWidth = 2.5 }
+                        else if (code !== homeState) { fillOp = 0.3 }
+                      } else if (isSelected) { fillOp = 1; stroke = C.gold; strokeWidth = 2 }
 
                       return (
                         <Geography key={geo.rsmKey} geography={geo}
@@ -387,9 +397,10 @@ Laws change frequently. Always verify with official state sources. This is not l
               {filteredList.map(state => {
                 const canCarry  = homeState && homeData?.honoredBy?.includes(state.code)
                 const weHonor   = homeState && homeData?.honors?.includes(state.code)
+                const picked    = selected.includes(state.code)
                 return (
                   <div key={state.code} className="ccw-hover"
-                    style={{ display:'flex', alignItems:'center', gap:'9px', padding:'9px 14px', borderBottom:`1px solid #f5f5f5`, cursor:'pointer', background:'transparent' }}
+                    style={{ display:'flex', alignItems:'center', gap:'9px', padding:'9px 14px', borderBottom:`1px solid #f5f5f5`, cursor:'pointer', background:picked?C.goldBg:'transparent', boxShadow:picked?`inset 3px 0 0 ${C.gold}`:'none' }}
                     onClick={() => handleStateClick(state.code)}>
                     <div style={{ width:'32px', height:'32px', borderRadius:'5px', background:baseBg(state.permitType), color:baseColor(state.permitType), display:'flex', alignItems:'center', justifyContent:'center', fontFamily:FONT, fontSize:'11px', fontWeight:700, flexShrink:0 }}>{state.code}</div>
                     <div style={{ flex:1, minWidth:0 }}>
@@ -575,14 +586,14 @@ function StateModal({ state, onClose, onSelect, homeState }) {
             <div style={{ marginBottom:'14px' }}>
               <a href={state.officialSource} target="_blank" rel="noopener noreferrer"
                 style={{ fontSize:'12px', color:'#1565c0', display:'inline-flex', alignItems:'center', gap:'4px' }}>
-                🔗 Official State Source / Licensing Authority
+                <Icon name="external-link" size={12} />Official State Source / Licensing Authority
               </a>
             </div>
           )}
 
           {/* Disclaimer — Task 3 */}
           <div style={{ background:'#fff8e1', border:'1px solid #ffc107', borderRadius:'6px', padding:'10px 14px', fontSize:'11px', color:'#5d4037', lineHeight:1.6 }}>
-            <strong>⚠ Disclaimer:</strong> Data sourced from <strong>Handgunlaw.us</strong> (handgunlaw.us/states/USStatesThatHonorMyPermit.pdf), last verified {DATA_META.lastVerified}. Handgunlaw.us is referenced by law enforcement and firearms attorneys nationwide. Laws change frequently — always verify with the destination state's official authority before carrying. This map is for reference only and is not legal advice. PostCommand assumes no liability for accuracy.
+            <strong>Disclaimer:</strong> Data sourced from <strong>Handgunlaw.us</strong> (handgunlaw.us/states/USStatesThatHonorMyPermit.pdf), last verified {DATA_META.lastVerified}. Handgunlaw.us is referenced by law enforcement and firearms attorneys nationwide. Laws change frequently — always verify with the destination state's official authority before carrying. This map is for reference only and is not legal advice. PostCommand assumes no liability for accuracy.
           </div>
         </div>
       </div>

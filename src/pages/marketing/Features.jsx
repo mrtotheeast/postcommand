@@ -121,9 +121,9 @@ const SECTIONS = [
   },
   {
     title: 'Live Map',
-    tagline: 'Real-time situational awareness across every site.',
+    tagline: 'Situational awareness across every site.',
     bullets: [
-      'A live GPS map shows every officer currently on duty, updated in real time as they move.',
+      'A map shows every officer currently on duty and their site, updated when you open it or tap Refresh.',
       'Site geofences trigger alerts when officers leave assigned patrol zones or miss check-in windows.',
       'Checkpoint logging lets officers mark patrol waypoints during rounds, creating a verifiable patrol record.',
       'All location data is scoped to active shift periods — no continuous tracking outside working hours.',

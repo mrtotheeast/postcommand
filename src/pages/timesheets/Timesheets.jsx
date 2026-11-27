@@ -750,7 +750,7 @@ h1{font-size:20px;font-weight:900;color:#0d1f35;margin-bottom:4px}
   <div class="field"><span class="field-label">State Tax Withheld</span><span>See payroll records</span></div>
 </div>
 <div class="disclaimer">
-  <strong>⚠ FOR REFERENCE ONLY</strong><br/>
+  <strong>FOR REFERENCE ONLY</strong><br/>
   This document is generated for administrative reference purposes only and is NOT a valid tax form for IRS filing. Consult a licensed payroll provider to generate official W-2 and 1099 forms with proper tax calculations, withholding amounts, and IRS-required formatting. PostCommand is not responsible for tax filing decisions made based on this document.
 </div>
 </body></html>`)

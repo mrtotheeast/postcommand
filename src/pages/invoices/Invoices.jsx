@@ -377,7 +377,7 @@ function InvoiceFormModal({ invoices, mode, invoice, companyId, onClose, onSaved
   const [pendingTimesheetIds, setPendingTimesheetIds] = useState(new Set())
 
   useEffect(() => {
-    supabase.from('client').select('id,name,billing_address').eq('company_id', companyId).order('name')
+    supabase.from('client').select('id,name,billing_address').eq('company_id', companyId).is('deletion_date', null).order('name')
       .then(({ data }) => setClients(data || []))
     supabase.from('site').select('id,name').eq('company_id', companyId).order('name')
       .then(({ data }) => setSites(data || []))

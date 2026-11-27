@@ -24,23 +24,23 @@ const s = {
 function fmtDate(iso) { if(!iso)return'—'; return new Date(iso).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) }
 
 export default function SuperAdmin() {
-  const { profile, role, profileConfirmed } = useAuth()
+  const { profile, isPlatformAdmin, profileConfirmed } = useAuth()
   const navigate = useNavigate()
   useEffect(() => {
     if (!profileConfirmed) return
-    if (role !== 'super_admin') navigate('/dashboard', { replace: true })
-  }, [profileConfirmed, role, navigate])
+    if (!isPlatformAdmin) navigate('/dashboard', { replace: true })
+  }, [profileConfirmed, isPlatformAdmin, navigate])
   const [stats, setStats]   = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError]   = useState(null)
   const [companyStats, setCompanyStats] = useState(null)
 
   useEffect(() => {
-    if (profile?.company_id) {
+    if (profile?.company_id && isPlatformAdmin) {
       loadPlatformStats()
       loadCompanyStats()
     }
-  }, [profile])
+  }, [profile, isPlatformAdmin])
 
   const loadPlatformStats = withLoadTimeout(async function loadPlatformStats() {
     setLoading(true)

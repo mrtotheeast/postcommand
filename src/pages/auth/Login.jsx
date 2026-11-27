@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
 import { isNative } from '../../lib/platform'
+import Icon from '../../components/ui/Icon'
 
 const OAUTH_REDIRECT = isNative()
   ? 'postcommand://auth'
@@ -72,6 +73,7 @@ export default function Login() {
   const [email,    setEmail]    = useState('')
   const [password, setPassword] = useState('')
   const [error,    setError]    = useState(null)
+  const [notice]                = useState(() => sessionStorage.getItem('pc-login-notice'))   // set by AuthContext after a failed magic link
   const [loading,  setLoading]  = useState(false)
   const [oauthLoading, setOauthLoading]       = useState(null)
   const [biometricsAvailable, setBiometricsAvailable] = useState(false)
@@ -81,6 +83,8 @@ export default function Login() {
   const [isMobile,   setIsMobile]     = useState(window.innerWidth < 768)
   const { signIn }  = useAuth()
   const navigate    = useNavigate()
+
+  useEffect(() => { sessionStorage.removeItem('pc-login-notice') }, [])
 
   useEffect(() => {
     const h = () => setIsMobile(window.innerWidth < 768)
@@ -220,7 +224,7 @@ export default function Login() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', textAlign: 'left', marginBottom: '48px' }}>
           {[
             ['map-pin', 'GPS-verified clock-in & patrol tracking'],
-            ['alert-circle', 'Incident reports & real-time dispatch'],
+            ['alert-circle', 'Incident reports with automatic CAD numbers'],
             ['calendar', 'Scheduling, timesheets & compliance'],
           ].map(([, text]) => (
             <div key={text} style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
@@ -276,7 +280,7 @@ export default function Login() {
             {showBioBtn && (
               <button onClick={loginWithBiometrics} disabled={bioLoading || anyOauthLoading}
                 style={{ ...oauthBtn('#0d0f14', '#c8a84b', '#333'), marginBottom: '10px', opacity: (bioLoading || anyOauthLoading) ? 0.6 : 1 }}>
-                <span style={{ fontSize: '18px' }}>🔒</span>
+                <Icon name="lock" size={16} />
                 {bioLoading ? 'Authenticating...' : 'Sign In with Face ID'}
               </button>
             )}
@@ -331,6 +335,11 @@ export default function Login() {
                 </button>
               </div>
 
+              {notice && !error && (
+                <div style={{ background: '#fff8e6', border: '1px solid #f0d9a0', borderRadius: '8px', padding: '11px 14px', color: '#7a5a00', fontSize: '13px', marginBottom: '16px' }}>
+                  {notice}
+                </div>
+              )}
               {error && (
                 <div style={{ background: '#fff3f3', border: '1px solid #ffcccc', borderRadius: '8px', padding: '11px 14px', color: '#c0392b', fontSize: '13px', marginBottom: '16px' }}>
                   {error}
@@ -349,7 +358,7 @@ export default function Login() {
                 style={{ color: '#c8a84b', fontSize: '12px', textDecoration: 'none', fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: '0.3px', display: 'inline-flex', alignItems: 'center', gap: '5px', opacity: 0.75, transition: 'opacity 150ms ease' }}
                 onMouseEnter={e => e.currentTarget.style.opacity = '1'}
                 onMouseLeave={e => e.currentTarget.style.opacity = '0.75'}>
-                🗺 CCW Reciprocity Map — All 50 States
+                <Icon name="map" size={13} />CCW Reciprocity Map, All 50 States
               </a>
             </div>
 

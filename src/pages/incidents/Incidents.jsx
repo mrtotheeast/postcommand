@@ -539,7 +539,8 @@ function IncidentForm({profile,onClose,onSaved}) {
     // To enable: npm i @capacitor/screenshot-listener && npx cap sync
     ;(async () => {
       try {
-        const { ScreenshotListener } = await import(/* @vite-ignore */ '@capacitor/screenshot-listener')
+        const SCREENSHOT_PLUGIN = '@capacitor/screenshot-listener'
+        const { ScreenshotListener } = await import(/* @vite-ignore */ SCREENSHOT_PLUGIN)
         const handle = await ScreenshotListener.addListener('screenshotTaken', () => {
           setBlurred(true)
           supabase.from('screenshot_audit_log').insert({

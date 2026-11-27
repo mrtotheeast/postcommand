@@ -43,45 +43,38 @@ export function getTourSteps(level, company) {
   return steps
 }
 
-function getCardPosition(targetEl) {
-  if (!targetEl) return { top:'50%', left:'50%', transform:'translate(-50%,-50%)' }
-  const r = targetEl.getBoundingClientRect()
-  const cardW = 340, cardH = 260
-  const vw = window.innerWidth, vh = window.innerHeight
+const CARD_W = 340, CARD_H = 260
 
-  if (r.right + cardW + 24 < vw)
-    return { top: Math.min(r.top, vh - cardH - 20), left: r.right + 16, transform:'none' }
-  if (r.left - cardW - 24 > 0)
-    return { top: Math.min(r.top, vh - cardH - 20), left: r.left - cardW - 16, transform:'none' }
-  if (r.bottom + cardH + 24 < vh)
-    return { top: r.bottom + 16, left: Math.max(16, r.left - cardW / 2), transform:'none' }
-  return { top: Math.max(16, r.top - cardH - 16), left: Math.max(16, r.left - cardW / 2), transform:'none' }
+// Card placement next to a measured target rect, clamped to the viewport.
+function getCardPosition(rect) {
+  if (!rect) return { top:'50%', left:'50%', transform:'translate(-50%,-50%)' }
+  const vw = window.innerWidth, vh = window.innerHeight
+  const clampTop  = t => Math.max(16, Math.min(t, vh - CARD_H - 16))
+  const clampLeft = l => Math.max(16, Math.min(l, vw - CARD_W - 16))
+
+  if (rect.right + CARD_W + 24 < vw)
+    return { top: clampTop(rect.top), left: rect.right + 16, transform:'none' }
+  if (rect.left - CARD_W - 24 > 0)
+    return { top: clampTop(rect.top), left: rect.left - CARD_W - 16, transform:'none' }
+  if (rect.bottom + CARD_H + 24 < vh)
+    return { top: rect.bottom + 16, left: clampLeft(rect.left), transform:'none' }
+  return { top: clampTop(rect.top - CARD_H - 16), left: clampLeft(rect.left), transform:'none' }
 }
 
-function Spotlight({ targetEl }) {
-  const [rect, setRect] = useState(null)
+// A target counts as present only if it is in the DOM and has a visible size
+// (a collapsed sidebar or section renders nodes with zero width/height).
+function measure(selector) {
+  const el = document.querySelector(selector)
+  if (!el) return null
+  const r = el.getBoundingClientRect()
+  if (r.width === 0 || r.height === 0) return null
+  return { top:r.top, left:r.left, width:r.width, height:r.height, right:r.right, bottom:r.bottom }
+}
 
-  useEffect(() => {
-    if (!targetEl) { setRect(null); return }
+const sameRect = (a, b) => a && b && a.top === b.top && a.left === b.left && a.width === b.width && a.height === b.height
 
-    // Small delay to let DOM settle after scroll
-    const timer = setTimeout(() => {
-      const r = targetEl.getBoundingClientRect()
-      if (r.width === 0 && r.height === 0) {
-        setRect(null)
-        return
-      }
-      setRect({
-        top: r.top - 8,
-        left: r.left - 8,
-        width: r.width + 16,
-        height: r.height + 16,
-      })
-    }, 100)
-    return () => clearTimeout(timer)
-  }, [targetEl])
-
-  // No target or element not visible — soft dim only, no blackout
+function Spotlight({ rect }) {
+  // Centered step (no target) — soft dim only
   if (!rect) return (
     <div style={{
       position: 'fixed', inset: 0,
@@ -90,47 +83,70 @@ function Spotlight({ targetEl }) {
     }}/>
   )
 
+  const box = { top: rect.top - 8, left: rect.left - 8, width: rect.width + 16, height: rect.height + 16 }
   const dim = 'rgba(0,0,0,0.75)'
   const trans = { transition: 'all 300ms ease' }
 
   return (
     <div style={{ position:'fixed', inset:0, zIndex:10000, pointerEvents:'none' }}>
-      <div style={{ position:'absolute', top:0, left:0, right:0, height:rect.top, background:dim, ...trans }}/>
-      <div style={{ position:'absolute', top:rect.top+rect.height, left:0, right:0, bottom:0, background:dim, ...trans }}/>
-      <div style={{ position:'absolute', top:rect.top, left:0, width:rect.left, height:rect.height, background:dim, ...trans }}/>
-      <div style={{ position:'absolute', top:rect.top, left:rect.left+rect.width, right:0, height:rect.height, background:dim, ...trans }}/>
-      <div style={{ position:'absolute', top:rect.top, left:rect.left, width:rect.width, height:rect.height, border:'2px solid #c9a227', borderRadius:'8px', boxShadow:'0 0 0 4px rgba(201,162,39,0.2)', ...trans }}/>
+      <div style={{ position:'absolute', top:0, left:0, right:0, height:box.top, background:dim, ...trans }}/>
+      <div style={{ position:'absolute', top:box.top+box.height, left:0, right:0, bottom:0, background:dim, ...trans }}/>
+      <div style={{ position:'absolute', top:box.top, left:0, width:box.left, height:box.height, background:dim, ...trans }}/>
+      <div style={{ position:'absolute', top:box.top, left:box.left+box.width, right:0, height:box.height, background:dim, ...trans }}/>
+      <div style={{ position:'absolute', top:box.top, left:box.left, width:box.width, height:box.height, border:'2px solid #c9a227', borderRadius:'8px', boxShadow:'0 0 0 4px rgba(201,162,39,0.2)', ...trans }}/>
     </div>
   )
 }
 
+// Mounted by AppLayout, so it only runs for signed-in users inside the app shell.
 export function GuidedTour({ profile, onDone }) {
+  const [steps, setSteps]         = useState(null)   // resolved once the layout is on screen
   const [step, setStep]           = useState(0)
   const [neverShow, setNeverShow] = useState(false)
-  const [targetEl, setTargetEl]   = useState(null)
-  const [pos, setPos]             = useState({ top:'50%', left:'50%', transform:'translate(-50%,-50%)' })
+  const [rect, setRect]           = useState(null)
 
-  const level   = getRoleLevel(profile?.role)
-  const steps   = getTourSteps(level, profile?.company)
-  const current = steps[step]
-
+  // Wait for the sidebar to be visible (AppLayout expands it for the tour), then
+  // keep only steps whose target exists for this user's role. Missing targets
+  // are skipped rather than shown centered.
   useEffect(() => {
-    if (!current?.target) {
-      setTargetEl(null)
-      setPos({ top:'50%', left:'50%', transform:'translate(-50%,-50%)' })
-      return
+    const all = getTourSteps(getRoleLevel(profile?.role), profile?.company)
+    let tries = 0, timer
+    const resolve = () => {
+      if (!measure('[data-tour="sidebar"]') && tries++ < 30) { timer = setTimeout(resolve, 100); return }
+      const list = all.filter(s => !s.target || measure(s.target))
+      list.forEach((s, i) => { s.isFinal = i === list.length - 1 })
+      setSteps(list)
     }
-    const el = document.querySelector(current.target)
-    if (!el) {
-      // Element not in DOM (user hasn't navigated there yet) — center card, soft dim
-      setTargetEl(null)
-      setPos({ top:'50%', left:'50%', transform:'translate(-50%,-50%)' })
-      return
+    timer = setTimeout(resolve, 300)   // let the sidebar expand transition (250ms) finish
+    return () => clearTimeout(timer)
+  }, [])
+
+  const current = steps?.[step]
+
+  // Scroll the target into view, then follow it every frame. The selector is
+  // re-queried each time because the sidebar re-renders and replaces its nodes.
+  useEffect(() => {
+    setRect(null)
+    if (!current?.target) return
+    document.querySelector(current.target)?.scrollIntoView({ block:'nearest', behavior:'smooth' })
+    let raf, found = false
+    const started = Date.now()
+    const tick = () => {
+      const r = measure(current.target)
+      if (r) { found = true; setRect(prev => sameRect(prev, r) ? prev : r) }
+      // Target vanished since the steps were resolved: skip the step, never center it.
+      else if (!found && Date.now() - started > 1500) {
+        if (step < steps.length - 1) setStep(s => s + 1)
+        else skip()
+        return
+      }
+      raf = requestAnimationFrame(tick)
     }
-    setTargetEl(el)
-    setPos(getCardPosition(el))
-    el.scrollIntoView({ behavior:'smooth', block:'center' })
-  }, [step, current])
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [current?.target])
+
+  const pos = getCardPosition(current?.target ? rect : null)
 
   function finish() {
     localStorage.setItem(`pc-tour-seen-${profile.id}`, '1')
@@ -153,9 +169,12 @@ export function GuidedTour({ profile, onDone }) {
     ...pos,
   }
 
+  if (!steps || !current) return null
+  if (current.target && !rect) return <Spotlight rect={null} />
+
   return (
     <>
-      <Spotlight targetEl={targetEl} />
+      <Spotlight rect={current.target ? rect : null} />
 
       <div style={cardStyle}>
         <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:'12px' }}>

@@ -824,7 +824,7 @@ function Leaderboard({ assignments, empMap, courses }) {
     .map(([empId, stats]) => ({ empId, name:empMap[empId]||'Unknown', ...stats, pct:stats.total>0?Math.round((stats.completed/stats.total)*100):0 }))
     .sort((a,b) => b.pct-a.pct || b.completed-a.completed)
 
-  const medal = (i) => i===0?'🥇':i===1?'🥈':i===2?'🥉':`#${i+1}`
+  const medal = (i) => `#${i+1}`
 
   return (
     <div style={{ overflowX:isMobile?'auto':'visible' }}>

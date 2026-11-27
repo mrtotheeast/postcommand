@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
+import { sendEmployeeInvite } from '../../lib/invites'
+import { returnEmployeeToActive, REACTIVATE_FROM } from '../../lib/employeeStatus'
 import { useAuth } from '../../context/AuthContext'
 import { ROLE_LABELS, buildRoleOptions, atLeast } from '../../config/roles'
 import { logChange, logFieldChanges } from '../../lib/changeLog'
@@ -89,16 +91,8 @@ function OverviewTab({emp, canViewSensitive, canEdit, onRefresh, onEdit, viewerP
 
   async function sendInvite() {
     setInviting(true); setInviteMsg(null)
-    const { error } = await supabase.auth.signInWithOtp({
-      email: emp.email,
-      options: {
-        shouldCreateUser: true,
-        emailRedirectTo: 'https://postcommand.app',
-        data: { first_name: emp.first_name, last_name: emp.last_name, company_id: emp.company_id, employee_id: emp.id }
-      }
-    })
+    const { error } = await sendEmployeeInvite(emp, viewerProfile?.company?.name)
     if (!error) {
-      await supabase.from('employee').update({ invitation_status: 'sent' }).eq('id', emp.id)
       onRefresh?.()
       setInviteMsg({ ok:true, text:`Invite sent to ${emp.email}.` })
       toast('Invite sent to ' + emp.email, 'info')
@@ -478,8 +472,18 @@ function EmpEditModal({ emp, onClose, onSaved }) {
 
 export default function EmployeeProfile({ emp, allEmployees, activeTab, onTabChange, onNavigate, onClose, canViewSensitive, canEdit, onRefresh, profile }) {
   const [editing, setEditing] = useState(false)
+  const toast = useToast()
+  const [reactivating, setReactivating] = useState(false)
+  const [statusDone, setStatusDone] = useState(null)   // status set here, until the parent reloads emp
+  useEffect(() => { setStatusDone(null) }, [emp.id])
+  const empStatus = statusDone || emp.status
+  // In the header (not the Overview tab) so they show on every tab without scrolling.
+  // Same gate as Suspend / Terminate (canEdit = lieutenant and above, from Personnel).
+  const canReactivate = canEdit && REACTIVATE_FROM.includes(empStatus)
+  const canRehire     = canEdit && empStatus === 'terminated'
+  const canRestore    = canEdit && empStatus === 'archived'
   const rc = ROLE_COLORS[emp.role] || ROLE_COLORS.officer
-  const sc = STATUS_COLORS[emp.status] || STATUS_COLORS.inactive
+  const sc = STATUS_COLORS[empStatus] || STATUS_COLORS.inactive
   const ini = `${emp.first_name?.[0]??''}${emp.last_name?.[0]??''}`.toUpperCase()
 
   const currentIndex = allEmployees.findIndex(e => e.id === emp.id)
@@ -489,6 +493,23 @@ export default function EmployeeProfile({ emp, allEmployees, activeTab, onTabCha
   function goTo(offset) {
     const next = allEmployees[currentIndex + offset]
     if (next) onNavigate(next)
+  }
+
+  // Reactivate (suspended / on leave / inactive), rehire (terminated) or restore
+  // (archived). Same shared helper as the status-change dialog in Personnel.
+  async function returnToActive(mode) {
+    if (mode === 'rehire' && !window.confirm(`Rehire ${emp.first_name} ${emp.last_name}? Their status will be set to Active and the termination details will be cleared.`)) return
+    setReactivating(true)
+    const { error } = await returnEmployeeToActive({ ...emp, status: empStatus }, { mode, actor: profile })
+    if (error) {
+      setReactivating(false)
+      toast(friendlyError(error), 'error')
+      return
+    }
+    setReactivating(false)
+    setStatusDone('active')
+    toast({ reactivate:'Employee reactivated', rehire:'Employee rehired', restore:'Employee restored' }[mode], 'info')
+    onRefresh?.()
   }
 
   if (editing) return <EmpEditModal emp={emp} onClose={()=>setEditing(false)} onSaved={()=>{setEditing(false);onRefresh?.();onClose()}}/>
@@ -520,7 +541,7 @@ export default function EmployeeProfile({ emp, allEmployees, activeTab, onTabCha
               <div style={{fontSize:'12px',color:'var(--text-muted)',marginTop:'3px'}}>{emp.position_title||'No position assigned'}</div>
               <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginTop:'6px'}}>
                 <span style={{fontSize:'11px',fontWeight:600,padding:'2px 8px',borderRadius:'10px',background:rc.bg,color:rc.color}}>{ROLE_LABELS[emp.role]??emp.role}</span>
-                <span style={{fontSize:'11px',fontWeight:600,padding:'2px 8px',borderRadius:'10px',background:sc.bg,color:sc.color}}>{emp.status}</span>
+                <span style={{fontSize:'11px',fontWeight:600,padding:'2px 8px',borderRadius:'10px',background:sc.bg,color:sc.color}}>{empStatus}</span>
                 {emp.is_armed&&<span style={{fontSize:'11px',fontWeight:600,padding:'2px 8px',borderRadius:'10px',background:'rgba(201,162,39,0.12)',color:'var(--accent)'}}>Armed</span>}
                 {emp.has_app_access || emp.invitation_status==='accepted'
                   ? <span style={{fontSize:'10px',fontWeight:700,padding:'2px 7px',borderRadius:'10px',background:'var(--color-success-bg)',color:'var(--color-success)'}}>APP ACCESS</span>
@@ -531,6 +552,25 @@ export default function EmployeeProfile({ emp, allEmployees, activeTab, onTabCha
                       : <span style={{fontSize:'10px',fontWeight:700,padding:'2px 7px',borderRadius:'10px',background:'var(--border)',color:'var(--text-muted)'}}>NOT INVITED</span>
                 }
               </div>
+              {(canReactivate || canRehire || canRestore) && (
+                <div style={{display:'flex',gap:'8px',flexWrap:'wrap',marginTop:'10px'}}>
+                  {canReactivate && (
+                    <button onClick={() => returnToActive('reactivate')} disabled={reactivating} style={{display:'inline-flex',alignItems:'center',gap:'8px',background:'var(--color-success-bg)',border:'1px solid rgba(58,170,106,0.3)',borderRadius:'var(--radius-md)',color:'var(--color-success)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',padding:'0 18px',height:'40px',opacity:reactivating?0.6:1}}>
+                      <Icon name="refresh-cw" size={14}/>{reactivating?'SAVING...':'REACTIVATE EMPLOYEE'}
+                    </button>
+                  )}
+                  {canRehire && (
+                    <button onClick={() => returnToActive('rehire')} disabled={reactivating} style={{display:'inline-flex',alignItems:'center',gap:'8px',background:'var(--accent-bg)',border:'1px solid var(--accent-border)',borderRadius:'var(--radius-md)',color:'var(--accent)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',padding:'0 18px',height:'40px',opacity:reactivating?0.6:1}}>
+                      <Icon name="user-plus" size={14}/>{reactivating?'SAVING...':'REHIRE EMPLOYEE'}
+                    </button>
+                  )}
+                  {canRestore && (
+                    <button onClick={() => returnToActive('restore')} disabled={reactivating} style={{display:'inline-flex',alignItems:'center',gap:'8px',background:'var(--color-success-bg)',border:'1px solid rgba(58,170,106,0.3)',borderRadius:'var(--radius-md)',color:'var(--color-success)',fontFamily:'var(--font-condensed)',fontSize:'13px',fontWeight:700,letterSpacing:'1px',cursor:'pointer',padding:'0 18px',height:'40px',opacity:reactivating?0.6:1}}>
+                      <Icon name="archive" size={14}/>{reactivating?'SAVING...':'RESTORE EMPLOYEE'}
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>

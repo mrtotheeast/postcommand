@@ -4,6 +4,9 @@ import { supabase } from '../../lib/supabase'
 import { withLoadTimeout } from '../../lib/withLoadTimeout'
 import { ROLE_LABELS } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
+import { useToast } from '../../components/ui/Toast'
+import { dbErrorMessage } from '../../lib/dbErrors'
+import { returnEmployeeToActive, activationModeFor } from '../../lib/employeeStatus'
 
 const s = {
   page:     { padding:'24px', maxWidth:'1100px', animation:'fadeIn 200ms ease' },
@@ -34,13 +37,14 @@ export default function Archived() {
     { id:'employees', label:'Employees' },
     { id:'sites',     label:'Sites' },
     { id:'incidents', label:'Incidents' },
+    { id:'clients',   label:'Clients' },
   ]
 
   return (
     <div style={s.page}>
       <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}`}</style>
       <h2 style={s.heading}>ARCHIVED RECORDS</h2>
-      <p style={s.sub}>Restore archived employees, sites, and incidents or permanently delete them.</p>
+      <p style={s.sub}>Restore archived employees, sites, incidents, and clients.</p>
 
       <div style={s.tabs}>
         {TABS.map(t => (
@@ -55,16 +59,18 @@ export default function Archived() {
         />
       </div>
 
-      {tab === 'employees' && <ArchivedEmployees companyId={profile.company_id} search={search} acting={acting} setActing={setActing} />}
+      {tab === 'employees' && <ArchivedEmployees companyId={profile.company_id} profile={profile} search={search} acting={acting} setActing={setActing} />}
       {tab === 'sites'     && <ArchivedSites     companyId={profile.company_id} search={search} acting={acting} setActing={setActing} />}
       {tab === 'incidents' && <ArchivedIncidents  companyId={profile.company_id} search={search} acting={acting} setActing={setActing} />}
+      {tab === 'clients'   && <ArchivedClients    companyId={profile.company_id} search={search} acting={acting} setActing={setActing} />}
     </div>
   )
 }
 
 // ── Archived Employees ────────────────────────────────────────────────────────
 
-function ArchivedEmployees({ companyId, search, acting, setActing }) {
+function ArchivedEmployees({ companyId, profile, search, acting, setActing }) {
+  const toast = useToast()
   const [employees, setEmployees] = useState([])
   const [loading, setLoading]     = useState(true)
 
@@ -73,11 +79,13 @@ function ArchivedEmployees({ companyId, search, acting, setActing }) {
   const load = withLoadTimeout(async function load() {
     setLoading(true)
     try {
-      const { data } = await supabase.from('employee')
-        .select('id,first_name,last_name,role,status,position_title,terminated_date,email')
+      const { data, error } = await supabase.from('employee')
+        .select('id,company_id,first_name,last_name,role,status,position_title,terminated_date,email')
         .eq('company_id', companyId)
-        .in('status', ['terminated','inactive','suspended'])
+        .in('status', ['terminated','inactive','suspended','archived'])
         .order('last_name')
+      // Surface a failed query instead of silently showing "No archived employees found".
+      if (error) toast(dbErrorMessage(error), 'error')
       setEmployees(data || [])
     } finally {
       setLoading(false)
@@ -85,9 +93,15 @@ function ArchivedEmployees({ companyId, search, acting, setActing }) {
   }, { setLoading })
 
   async function restore(emp) {
+    // Restoring a terminated employee is a rehire: confirm first (same wording as the profile Rehire button).
+    if (emp.status === 'terminated' && !window.confirm(`Rehire ${emp.first_name} ${emp.last_name}? Their status will be set to Active and the termination details will be cleared.`)) return
     setActing(emp.id)
-    await supabase.from('employee').update({ status:'active', terminated_date:null }).eq('id', emp.id)
-    setActing(null); load()
+    // Same shared helper as the Personnel dialog and profile header (update + change log).
+    const { error } = await returnEmployeeToActive(emp, { mode: activationModeFor(emp.status), actor: profile })
+    setActing(null)
+    if (error) { toast(dbErrorMessage(error), 'error'); return }
+    toast(`${emp.first_name} ${emp.last_name} restored`)
+    load()
   }
 
   async function hardDelete(emp) {
@@ -104,7 +118,7 @@ function ArchivedEmployees({ companyId, search, acting, setActing }) {
 
   if (loading) return <div style={{ color:'var(--text-muted)', fontSize:'12px', fontFamily:'var(--font-condensed)', letterSpacing:'1px' }}>LOADING...</div>
 
-  const STATUS_COLORS = { terminated:'var(--color-danger)', inactive:'var(--text-muted)', suspended:'var(--color-warning)' }
+  const STATUS_COLORS = { terminated:'var(--color-danger)', inactive:'var(--text-muted)', suspended:'var(--color-warning)', archived:'var(--text-muted)' }
 
   return (
     <div>
@@ -276,6 +290,80 @@ function ArchivedIncidents({ companyId, search, acting, setActing }) {
                 <Icon name="trash-2" size={12}/>DELETE
               </button>
             </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Archived Clients ──────────────────────────────────────────────────────────
+// Archived = status 'inactive' with deletion_date set. Restore changes only the
+// client row. No hard delete here: clients with contracts must be kept.
+
+function ArchivedClients({ companyId, search, acting, setActing }) {
+  const toast = useToast()
+  const [clients, setClients] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => { load() }, [companyId])
+
+  const load = withLoadTimeout(async function load() {
+    setLoading(true)
+    try {
+      const { data, error } = await supabase.from('client')
+        .select('id,name,legal_name,deletion_date,deletion_reason,deletion_initiated_by')
+        .eq('company_id', companyId)
+        .not('deletion_date', 'is', null)
+        .order('name')
+      if (error) throw error
+      setClients(data || [])
+    } catch (e) {
+      toast(dbErrorMessage(e), 'error')
+    } finally {
+      setLoading(false)
+    }
+  }, { setLoading })
+
+  async function restore(c) {
+    setActing(c.id)
+    const { error } = await supabase.from('client')
+      .update({ status:'active', deletion_date:null, deletion_reason:null, deletion_initiated_by:null })
+      .eq('id', c.id).eq('company_id', companyId)
+    setActing(null)
+    if (error) { toast(dbErrorMessage(error), 'error'); return }
+    toast(`${c.name} restored`)
+    load()
+  }
+
+  const filtered = clients.filter(c => !search || c.name?.toLowerCase().includes(search.toLowerCase()) || c.legal_name?.toLowerCase().includes(search.toLowerCase()))
+
+  if (loading) return <div style={{ color:'var(--text-muted)', fontSize:'12px', fontFamily:'var(--font-condensed)', letterSpacing:'1px' }}>LOADING...</div>
+
+  return (
+    <div>
+      <div style={{ fontSize:'12px', color:'var(--text-muted)', marginBottom:'12px' }}>{filtered.length} archived client{filtered.length!==1?'s':''}</div>
+      <div style={s.card}>
+        {filtered.length === 0 ? <div style={s.empty}>No archived clients found.</div> : filtered.map((c, i) => (
+          <div key={c.id} style={{ ...s.row, borderBottom:i<filtered.length-1?'1px solid var(--border)':'none' }}
+            onMouseEnter={e=>e.currentTarget.style.background='var(--bg-card-hover)'}
+            onMouseLeave={e=>e.currentTarget.style.background='transparent'}
+          >
+            <div style={{ width:'40px', height:'40px', borderRadius:'var(--radius-sm)', background:'var(--border)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+              <Icon name="briefcase" size={18} color="var(--text-muted)"/>
+            </div>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={s.name}>{c.name}</div>
+              <div style={s.meta}>
+                Archived {new Date(c.deletion_date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}
+                {c.deletion_initiated_by ? ` by ${c.deletion_initiated_by}` : ''}
+                {c.deletion_reason ? ` · ${c.deletion_reason}` : ''}
+              </div>
+            </div>
+            <span style={{ ...s.pill, background:'var(--border)', color:'var(--text-muted)' }}>ARCHIVED</span>
+            <button style={{ ...s.restoreBtn, opacity:acting===c.id?0.6:1 }} onClick={()=>restore(c)} disabled={acting===c.id}>
+              <Icon name="refresh-cw" size={12}/>{acting===c.id?'...':'RESTORE'}
+            </button>
           </div>
         ))}
       </div>

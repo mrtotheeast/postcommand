@@ -28,13 +28,13 @@ PostCommand is the complete workforce management platform for licensed security 
 • View your schedule and request shift swaps
 • Complete training courses and earn certificates
 • Request PTO and view approval status
-• Receive real-time push notifications for schedule changes
+• Email notification when a shift is published to you
 • SOS emergency alert with instant supervisor notification
 • QR code patrol checkpoint scanning with route verification
 • Equipment check-out and check-in tracking
 
 **FEATURES FOR SUPERVISORS & ADMINISTRATORS:**
-• Real-time officer location map across all sites
+• Officer location map across all sites
 • Schedule creation, management, and auto-assignment
 • Timesheet review, approval, and payroll export (ADP/Paychex)
 • Pay period close flow with no-show tracking
@@ -80,7 +80,7 @@ https://www.nationwidepolice.com/nps-portal#section-3
 
 • Employee profiles now fully functional — training, documents, PTO, uniforms, and performance reviews
 • Patrol checkpoint QR scanning with location recording
-• Real-time officer GPS tracking on Live Map (updates every 60 seconds while on duty)
+• Live Map of on-duty officers by site, with manual refresh
 • Notifications panel now loads from database with click-to-navigate
 • Full audit log at /audit for admin visibility
 • Equipment & Uniform inventory with QR code generation and printing
@@ -119,7 +119,7 @@ PostCommand is a private enterprise workforce management tool for licensed secur
 ## Screenshots (6 screens)
 
 ### Screenshot 1 — Dashboard
-**Caption:** Real-time workforce overview
+**Caption:** Workforce overview
 Role-based dashboard showing active officer count, pending timesheets, open incidents, and quick-access tiles for all core functions.
 
 ### Screenshot 2 — Personnel
@@ -136,7 +136,7 @@ Guided AI mode answers structured questions and writes the formal narrative for 
 
 ### Screenshot 5 — Patrol Logs
 **Caption:** QR checkpoint scanning & verification
-Officers scan QR codes at each checkpoint. Supervisors see completion rates, route maps, and missed checkpoints in real time.
+Officers scan QR codes at each checkpoint. Supervisors see completion rates, route maps, and missed checkpoints.
 
 ### Screenshot 6 — CCW Map
 **Caption:** Concealed carry reciprocity reference

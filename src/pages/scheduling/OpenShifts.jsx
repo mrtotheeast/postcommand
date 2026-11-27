@@ -90,7 +90,7 @@ function SheetHeader({ title, onClose, onBack }) {
 function WarningBox({ text }) {
   return (
     <div style={{ background:'rgba(232,148,58,0.08)', border:'1px solid rgba(232,148,58,0.3)', borderRadius:'var(--radius-md)', padding:'12px 14px', marginBottom:'16px' }}>
-      <div style={{ fontSize:'13px', color:'var(--color-warning)', lineHeight:1.5 }}>⚠ {text}</div>
+      <div style={{ fontSize:'13px', color:'var(--color-warning)', lineHeight:1.5 }}><Icon name="alert-triangle" size={13} /> {text}</div>
     </div>
   )
 }
@@ -559,7 +559,7 @@ export default function OpenShifts() {
 
               {otWarning && (
                 <div style={{ marginTop:'16px', background:'rgba(232,148,58,0.08)', border:'1px solid rgba(232,148,58,0.35)', borderRadius:'var(--radius-md)', padding:'14px' }}>
-                  <div style={{ fontFamily:'var(--font-condensed)', fontSize:'12px', fontWeight:700, color:'var(--color-warning)', letterSpacing:'1px', marginBottom:'10px' }}>⚠ OVERTIME WARNING</div>
+                  <div style={{ fontFamily:'var(--font-condensed)', fontSize:'12px', fontWeight:700, color:'var(--color-warning)', letterSpacing:'1px', marginBottom:'10px' }}><Icon name="alert-triangle" size={12} /> OVERTIME WARNING</div>
                   {[
                     ['Current hours this week', fmtH(otWarning.currentHours)],
                     ['This shift adds',          fmtH(otWarning.newShiftHours)],

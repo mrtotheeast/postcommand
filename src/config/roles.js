@@ -20,14 +20,36 @@ export const ROLE_TITLES = {
     0: 'Client',
   },
   standard: {
-    6: 'Super Admin',
-    5: 'Admin',
+    6: 'Admin',
+    5: 'CEO',
     4: 'Manager',
     3: 'Supervisor',
-    2: 'Lead',
-    1: 'Employee',
+    2: 'OIC',
+    1: 'Officer',
     0: 'Client',
   },
+}
+
+// Per-style labels for roles that are not on the rank ladder.
+export const ROLE_STYLE_LABELS = {
+  standard: { accounting: 'Accountant' },
+}
+
+// Custom ranks seeded when a company has none set. Levels stay below super_admin (6).
+export const MAX_CUSTOM_RANK_LEVEL = 5.9
+export const DEFAULT_CUSTOM_RANKS = {
+  military: [ { title:'Captain', level:4.4, slug:'captain' }, { title:'Major', level:4.7, slug:'major' } ],
+  standard: [ { title:'Lead',    level:2.5, slug:'lead' },    { title:'CFO',   level:5,   slug:'cfo' } ],
+}
+
+const RANK_LADDER = new Set(['officer','corporal','sergeant','lieutenant','chief','super_admin'])
+
+// Display label for a built-in role under a company's role style.
+export function roleDisplayLabel(role, style = 'military') {
+  const override = ROLE_STYLE_LABELS[style]?.[role]
+  if (override) return override
+  if (RANK_LADDER.has(role)) return ROLE_TITLES[style]?.[ROLE_LEVELS[role]] ?? ROLE_LABELS[role] ?? role
+  return ROLE_LABELS[role] ?? role
 }
 
 // ── Helper functions ───────────────────────────────────────────────────────────
@@ -76,7 +98,7 @@ export function buildRoleOptions(company) {
   const builtins = ['officer','corporal','sergeant','lieutenant','chief','hr','accounting','office_staff']
   const builtinOpts = builtins.map(r => ({
     value: r,
-    label: MILITARY.has(r) ? (ROLE_TITLES[roleStyle]?.[ROLE_LEVELS[r]] ?? ROLE_LABELS[r] ?? r) : (ROLE_LABELS[r] ?? r),
+    label: MILITARY.has(r) ? (ROLE_TITLES[roleStyle]?.[ROLE_LEVELS[r]] ?? ROLE_LABELS[r] ?? r) : roleDisplayLabel(r, roleStyle),
     level: ROLE_LEVELS[r] ?? 1,
   }))
   const customOpts = (customRanks || [])
@@ -135,7 +157,7 @@ export const FEATURE_ACCESS = {
   timesheets:       { minLevel:3, description:'Approve timesheets and close pay periods' },
   personnel_view:   { minLevel:3, description:'View employee profiles and credentials' },
   reports:          { minLevel:3, description:'Access reports and analytics' },
-  live_map:         { minLevel:1, description:'View real-time officer locations' },
+  live_map:         { minLevel:1, description:'View on-duty officer locations' },
   personnel_edit:   { minLevel:4, description:'Edit employee records and status' },
   personnel_invite: { minLevel:4, description:'Invite employees to the app' },
   hr_management:    { minLevel:4, description:'Manage HR documents and onboarding' },
@@ -145,6 +167,12 @@ export const FEATURE_ACCESS = {
   payroll:          { minLevel:4, description:'Run payroll via ADP Workforce Now' },
   super_admin:      { minLevel:6, description:'Platform-wide administration' },
 }
+
+// ── Service contracts ──────────────────────────────────────────────────────────
+// Mirror the database helpers can_manage_contracts() / is_contract_admin().
+// RLS is the real boundary; these only decide what the UI shows.
+export const CONTRACT_ROLES       = ['super_admin','chief','accounting']
+export const CONTRACT_ADMIN_ROLES = ['super_admin','chief']   // may permanently delete
 
 // ── Navigation ─────────────────────────────────────────────────────────────────
 
@@ -172,7 +200,8 @@ export const NAV_ITEMS = [
     { id:'sites', label:'Site Management', path:'/sites', icon:'map', roles:['super_admin','chief','lieutenant','office_staff'] },
     { id:'hr', label:'HR & Documents', path:'/hr', icon:'folder', roles:['super_admin','chief','lieutenant','hr','office_staff'] },
     { id:'invoices', label:'Invoices', path:'/invoices', icon:'file-text', roles:['super_admin','chief','accounting'] },
-    { id:'payroll',  label:'Payroll',  path:'/payroll',  icon:'dollar-sign', roles:['super_admin','chief','lieutenant','accounting'] },
+    { id:'contracts', label:'Contracts', path:'/contracts', icon:'file-check', roles:['super_admin','chief','accounting'] },
+    { id:'payroll', label:'Payroll',  path:'/payroll',  icon:'dollar-sign', roles:['super_admin','chief','lieutenant','accounting'] },
     { id:'uniforms', label:'Uniforms', path:'/uniforms', icon:'tag', roles:['super_admin','chief','lieutenant','sergeant','corporal','officer','office_staff'] },
     { id:'reports',  label:'Reports',  path:'/reports',  icon:'bar-chart-2', roles:['super_admin','chief','lieutenant','hr','accounting'] },
     { id:'messaging', label:'Messaging', path:'/messaging', icon:'message-circle', badge:true, roles:['super_admin','chief','lieutenant','sergeant','corporal','officer','hr','accounting','office_staff'] },
