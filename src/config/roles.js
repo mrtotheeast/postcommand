@@ -228,5 +228,5 @@ export const DASHBOARD_TILES = [
   { id:'hr', label:'HR & Documents', desc:'Employee lifecycle and documents', path:'/hr', icon:'star', color:'gold', roles:['super_admin','chief','lieutenant','hr','office_staff'] },
   { id:'invoices', label:'Invoices', desc:'Generate, send, and manage billing', path:'/invoices', icon:'credit-card', color:'teal', badgeKey:'pending_invoices', roles:['super_admin','chief','accounting'] },
   { id:'uniforms', label:'Uniform Requests', desc:'Request and track uniform orders', path:'/uniforms', icon:'shield', color:'blue', badgeKey:'pending_uniforms', roles:['super_admin','chief','lieutenant','sergeant','corporal','officer','office_staff'] },
-  { id:'settings', label:'Role Management', desc:'Permissions, elevations, overrides', path:'/settings', icon:'settings', color:'purple', roles:['super_admin','chief'] },
+  { id:'settings', label:'Role Management', desc:'Permissions, elevations, overrides', path:'/settings?tab=team', icon:'settings', color:'purple', roles:['super_admin','chief'] },
 ]
