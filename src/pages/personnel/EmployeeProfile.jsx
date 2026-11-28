@@ -5,6 +5,7 @@ import { returnEmployeeToActive, REACTIVATE_FROM } from '../../lib/employeeStatu
 import { useAuth } from '../../context/AuthContext'
 import { ROLE_LABELS, buildRoleOptions, atLeast } from '../../config/roles'
 import { logChange, logFieldChanges } from '../../lib/changeLog'
+import { loadEmployeeDetail, saveEmployeePrivate, saveEmployeeHr } from '../../lib/employeeData'
 import { meetsLevel, PERMISSION_KEYS } from '../../config/roles'
 import Icon from '../../components/ui/Icon'
 import { useToast } from '../../components/ui/Toast'
@@ -111,7 +112,7 @@ function OverviewTab({emp, canViewSensitive, canEdit, onRefresh, onEdit, viewerP
       )}
       <Section title="Contact">
         {canViewSensitive && <InfoRow label="Email" value={emp.email}/>}
-        {canViewSensitive && <InfoRow label="Phone" value={emp.phone_number}/>}
+        {canViewSensitive && <InfoRow label="Phone" value={emp.hasPrivate ? emp.phone_number : 'Restricted'} color={emp.hasPrivate ? undefined : 'var(--text-muted)'}/>}
         {!canViewSensitive && <div style={{fontSize:'12px',color:'var(--text-muted)',fontStyle:'italic'}}>Contact info restricted to Lieutenant+</div>}
       </Section>
       <Section title="Employment">
@@ -130,7 +131,12 @@ function OverviewTab({emp, canViewSensitive, canEdit, onRefresh, onEdit, viewerP
         <InfoRow label="Role" value={ROLE_LABELS[emp.role]??emp.role}/>
         <InfoRow label="Status" value={emp.status}/>
       </Section>
-      {canViewSensitive && emp.emergency_contact_name && (
+      {canViewSensitive && !emp.hasPrivate && (
+        <Section title="Emergency Contact">
+          <div style={{fontSize:'12px',color:'var(--text-muted)',fontStyle:'italic'}}>Restricted</div>
+        </Section>
+      )}
+      {canViewSensitive && emp.hasPrivate && emp.emergency_contact_name && (
         <Section title="Emergency Contact">
           <InfoRow label="Name" value={emp.emergency_contact_name}/>
           <InfoRow label="Phone" value={emp.emergency_contact_phone}/>
@@ -384,6 +390,7 @@ function EmpEditModal({ emp, onClose, onSaved }) {
   const roleOptions = buildRoleOptions(profile?.company)
   const STATUS_LIST = ['active','inactive','probation','suspended','terminated']
   const EMP_TYPES  = ['full_time','part_time','contract','1099']
+  // phone_number lives in employee_private, notes in employee_hr. Only edit them if RLS returned the row.
   const [form, setForm] = useState({
     first_name: emp.first_name||'', last_name: emp.last_name||'', middle_name: emp.middle_name||'',
     email: emp.email||'', phone_number: emp.phone_number||'', position_title: emp.position_title||'',
@@ -398,15 +405,26 @@ function EmpEditModal({ emp, onClose, onSaved }) {
 
   async function save() {
     setSaving(true)
-    await supabase.from('employee').update({
-      first_name:form.first_name.trim(), last_name:form.last_name.trim(),
-      middle_name:form.middle_name.trim()||null, email:form.email.trim()||null,
-      phone_number:form.phone_number.trim()||null, position_title:form.position_title.trim()||null,
-      role:form.role, status:form.status, employment_type:form.employment_type,
-      is_armed:form.is_armed, has_app_access:form.has_app_access,
-      hire_date:form.hire_date||null, notes:form.notes.trim()||null,
-      employee_id_number:form.employee_id_number.trim()||null,
-    }).eq('id', emp.id)
+    const phone = form.phone_number.trim()||null
+    const notes = form.notes.trim()||null
+    try {
+      const { error } = await supabase.from('employee').update({
+        first_name:form.first_name.trim(), last_name:form.last_name.trim(),
+        middle_name:form.middle_name.trim()||null, email:form.email.trim()||null,
+        position_title:form.position_title.trim()||null,
+        role:form.role, status:form.status, employment_type:form.employment_type,
+        is_armed:form.is_armed, has_app_access:form.has_app_access,
+        hire_date:form.hire_date||null,
+        employee_id_number:form.employee_id_number.trim()||null,
+      }).eq('id', emp.id)
+      if (error) throw error
+      if (emp.hasPrivate && phone !== (emp.phone_number||null)) await saveEmployeePrivate(emp.id, { phone_number: phone }, emp.company_id)
+      if (emp.hasHr && notes !== (emp.notes||null)) await saveEmployeeHr(emp.id, { notes }, emp.company_id)
+    } catch (e) {
+      toast(friendlyError(e), 'error')
+      setSaving(false)
+      return
+    }
     // Log changed fields
     if (emp.company_id) {
       const { data: viewer } = await supabase.from('user_profile').select('id,first_name,last_name,role').single().then ? { data: null } : { data: null }
@@ -416,7 +434,7 @@ function EmpEditModal({ emp, onClose, onSaved }) {
         { ...emp, ...form },
         {
           email:           { label:'Email',           changeType:'field_update' },
-          phone_number:    { label:'Phone',            changeType:'field_update' },
+          ...(emp.hasPrivate ? { phone_number: { label:'Phone', changeType:'field_update' } } : {}),
           role:            { label:'Role',             changeType:'field_update' },
           status:          { label:'Status',           changeType:'status_change' },
           position_title:  { label:'Position Title',   changeType:'field_update' },
@@ -441,7 +459,7 @@ function EmpEditModal({ emp, onClose, onSaved }) {
             <div><div style={lbl}>First Name</div><input style={inp} value={form.first_name} onChange={e=>setF('first_name',e.target.value)}/></div>
             <div><div style={lbl}>Last Name</div><input style={inp} value={form.last_name} onChange={e=>setF('last_name',e.target.value)}/></div>
             <div><div style={lbl}>Email</div><input style={inp} type="email" value={form.email} onChange={e=>setF('email',e.target.value)}/></div>
-            <div><div style={lbl}>Phone</div><input style={inp} value={form.phone_number} onChange={e=>setF('phone_number',e.target.value)}/></div>
+            {emp.hasPrivate && <div><div style={lbl}>Phone</div><input style={inp} value={form.phone_number} onChange={e=>setF('phone_number',e.target.value)}/></div>}
             <div><div style={lbl}>Position Title</div><input style={inp} value={form.position_title} onChange={e=>setF('position_title',e.target.value)}/></div>
             <div><div style={lbl}>Employee ID</div><input style={inp} value={form.employee_id_number} onChange={e=>setF('employee_id_number',e.target.value)}/></div>
             <div><div style={lbl}>Role</div><select style={{...inp,cursor:'pointer'}} value={form.role} onChange={e=>setF('role',e.target.value)}>{roleOptions.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
@@ -449,7 +467,7 @@ function EmpEditModal({ emp, onClose, onSaved }) {
             <div><div style={lbl}>Employment Type</div><select style={{...inp,cursor:'pointer'}} value={form.employment_type} onChange={e=>setF('employment_type',e.target.value)}>{EMP_TYPES.map(t=><option key={t} value={t}>{t.replace('_',' ')}</option>)}</select></div>
             <div><div style={lbl}>Hire Date</div><input style={inp} type="date" value={form.hire_date} onChange={e=>setF('hire_date',e.target.value)}/></div>
           </div>
-          <div><div style={lbl}>Notes</div><textarea style={{...inp,minHeight:'60px',resize:'vertical',lineHeight:1.5}} value={form.notes} onChange={e=>setF('notes',e.target.value)}/></div>
+          {emp.hasHr && <div><div style={lbl}>Notes</div><textarea style={{...inp,minHeight:'60px',resize:'vertical',lineHeight:1.5}} value={form.notes} onChange={e=>setF('notes',e.target.value)}/></div>}
           <div style={{display:'flex',gap:'20px'}}>
             <label style={{display:'flex',alignItems:'center',gap:'8px',fontSize:'13px',color:'var(--text-primary)',cursor:'pointer'}}>
               <input type="checkbox" checked={form.is_armed} onChange={e=>setF('is_armed',e.target.checked)} style={{accentColor:'var(--accent)',width:'16px',height:'16px'}}/>Armed
@@ -470,8 +488,22 @@ function EmpEditModal({ emp, onClose, onSaved }) {
 
 // ── Main EmployeeProfile Component ────────────────────────────────────────────
 
-export default function EmployeeProfile({ emp, allEmployees, activeTab, onTabChange, onNavigate, onClose, canViewSensitive, canEdit, onRefresh, profile }) {
+export default function EmployeeProfile({ emp: listEmp, allEmployees, activeTab, onTabChange, onNavigate, onClose, canViewSensitive, canEdit, onRefresh, profile }) {
   const [editing, setEditing] = useState(false)
+  // The directory row has no private/HR data; load the full record (RLS-filtered) for this employee.
+  const [loaded, setLoaded] = useState(null) // { id, detail, error }
+  useEffect(() => {
+    let cancelled = false
+    const id = listEmp.id
+    loadEmployeeDetail(id)
+      .then(d => { if (!cancelled) setLoaded({ id, detail: d, error: d ? null : 'This employee record is not available.' }) })
+      .catch(() => { if (!cancelled) setLoaded({ id, detail: null, error: 'Could not load employee details. Please try again.' }) })
+    return () => { cancelled = true }
+  }, [listEmp.id])
+  const current = loaded?.id === listEmp.id ? loaded : null
+  const detail = current?.detail || null
+  const detailError = current?.error || null
+  const emp = detail || listEmp
   const toast = useToast()
   const [reactivating, setReactivating] = useState(false)
   const [statusDone, setStatusDone] = useState(null)   // status set here, until the parent reloads emp
@@ -512,7 +544,7 @@ export default function EmployeeProfile({ emp, allEmployees, activeTab, onTabCha
     onRefresh?.()
   }
 
-  if (editing) return <EmpEditModal emp={emp} onClose={()=>setEditing(false)} onSaved={()=>{setEditing(false);onRefresh?.();onClose()}}/>
+  if (editing && detail) return <EmpEditModal emp={detail} onClose={()=>setEditing(false)} onSaved={()=>{setEditing(false);onRefresh?.();onClose()}}/>
 
   return (
     <>
@@ -588,7 +620,10 @@ export default function EmployeeProfile({ emp, allEmployees, activeTab, onTabCha
 
         {/* Tab Content */}
         <div style={{flex:1,overflowY:'auto'}}>
-          {activeTab === 'overview'    && <OverviewTab emp={emp} canViewSensitive={canViewSensitive} canEdit={canEdit} onRefresh={onRefresh} onEdit={()=>setEditing(true)} viewerProfile={profile}/>}
+          {activeTab === 'overview' && !detail && (
+            <div style={{padding:'24px',fontSize:'12px',color:detailError?'var(--color-danger)':'var(--text-muted)'}}>{detailError || 'Loading...'}</div>
+          )}
+          {activeTab === 'overview' && detail && <OverviewTab emp={detail} canViewSensitive={canViewSensitive} canEdit={canEdit} onRefresh={onRefresh} onEdit={()=>setEditing(true)} viewerProfile={profile}/>}
           {activeTab === 'credentials' && <CredentialsTab emp={emp} canEdit={canEdit}/>}
           {activeTab === 'training'    && <TrainingTab emp={emp} canEdit={canEdit}/>}
           {activeTab === 'documents'   && <DocumentsTab emp={emp} canEdit={canEdit}/>}
