@@ -8,6 +8,7 @@ import Icon from '../../components/ui/Icon'
 import EmployeeProfile from './EmployeeProfile'
 import { useToast } from '../../components/ui/Toast'
 import { canAddOfficer, NPS_COMPANY_ID } from '../../lib/plans'
+import { saveEmployeeHr, createEmployeeSideRows } from '../../lib/employeeData'
 import UpgradeModal from '../../components/ui/UpgradeModal'
 
 const ROLE_COLORS = {
@@ -98,7 +99,7 @@ export default function Personnel() {
       const [{ data, error }, { data: compData, error: compErr }] = await Promise.all([
         supabase
           .from('employee')
-          .select('id,company_id,first_name,middle_name,last_name,email,phone_number,role,status,employment_type,employment_classification,position_title,pay_rate,hire_date,is_armed,has_app_access,profile_photo_url,employee_id_number,invitation_status,terminated_date,probation_end_date,emergency_contact_name,emergency_contact_phone,emergency_contact_relation,notes')
+          .select('id,company_id,first_name,middle_name,last_name,email,role,status,employment_type,employment_classification,position_title,hire_date,is_armed,has_app_access,profile_photo_url,employee_id_number,invitation_status,terminated_date,probation_end_date')
           .eq('company_id', profile.company_id)
           .order('last_name', { ascending: true }),
         supabase.from('company').select('plan').eq('id', profile.company_id).single(),
@@ -306,6 +307,7 @@ function parseCSV(text) {
 }
 
 function CSVImportModal({ companyId, onClose, onImported }) {
+  const toast = useToast()
   const { profile } = useAuth()
   const validRoles = useMemo(() => buildRoleOptions(profile?.company).map(o => o.value), [profile?.company])
   const fileRef   = useRef(null)
@@ -330,7 +332,7 @@ function CSVImportModal({ companyId, onClose, onImported }) {
   async function doImport() {
     if (!preview?.rows?.length) return
     setImporting(true)
-    let success = 0, failed = 0
+    let success = 0, failed = 0, sideFailed = 0
     for (const row of preview.rows) {
       if (!row.first_name || !row.last_name) { failed++; continue }
       const role = validRoles.includes(row.role) ? row.role : 'officer'
@@ -339,7 +341,6 @@ function CSVImportModal({ companyId, onClose, onImported }) {
         first_name: row.first_name,
         last_name:  row.last_name,
         email:      row.email || null,
-        phone_number: row.phone_number || null,
         role,
         position_title: row.position_title || null,
         status:     ['active','inactive','terminated','probation'].includes(row.status) ? row.status : 'active',
@@ -347,6 +348,14 @@ function CSVImportModal({ companyId, onClose, onImported }) {
         has_app_access: false,
         invitation_status: 'pending',
       }).select('id').single()
+      if (!error && newEmp?.id) {
+        try {
+          await createEmployeeSideRows(newEmp.id, companyId, { private: row.phone_number ? { phone_number: row.phone_number } : undefined })
+        } catch (e) {
+          console.error('[CSVImport] side rows failed for', newEmp.id, e)
+          sideFailed++
+        }
+      }
       if (error) failed++; else success++
       if (!error && newEmp?.id) {
         supabase.from('channel').select('id').eq('company_id', companyId).eq('is_general', true).maybeSingle()
@@ -355,6 +364,7 @@ function CSVImportModal({ companyId, onClose, onImported }) {
       }
     }
     setImporting(false)
+    if (sideFailed) toast(`${sideFailed} imported employee${sideFailed!==1?'s':''} saved without phone/private details`, 'error')
     setResult({ success, failed })
   }
 
@@ -544,9 +554,14 @@ function BulkConfirmModal({ action, count, companyId, selectedIds, employees, on
       let results
       if (action.type === 'set_status') {
         const updates = { status: action.value }
-        if (action.value === 'suspended') { updates.suspended_reason = reason||null; updates.suspended_at = new Date().toISOString() }
-        else if (action.value === 'terminated') { updates.terminated_reason = reason||null; updates.terminated_at = new Date().toISOString() }
-        results = await Promise.allSettled(selectedIds.map(id => supabase.from('employee').update(updates).eq('id', id).eq('company_id', companyId)))
+        let hrFields = null
+        if (action.value === 'suspended') { hrFields = { suspended_reason: reason||null }; updates.suspended_at = new Date().toISOString() }
+        else if (action.value === 'terminated') { hrFields = { terminated_reason: reason||null }; updates.terminated_at = new Date().toISOString() }
+        results = await Promise.allSettled(selectedIds.map(async id => {
+          const { error } = await supabase.from('employee').update(updates).eq('id', id).eq('company_id', companyId)
+          if (error) throw error
+          if (hrFields) await saveEmployeeHr(id, hrFields, companyId)
+        }))
       } else if (action.type === 'set_armed') {
         results = await Promise.allSettled(selectedIds.map(id => supabase.from('employee').update({ is_armed: action.value }).eq('id', id).eq('company_id', companyId)))
       } else if (action.type === 'set_role') {
@@ -864,7 +879,6 @@ function AddEmployeeModal({ companyId, onClose, onSaved }) {
         first_name:       form.first_name.trim(),
         last_name:        form.last_name.trim(),
         email:            form.email.trim(),
-        phone_number:     form.phone_number.trim() || null,
         role:             form.role,
         position_title:   form.position_title.trim() || null,
         status:           form.status,
@@ -874,6 +888,13 @@ function AddEmployeeModal({ companyId, onClose, onSaved }) {
         invitation_status:'pending',
       }).select().single()
       if (err) throw err
+      try {
+        const phone = form.phone_number.trim()
+        await createEmployeeSideRows(data.id, companyId, { private: phone ? { phone_number: phone } : undefined })
+      } catch (sideErr) {
+        console.error('[AddEmployee] side rows failed:', sideErr)
+        toast('Employee added, but phone could not be saved. Edit the employee to add it.', 'error')
+      }
       supabase.from('channel').select('id').eq('company_id', companyId).eq('is_general', true).maybeSingle()
         .then(({ data: ch }) => { if (ch?.id) supabase.from('channel_member').insert({ channel_id: ch.id, employee_id: data.id }).then(() => {}, () => {}) })
         .catch(() => {})
@@ -1020,9 +1041,11 @@ function EmployeeStatusModal({ emp, profile, onClose, onDone }) {
         if (updErr) throw new Error(updErr.message)
       } else {
         const { error: updErr } = await supabase.from('employee')
-          .update({ status: opt.id, [`${opt.id}_reason`]: note||null, [`${opt.id}_at`]: new Date().toISOString() })
+          .update({ status: opt.id, [`${opt.id}_at`]: new Date().toISOString() })
           .eq('id', emp.id).eq('company_id', emp.company_id)
         if (updErr) throw new Error(updErr.message)
+        // suspended_reason / terminated_reason / archived_reason live in employee_hr
+        await saveEmployeeHr(emp.id, { [`${opt.id}_reason`]: note||null }, emp.company_id)
       }
       // Log the change
       const { logChange } = await import('../../lib/changeLog.js')
