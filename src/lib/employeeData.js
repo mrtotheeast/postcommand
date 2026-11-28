@@ -75,12 +75,17 @@ export function saveEmployeeHr(id, fields, companyId)      { return saveSide('em
 
 // After inserting a new employee: make sure all three side rows exist (a DB trigger
 // also creates them, hence upsert), writing any initial values given.
+// Throws only if a write that carried data failed; a failed bare "ensure row" call
+// (e.g. the creator may not write employee_pay) is logged, since the trigger covers it.
 export async function createEmployeeSideRows(id, companyId, { pay, private: priv, hr } = {}) {
-  const results = await Promise.allSettled([
-    saveEmployeePay(id, pay, companyId),
-    saveEmployeePrivate(id, priv, companyId),
-    saveEmployeeHr(id, hr, companyId),
-  ])
-  const failed = results.filter(r => r.status === 'rejected')
-  if (failed.length) throw failed[0].reason
+  const parts = [['employee_pay', saveEmployeePay, pay], ['employee_private', saveEmployeePrivate, priv], ['employee_hr', saveEmployeeHr, hr]]
+  const results = await Promise.allSettled(parts.map(([, save, fields]) => save(id, fields, companyId)))
+  let firstError = null
+  results.forEach((r, i) => {
+    if (r.status !== 'rejected') return
+    const [table, , fields] = parts[i]
+    if (fields && Object.keys(fields).length) firstError ??= r.reason
+    else console.warn(`[employeeData] could not ensure ${table} row for ${id}:`, r.reason?.message)
+  })
+  if (firstError) throw firstError
 }
